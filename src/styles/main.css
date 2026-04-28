@@ -1,0 +1,131 @@
+@import "tailwindcss";
+
+:root {
+  --color-background: #1e1e1e;
+  --color-surface: #252526;
+  --color-surface-hover: #2a2d2e;
+  --color-surface-active: #37373d;
+  --color-border: #3c3c3c;
+  --color-foreground: #cccccc;
+  --color-foreground-muted: #858585;
+  --color-foreground-bright: #e0e0e0;
+  --color-primary: #007acc;
+  --color-primary-hover: #1a8ad4;
+  --color-accent: #0098ff;
+  --color-success: #4ec9b0;
+  --color-warning: #dcdcaa;
+  --color-error: #f44747;
+  --color-info: #569cd6;
+
+  --color-git-added: #81b88b;
+  --color-git-modified: #e2c08d;
+  --color-git-deleted: #c74e39;
+  --color-git-renamed: #73c991;
+  --color-git-untracked: #73c991;
+
+  --color-branch-local: #4ec9b0;
+  --color-branch-remote: #c586c0;
+  --color-branch-tag: #dcdcaa;
+  --color-branch-head: #e5c07b;
+
+  --color-graph-0: #e06c75;
+  --color-graph-1: #98c379;
+  --color-graph-2: #e5c07b;
+  --color-graph-3: #61afef;
+  --color-graph-4: #c678dd;
+  --color-graph-5: #56b6c2;
+  --color-graph-6: #be5046;
+  --color-graph-7: #7ec699;
+
+  --color-diff-added-bg: rgba(35, 134, 54, 0.2);
+  --color-diff-added-highlight: rgba(35, 134, 54, 0.4);
+  --color-diff-removed-bg: rgba(218, 54, 51, 0.2);
+  --color-diff-removed-highlight: rgba(218, 54, 51, 0.4);
+
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+[data-theme="light"] {
+  --color-background: #f5f5f5;
+  --color-surface: #ffffff;
+  --color-surface-hover: #e9eef5;
+  --color-surface-active: #d8eaff;
+  --color-border: #c8cdd3;
+  --color-foreground: #24292f;
+  --color-foreground-muted: #57606a;
+  --color-foreground-bright: #0f172a;
+  --color-primary: #0969da;
+  --color-primary-hover: #0550ae;
+  --color-accent: #0969da;
+  --color-success: #1a7f37;
+  --color-warning: #7d5f00;
+  --color-error: #cf222e;
+  --color-info: #0969da;
+
+  --color-branch-local: #1a7f37;
+  --color-branch-remote: #8250df;
+  --color-branch-tag: #7d5f00;
+  --color-branch-head: #9a6700;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #app {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-foreground);
+  background: var(--color-background);
+  user-select: none;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-foreground-muted);
+}
+
+input, textarea, select {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--color-foreground);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  outline: none;
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: var(--color-primary);
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+
+code, pre, .mono {
+  font-family: var(--font-mono);
+}
