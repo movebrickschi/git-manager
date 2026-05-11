@@ -211,6 +211,18 @@ export interface Commands {
   getConflictContent(repoPath: string, filePath: string): Promise<ConflictFile>;
   resolveConflict(repoPath: string, filePath: string, content: string): Promise<void>;
   getWorkingFileContent(repoPath: string, filePath: string): Promise<string>;
+  getMergeState(repoPath: string): Promise<{
+    state: "none" | "merge" | "rebase" | "cherry-pick" | "revert";
+    hasConflicts: boolean;
+  }>;
+  continueOperation(
+    repoPath: string,
+    op: "merge" | "rebase" | "cherry-pick" | "revert"
+  ): Promise<MergeResult>;
+  abortOperation(
+    repoPath: string,
+    op: "merge" | "rebase" | "cherry-pick" | "revert"
+  ): Promise<void>;
   cloneRepo(url: string, path: string): Promise<void>;
   getFileContent(repoPath: string, commitId: string, filePath: string): Promise<string>;
   discardFileChanges(repoPath: string, filePath: string): Promise<void>;
