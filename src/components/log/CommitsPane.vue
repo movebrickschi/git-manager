@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { useLogStore } from "@/stores/logStore";
 import { useRepoStore } from "@/stores/repoStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -44,14 +44,55 @@ function showToast(msg: string) {
   }, 2500);
 }
 
+const ROW_HEIGHT = 24;
+const OVERSCAN = 10;
+const scrollTop = ref(0);
+const viewportHeight = ref(600);
+let resizeObserver: ResizeObserver | null = null;
+
+const totalCount = computed(() => logStore.commits.length);
+const totalHeight = computed(() => totalCount.value * ROW_HEIGHT);
+const visibleStart = computed(() =>
+  Math.max(0, Math.floor(scrollTop.value / ROW_HEIGHT) - OVERSCAN)
+);
+const visibleEnd = computed(() =>
+  Math.min(
+    totalCount.value,
+    Math.ceil((scrollTop.value + viewportHeight.value) / ROW_HEIGHT) + OVERSCAN
+  )
+);
+const offsetY = computed(() => visibleStart.value * ROW_HEIGHT);
+const visibleCommits = computed(() =>
+  logStore.commits.slice(visibleStart.value, visibleEnd.value)
+);
+
 function onScroll(e: Event) {
   const el = e.target as HTMLElement;
+  scrollTop.value = el.scrollTop;
   if (el.scrollTop + el.clientHeight >= el.scrollHeight - 100) {
     if (logStore.hasMore && !logStore.loading) {
       logStore.loadCommits();
     }
   }
 }
+
+onMounted(() => {
+  if (!listRef.value) return;
+  viewportHeight.value = listRef.value.clientHeight || 600;
+  if (typeof ResizeObserver !== "undefined") {
+    resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        viewportHeight.value = entry.contentRect.height;
+      }
+    });
+    resizeObserver.observe(listRef.value);
+  }
+});
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+});
 
 function selectCommit(commit: CommitInfo, event: MouseEvent) {
   logStore.selectCommit(commit.id, event.ctrlKey || event.metaKey);
@@ -227,41 +268,45 @@ function getRefClass(refType: string): string {
       <div class="col-date">Date</div>
     </div>
 
-    <!-- Commit list -->
+    <!-- Commit list (virtual scrolling) -->
     <div ref="listRef" class="commit-list" @scroll="onScroll">
-      <div
-        v-for="(commit, rowIndex) in logStore.commits"
-        :key="commit.id"
-        class="commit-row"
-        :class="{
-          selected: logStore.selectedCommitIds.includes(commit.id),
-          'is-merge': commit.isMerge && settings.highlightMyCommits,
-          'row-even': rowIndex % 2 === 0,
-          'row-odd': rowIndex % 2 === 1,
-        }"
-        @click="selectCommit(commit, $event)"
-        @contextmenu.prevent="showContextMenu($event, commit)"
-      >
-        <!-- Author column -->
-        <div class="col-author">{{ commit.author }}</div>
+      <div class="virtual-spacer" :style="{ height: totalHeight + 'px' }">
+        <div class="virtual-window" :style="{ transform: `translateY(${offsetY}px)` }">
+          <div
+            v-for="(commit, i) in visibleCommits"
+            :key="commit.id"
+            class="commit-row"
+            :class="{
+              selected: logStore.selectedCommitIds.includes(commit.id),
+              'is-merge': commit.isMerge && settings.highlightMyCommits,
+              'row-even': (visibleStart + i) % 2 === 0,
+              'row-odd': (visibleStart + i) % 2 === 1,
+            }"
+            @click="selectCommit(commit, $event)"
+            @contextmenu.prevent="showContextMenu($event, commit)"
+          >
+            <!-- Author column -->
+            <div class="col-author">{{ commit.author }}</div>
 
-        <!-- Message column -->
-        <div class="col-message">
-          <span class="commit-summary">{{ commit.summary }}</span>
-          <template v-if="commit.refs.length > 0">
-            <span
-              v-for="ref in commit.refs"
-              :key="ref.name"
-              class="ref-badge"
-              :class="getRefClass(ref.refType)"
-            >
-              {{ settings.compactReferences ? ref.name.split('/').pop() : ref.name }}
-            </span>
-          </template>
+            <!-- Message column -->
+            <div class="col-message">
+              <span class="commit-summary">{{ commit.summary }}</span>
+              <template v-if="commit.refs.length > 0">
+                <span
+                  v-for="ref in commit.refs"
+                  :key="ref.name"
+                  class="ref-badge"
+                  :class="getRefClass(ref.refType)"
+                >
+                  {{ settings.compactReferences ? ref.name.split('/').pop() : ref.name }}
+                </span>
+              </template>
+            </div>
+
+            <!-- Date column -->
+            <div class="col-date">{{ formatTimestamp(commit.authorTime) }}</div>
+          </div>
         </div>
-
-        <!-- Date column -->
-        <div class="col-date">{{ formatTimestamp(commit.authorTime) }}</div>
       </div>
 
       <div v-if="logStore.loading" class="loading-indicator">
@@ -369,6 +414,15 @@ function getRefClass(refType: string): string {
   flex-shrink: 0;
 }
 
+.virtual-spacer {
+  position: relative;
+  width: 100%;
+}
+.virtual-window {
+  position: absolute;
+  inset: 0 0 auto 0;
+  will-change: transform;
+}
 .commit-list {
   flex: 1;
   overflow-y: auto;

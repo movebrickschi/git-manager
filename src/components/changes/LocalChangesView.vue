@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch, defineAsyncComponent } from "vue";
 import { Splitpanes, Pane } from "splitpanes";
 import { useCommitStore } from "@/stores/commitStore";
 import { useRepoStore } from "@/stores/repoStore";
@@ -9,8 +9,10 @@ import type { FileStatus, DiffResult } from "@/utils/commands";
 import DiffViewer from "@/components/diff/DiffViewer.vue";
 import ContextMenu from "@/components/common/ContextMenu.vue";
 import type { MenuItem } from "@/components/common/ContextMenu.vue";
-import ThreeWayMerge from "@/components/merge/ThreeWayMerge.vue";
 import PushDialog from "@/components/common/PushDialog.vue";
+import { errMsg } from "@/utils/error";
+
+const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/ThreeWayMerge.vue"));
 
 const commitStore = useCommitStore();
 const repoStore = useRepoStore();
@@ -21,6 +23,57 @@ const selectedSection = ref<"staged" | "unstaged" | "untracked">("unstaged");
 const diffResult = ref<DiffResult | null>(null);
 const loading = ref(false);
 const errorMessage = ref<string | null>(null);
+
+type MergeOp = "merge" | "rebase" | "cherry-pick" | "revert";
+const mergeState = ref<{ state: "none" | MergeOp; hasConflicts: boolean } | null>(null);
+const mergeBusy = ref(false);
+
+async function refreshMergeState() {
+  if (!repoStore.activeRepo) {
+    mergeState.value = null;
+    return;
+  }
+  try {
+    mergeState.value = await commands.getMergeState(repoStore.activeRepo.path);
+  } catch (e: unknown) {
+    console.error("getMergeState failed:", errMsg(e));
+    mergeState.value = null;
+  }
+}
+
+async function onContinueMerge() {
+  if (!repoStore.activeRepo || !mergeState.value || mergeState.value.state === "none") return;
+  mergeBusy.value = true;
+  try {
+    const result = await commands.continueOperation(repoStore.activeRepo.path, mergeState.value.state);
+    if (!result.success) {
+      showToast(`继续失败：${result.message}`);
+    } else {
+      showToast(`${mergeState.value.state} 已继续完成`);
+    }
+    await refreshMergeState();
+    await commitStore.loadStatus();
+  } catch (e: unknown) {
+    showToast(`继续失败：${errMsg(e)}`);
+  } finally {
+    mergeBusy.value = false;
+  }
+}
+
+async function onAbortMerge() {
+  if (!repoStore.activeRepo || !mergeState.value || mergeState.value.state === "none") return;
+  mergeBusy.value = true;
+  try {
+    await commands.abortOperation(repoStore.activeRepo.path, mergeState.value.state);
+    showToast(`${mergeState.value.state} 已中止`);
+    await refreshMergeState();
+    await commitStore.loadStatus();
+  } catch (e: unknown) {
+    showToast(`中止失败：${errMsg(e)}`);
+  } finally {
+    mergeBusy.value = false;
+  }
+}
 const contextMenuRef = ref<InstanceType<typeof ContextMenu>>();
 const contextFile = ref<FileStatus | null>(null);
 const contextSection = ref<"staged" | "unstaged" | "untracked">("unstaged");
@@ -38,7 +91,7 @@ async function handleCommitAndPush() {
   try {
     await commitStore.commit();
     showPushDialog.value = true;
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error("Commit failed:", e);
   }
 }
@@ -224,8 +277,8 @@ async function bulkStage() {
     await commitStore.stageFiles(paths);
     showToast(`已暂存 ${paths.length} 个文件`);
     clearSelection();
-  } catch (e: any) {
-    showToast(`暂存失败: ${e.message}`);
+  } catch (e: unknown) {
+    showToast(`暂存失败: ${errMsg(e)}`);
   }
 }
 
@@ -236,8 +289,8 @@ async function bulkUnstage() {
     await commitStore.unstageFiles(paths);
     showToast(`已取消暂存 ${paths.length} 个文件`);
     clearSelection();
-  } catch (e: any) {
-    showToast(`取消暂存失败: ${e.message}`);
+  } catch (e: unknown) {
+    showToast(`取消暂存失败: ${errMsg(e)}`);
   }
 }
 
@@ -279,8 +332,8 @@ async function bulkCopyPath() {
   try {
     await navigator.clipboard.writeText(text);
     showToast(`已复制 ${paths.length} 个路径`);
-  } catch (e: any) {
-    showToast(`复制失败: ${e?.message ?? "剪贴板不可用"}`);
+  } catch (e: unknown) {
+    showToast(`复制失败: ${errMsg(e) || "剪贴板不可用"}`);
   }
 }
 
@@ -384,6 +437,7 @@ function startPolling() {
     if (document.visibilityState === "visible" && repoStore.activeRepo && !commitStore.loading) {
       try {
         await commitStore.loadStatus();
+        await refreshMergeState();
       } catch {
         // silent poll failure
       }
@@ -404,8 +458,9 @@ onMounted(async () => {
     errorMessage.value = null;
     try {
       await commitStore.loadStatus();
-    } catch (error: any) {
-      errorMessage.value = `加载状态失败: ${error.message}`;
+      await refreshMergeState();
+    } catch (error: unknown) {
+      errorMessage.value = `加载状态失败: ${errMsg(error)}`;
       console.error('Failed to load status:', error);
     } finally {
       loading.value = false;
@@ -430,8 +485,9 @@ watch(
       clearSelection();
       try {
         await commitStore.loadStatus();
-      } catch (error: any) {
-        errorMessage.value = `加载状态失败: ${error.message}`;
+        await refreshMergeState();
+      } catch (error: unknown) {
+        errorMessage.value = `加载状态失败: ${errMsg(error)}`;
         console.error('Failed to load status:', error);
       } finally {
         loading.value = false;
@@ -553,8 +609,8 @@ async function doQuickCommit() {
     quickCommitMessage.value = "";
     await commitStore.loadStatus();
     showToast("提交成功");
-  } catch (e: any) {
-    showToast(`提交失败: ${e.message}`);
+  } catch (e: unknown) {
+    showToast(`提交失败: ${errMsg(e)}`);
   } finally {
     quickCommitLoading.value = false;
   }
@@ -576,8 +632,8 @@ function handleDiscardChanges() {
         diffResult.value = null;
       }
       showToast("已回滚更改");
-    } catch (e: any) {
-      showToast(`回滚失败: ${e.message}`);
+    } catch (e: unknown) {
+      showToast(`回滚失败: ${errMsg(e)}`);
     }
   };
   showConfirmDialog.value = true;
@@ -595,8 +651,8 @@ async function handleStashFile() {
       diffResult.value = null;
     }
     showToast("已搁置更改");
-  } catch (e: any) {
-    showToast(`搁置失败: ${e.message}`);
+  } catch (e: unknown) {
+    showToast(`搁置失败: ${errMsg(e)}`);
   }
 }
 
@@ -615,8 +671,8 @@ async function handleCopyAsPatch() {
     }
     await navigator.clipboard.writeText(raw);
     showToast("补丁已复制到剪贴板");
-  } catch (e: any) {
-    showToast(`复制失败: ${e.message}`);
+  } catch (e: unknown) {
+    showToast(`复制失败: ${errMsg(e)}`);
   }
 }
 
@@ -643,8 +699,8 @@ async function handleCreatePatch() {
     a.click();
     URL.revokeObjectURL(url);
     showToast(`补丁文件已下载: ${fileName}`);
-  } catch (e: any) {
-    showToast(`创建补丁失败: ${e.message}`);
+  } catch (e: unknown) {
+    showToast(`创建补丁失败: ${errMsg(e)}`);
   }
 }
 
@@ -664,8 +720,8 @@ function handleDeleteFile() {
         diffResult.value = null;
       }
       showToast("文件已删除");
-    } catch (e: any) {
-      showToast(`删除失败: ${e.message}`);
+    } catch (e: unknown) {
+      showToast(`删除失败: ${errMsg(e)}`);
     }
   };
   showConfirmDialog.value = true;
@@ -791,6 +847,19 @@ const contextMenuItems = computed<MenuItem[]>(() => {
 
 <template>
   <div class="local-changes-view">
+    <div v-if="mergeState && mergeState.state !== 'none'" class="merge-banner" :class="`merge-banner--${mergeState.state}`">
+      <span class="merge-banner__icon">⚠</span>
+      <span class="merge-banner__text">
+        当前处于 <strong>{{ mergeState.state }}</strong> 进行中
+        <template v-if="mergeState.hasConflicts">，存在未解决的冲突</template>
+      </span>
+      <button class="merge-banner__btn merge-banner__btn--primary"
+              :disabled="mergeState.hasConflicts || mergeBusy"
+              @click="onContinueMerge">继续</button>
+      <button class="merge-banner__btn merge-banner__btn--danger"
+              :disabled="mergeBusy"
+              @click="onAbortMerge">中止</button>
+    </div>
     <Splitpanes class="default-theme" style="height: 100%">
       <!-- Left: file list -->
       <Pane :size="35" :min-size="20" :max-size="60">
@@ -1163,6 +1232,58 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   display: flex;
   flex-direction: column;
   background: var(--color-surface);
+}
+
+.merge-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--color-warning-bg, #3b2f00);
+  color: var(--color-warning-fg, #ffd54f);
+  border-bottom: 1px solid var(--color-warning-border, #6b5a00);
+  font-size: 13px;
+}
+.merge-banner--cherry-pick {
+  background: var(--color-info-bg, #1e2f3b);
+  color: var(--color-info-fg, #4fc3f7);
+  border-bottom-color: var(--color-info-border, #00567b);
+}
+.merge-banner__icon {
+  font-size: 16px;
+  line-height: 1;
+}
+.merge-banner__text {
+  flex: 1;
+  min-width: 0;
+}
+.merge-banner__text strong {
+  text-transform: capitalize;
+}
+.merge-banner__btn {
+  padding: 4px 10px;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+}
+.merge-banner__btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+.merge-banner__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.merge-banner__btn--primary {
+  background: var(--color-primary, #2196f3);
+  color: white;
+  border-color: var(--color-primary, #2196f3);
+}
+.merge-banner__btn--danger {
+  border-color: var(--color-danger, #e57373);
+  color: var(--color-danger, #e57373);
 }
 
 .file-panel {

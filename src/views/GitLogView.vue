@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from "vue";
+import { ref, onMounted, watch, defineAsyncComponent } from "vue";
 import { Splitpanes, Pane } from "splitpanes";
 import "splitpanes/dist/splitpanes.css";
 import MainLayout from "@/layouts/MainLayout.vue";
@@ -9,9 +9,10 @@ import ChangedFilesPane from "@/components/log/ChangedFilesPane.vue";
 import CommitDetailsPane from "@/components/log/CommitDetailsPane.vue";
 import StashList from "@/components/stash/StashList.vue";
 import DiffViewer from "@/components/diff/DiffViewer.vue";
-import BlameView from "@/components/blame/BlameView.vue";
-import ThreeWayMerge from "@/components/merge/ThreeWayMerge.vue";
 import LocalChangesView from "@/components/changes/LocalChangesView.vue";
+
+const BlameView = defineAsyncComponent(() => import("@/components/blame/BlameView.vue"));
+const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/ThreeWayMerge.vue"));
 import { useRepoStore } from "@/stores/repoStore";
 import { useLogStore } from "@/stores/logStore";
 import { useBranchStore } from "@/stores/branchStore";

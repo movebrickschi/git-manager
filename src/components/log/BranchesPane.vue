@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, defineAsyncComponent } from "vue";
 import { useBranchStore } from "@/stores/branchStore";
 import { useLogStore } from "@/stores/logStore";
 import { useRepoStore } from "@/stores/repoStore";
@@ -9,7 +9,9 @@ import ContextMenu from "@/components/common/ContextMenu.vue";
 import type { MenuItem } from "@/components/common/ContextMenu.vue";
 import type { BranchInfo } from "@/utils/commands";
 import { commands } from "@/utils/commands";
-import ThreeWayMerge from "@/components/merge/ThreeWayMerge.vue";
+const ThreeWayMerge = defineAsyncComponent(
+  () => import("@/components/merge/ThreeWayMerge.vue")
+);
 import PushDialog from "@/components/common/PushDialog.vue";
 
 const branchStore = useBranchStore();

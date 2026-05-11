@@ -3,8 +3,26 @@ import { ref, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import StatusBar from "@/components/common/StatusBar.vue";
 import Toolbar from "@/components/common/Toolbar.vue";
+import KeyboardShortcutsDialog from "@/components/common/KeyboardShortcutsDialog.vue";
 import { useRepoStore } from "@/stores/repoStore";
 import { commands, platform } from "@/utils/commands";
+
+const showShortcutsDialog = ref(false);
+function handleGlobalKey(e: KeyboardEvent) {
+  const target = e.target as HTMLElement | null;
+  const isEditable =
+    target &&
+    (target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.isContentEditable);
+  if (isEditable) return;
+  if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
+    e.preventDefault();
+    showShortcutsDialog.value = true;
+  } else if (e.key === "Escape") {
+    showShortcutsDialog.value = false;
+  }
+}
 
 const router = useRouter();
 const repoStore = useRepoStore();
@@ -87,8 +105,14 @@ async function cloneRepo() {
   }
 }
 
-onMounted(() => document.addEventListener("click", handleOutsideClick));
-onUnmounted(() => document.removeEventListener("click", handleOutsideClick));
+onMounted(() => {
+  document.addEventListener("click", handleOutsideClick);
+  document.addEventListener("keydown", handleGlobalKey);
+});
+onUnmounted(() => {
+  document.removeEventListener("click", handleOutsideClick);
+  document.removeEventListener("keydown", handleGlobalKey);
+});
 </script>
 
 <template>
@@ -192,6 +216,7 @@ onUnmounted(() => document.removeEventListener("click", handleOutsideClick));
         </div>
       </div>
     </div>
+    <KeyboardShortcutsDialog v-if="showShortcutsDialog" @close="showShortcutsDialog = false" />
   </div>
 </template>
 

@@ -2,14 +2,26 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useRepoStore } from "@/stores/repoStore";
 import { commands } from "@/utils/commands";
-import * as monaco from "monaco-editor";
+import type * as MonacoNS from "monaco-editor";
 
-// Minimal worker config so Monaco doesn't throw about missing workers
-if (typeof self !== "undefined" && !(self as any).MonacoEnvironment) {
-  (self as any).MonacoEnvironment = {
-    getWorkerUrl: () =>
-      `data:text/javascript;charset=utf-8,${encodeURIComponent("self.onmessage=function(){}")}`,
-  };
+let monaco: typeof MonacoNS | null = null;
+let monacoLoadPromise: Promise<typeof MonacoNS> | null = null;
+
+async function loadMonaco(): Promise<typeof MonacoNS> {
+  if (monaco) return monaco;
+  if (monacoLoadPromise) return monacoLoadPromise;
+  monacoLoadPromise = (async () => {
+    if (typeof self !== "undefined" && !(self as any).MonacoEnvironment) {
+      (self as any).MonacoEnvironment = {
+        getWorkerUrl: () =>
+          `data:text/javascript;charset=utf-8,${encodeURIComponent("self.onmessage=function(){}")}`,
+      };
+    }
+    const mod = await import("monaco-editor");
+    monaco = mod;
+    return mod;
+  })();
+  return monacoLoadPromise;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,9 +76,8 @@ interface HunkSegment {
 }
 type MergeSegment = ContextSegment | HunkSegment;
 
-// Monaco editor reference
 const editorContainer = ref<HTMLElement | null>(null);
-let monacoEditor: monaco.editor.IStandaloneCodeEditor | null = null;
+let monacoEditor: MonacoNS.editor.IStandaloneCodeEditor | null = null;
 let decorations: string[] = [];
 
 // Panel refs for synchronized scrolling (reserved for future use)
@@ -244,9 +255,11 @@ function detectLanguage(filePath: string): string {
   return map[ext] ?? "plaintext";
 }
 
-function initMonaco() {
+async function initMonaco() {
   if (!editorContainer.value) return;
-  monacoEditor = monaco.editor.create(editorContainer.value, {
+  const m = await loadMonaco();
+  if (!editorContainer.value) return;
+  monacoEditor = m.editor.create(editorContainer.value, {
     value: resultContent.value,
     language: detectLanguage(currentFile.value),
     theme: "vs-dark",
@@ -270,11 +283,12 @@ function initMonaco() {
 }
 
 function updateDecorations() {
-  if (!monacoEditor) return;
+  if (!monacoEditor || !monaco) return;
+  const m = monaco;
   const model = monacoEditor.getModel();
   if (!model) return;
 
-  const newDecorations: monaco.editor.IModelDeltaDecoration[] = [];
+  const newDecorations: MonacoNS.editor.IModelDeltaDecoration[] = [];
   const lines = monacoEditor.getValue().split("\n");
 
   for (let i = 0; i < lines.length; i++) {
@@ -282,17 +296,17 @@ function updateDecorations() {
     const lineNo = i + 1;
     if (line.startsWith("<<<<<<<")) {
       newDecorations.push({
-        range: new monaco.Range(lineNo, 1, lineNo, 1),
+        range: new m.Range(lineNo, 1, lineNo, 1),
         options: {
           isWholeLine: true,
           className: "conflict-ours-marker",
           glyphMarginClassName: "conflict-glyph-ours",
-          overviewRuler: { color: "#2d9a2d", position: monaco.editor.OverviewRulerLane.Left },
+          overviewRuler: { color: "#2d9a2d", position: m.editor.OverviewRulerLane.Left },
         },
       });
     } else if (line.startsWith("=======")) {
       newDecorations.push({
-        range: new monaco.Range(lineNo, 1, lineNo, 1),
+        range: new m.Range(lineNo, 1, lineNo, 1),
         options: {
           isWholeLine: true,
           className: "conflict-sep-marker",
@@ -300,12 +314,12 @@ function updateDecorations() {
       });
     } else if (line.startsWith(">>>>>>>")) {
       newDecorations.push({
-        range: new monaco.Range(lineNo, 1, lineNo, 1),
+        range: new m.Range(lineNo, 1, lineNo, 1),
         options: {
           isWholeLine: true,
           className: "conflict-theirs-marker",
           glyphMarginClassName: "conflict-glyph-theirs",
-          overviewRuler: { color: "#1e6fcc", position: monaco.editor.OverviewRulerLane.Right },
+          overviewRuler: { color: "#1e6fcc", position: m.editor.OverviewRulerLane.Right },
         },
       });
     }
@@ -376,6 +390,7 @@ function replaceHunkInEditor(hunk: ConflictHunk, replacement: string[]) {
   const endLine = hunkEnd + 1;
   const endCol = (lines[hunkEnd] ?? "").length + 1;
 
+  if (!monaco) return;
   monacoEditor.executeEdits("accept-hunk", [
     {
       range: new monaco.Range(startLine, 1, endLine, endCol),
@@ -476,7 +491,7 @@ async function switchFile(filePath: string) {
   if (filePath === currentFile.value) return;
   currentFile.value = filePath;
   await loadFile(filePath);
-  if (monacoEditor) {
+  if (monacoEditor && monaco) {
     const lang = detectLanguage(filePath);
     monaco.editor.setModelLanguage(monacoEditor.getModel()!, lang);
   }
@@ -488,7 +503,7 @@ async function switchFile(filePath: string) {
 onMounted(async () => {
   await loadFile(props.filePath);
   await nextTick();
-  initMonaco();
+  await initMonaco();
 });
 
 watch(
