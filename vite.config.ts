@@ -21,4 +21,21 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules")) {
+            if (id.includes("monaco-editor")) return undefined;
+            if (id.includes("vue") || id.includes("pinia") || id.includes("@vue"))
+              return "vue-vendor";
+            if (id.includes("splitpanes") || id.includes("lucide-vue-next"))
+              return "ui-vendor";
+            return "vendor";
+          }
+        },
+      },
+    },
+  },
 });
