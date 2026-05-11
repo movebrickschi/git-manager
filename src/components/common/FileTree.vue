@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { toRef } from "vue";
 import type { FileStatus } from "@/utils/commands";
 import { getFileName, getFileDir } from "@/utils/format";
+import { useFileTree } from "@/composables/useFileTree";
 
 const props = defineProps<{
   files: FileStatus[];
@@ -15,59 +16,9 @@ const emit = defineEmits<{
   contextmenu: [event: MouseEvent, file: FileStatus];
 }>();
 
-interface TreeNode {
-  name: string;
-  path: string;
-  isDir: boolean;
-  children: TreeNode[];
-  file?: FileStatus;
-}
-
-const collapsedDirs = ref<Set<string>>(new Set());
-
-const treeData = computed(() => {
-  if (!props.treeView) return null;
-
-  const root: TreeNode = { name: "", path: "", isDir: true, children: [] };
-
-  for (const file of props.files) {
-    const parts = file.path.replace(/\\/g, "/").split("/");
-    let current = root;
-
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const isLast = i === parts.length - 1;
-      const path = parts.slice(0, i + 1).join("/");
-
-      if (isLast) {
-        current.children.push({
-          name: part,
-          path,
-          isDir: false,
-          children: [],
-          file,
-        });
-      } else {
-        let dir = current.children.find((c) => c.isDir && c.name === part);
-        if (!dir) {
-          dir = { name: part, path, isDir: true, children: [] };
-          current.children.push(dir);
-        }
-        current = dir;
-      }
-    }
-  }
-
-  return root.children;
-});
-
-function toggleDir(path: string) {
-  if (collapsedDirs.value.has(path)) {
-    collapsedDirs.value.delete(path);
-  } else {
-    collapsedDirs.value.add(path);
-  }
-}
+// toRef 让 composable 跟踪 props.files 变化
+const filesRef = toRef(props, "files");
+const { visibleNodes, toggleDir, isCollapsed } = useFileTree(filesRef);
 
 function getStatusColor(status: string): string {
   const colors: Record<string, string> = {
@@ -97,34 +48,39 @@ function getStatusLabel(status: string): string {
 
 <template>
   <div class="file-tree">
-    <template v-if="treeView && treeData">
-      <template v-for="node in treeData" :key="node.path">
-        <div v-if="node.isDir" class="tree-dir" @click="toggleDir(node.path)">
+    <template v-if="treeView">
+      <template v-for="node in visibleNodes" :key="node.path">
+        <div
+          v-if="node.isDir"
+          class="tree-dir"
+          :style="{ paddingLeft: 8 + node.depth * 14 + 'px' }"
+          @click="toggleDir(node.path)"
+        >
           <svg
             width="12" height="12" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2"
-            :style="{ transform: collapsedDirs.has(node.path) ? 'rotate(-90deg)' : '' }"
+            :style="{ transform: isCollapsed(node.path) ? 'rotate(-90deg)' : '' }"
           >
             <polyline points="6 9 12 15 18 9" />
           </svg>
           <span>{{ node.name }}</span>
         </div>
-        <template v-if="!node.isDir">
-          <div
-            class="tree-file"
-            :class="{ selected: selectedPath === node.file?.path }"
-            @click="node.file && emit('select', node.file)"
-            @dblclick="node.file && emit('dblclick', node.file)"
-            @contextmenu.prevent="node.file && emit('contextmenu', $event, node.file)"
-          >
-            <span class="file-name">{{ node.name }}</span>
-            <span
-              v-if="node.file"
-              class="file-status"
-              :style="{ color: getStatusColor(node.file.status) }"
-            >{{ getStatusLabel(node.file.status) }}</span>
-          </div>
-        </template>
+        <div
+          v-else
+          class="tree-file"
+          :class="{ selected: selectedPath === node.file?.path }"
+          :style="{ paddingLeft: 8 + (node.depth + 1) * 14 + 'px' }"
+          @click="node.file && emit('select', node.file)"
+          @dblclick="node.file && emit('dblclick', node.file)"
+          @contextmenu.prevent="node.file && emit('contextmenu', $event, node.file)"
+        >
+          <span class="file-name">{{ node.name }}</span>
+          <span
+            v-if="node.file"
+            class="file-status"
+            :style="{ color: getStatusColor(node.file.status) }"
+          >{{ getStatusLabel(node.file.status) }}</span>
+        </div>
       </template>
     </template>
     <template v-else>
@@ -171,7 +127,7 @@ function getStatusLabel(status: string): string {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 8px 2px 24px;
+  padding: 2px 8px;
   cursor: pointer;
 }
 
