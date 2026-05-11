@@ -95,6 +95,24 @@ export const useCommitStore = defineStore("commit", () => {
     return result;
   }
 
+  async function deleteFiles(
+    paths: string[]
+  ): Promise<{ ok: string[]; failed: { path: string; error: string }[] }> {
+    const result = { ok: [] as string[], failed: [] as { path: string; error: string }[] };
+    if (!repoStore.activeRepo || paths.length === 0) return result;
+    const repoPath = repoStore.activeRepo.path;
+    for (const p of paths) {
+      try {
+        await commands.deleteFile(repoPath, p);
+        result.ok.push(p);
+      } catch (e: any) {
+        result.failed.push({ path: p, error: e?.message ?? String(e) });
+      }
+    }
+    await loadStatus();
+    return result;
+  }
+
   async function commit() {
     if (!repoStore.activeRepo || !commitMessage.value.trim()) return;
     await commands.commit(
@@ -131,6 +149,7 @@ export const useCommitStore = defineStore("commit", () => {
     stageFiles,
     unstageFiles,
     discardFiles,
+    deleteFiles,
     commit,
     commitAndPush,
   };

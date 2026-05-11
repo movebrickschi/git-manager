@@ -284,6 +284,42 @@ async function bulkCopyPath() {
   }
 }
 
+// 删除：所有选中（与单文件菜单同口径，danger 二次确认 + 文件名预览）
+const deletablePaths = computed(() => copyablePaths.value);
+
+function bulkDelete() {
+  const paths = deletablePaths.value;
+  if (paths.length === 0) return;
+  const preview = paths.slice(0, 5).join("\n");
+  const more = paths.length > 5 ? `\n…等共 ${paths.length} 个文件` : "";
+  confirmTitle.value = "删除选中文件";
+  confirmText.value = `确定要从磁盘删除以下 ${paths.length} 个文件吗？此操作不可撤销。\n\n${preview}${more}`;
+  pendingConfirmAction.value = async () => {
+    const result = await commitStore.deleteFiles(paths);
+    if (selectedFile.value && result.ok.includes(selectedFile.value.path)) {
+      selectedFile.value = null;
+      diffResult.value = null;
+    }
+    if (result.failed.length === 0) {
+      showToast(`已删除 ${result.ok.length} 个文件`);
+      clearSelection();
+    } else if (result.ok.length === 0) {
+      showToast(`删除全部失败：${result.failed[0].error}`);
+    } else {
+      showToast(`已删除 ${result.ok.length} / ${paths.length}，失败 ${result.failed.length}`);
+      // 部分失败：清除已成功的选中项，保留失败项让用户可重试
+      const next = new Set(selectedKeys.value);
+      for (const p of result.ok) {
+        next.delete(makeKey("staged", p));
+        next.delete(makeKey("unstaged", p));
+        next.delete(makeKey("untracked", p));
+      }
+      selectedKeys.value = next;
+    }
+  };
+  showConfirmDialog.value = true;
+}
+
 // ---- 过滤规则弹窗 ----
 const showFilterDialog = ref(false);
 const filterRulesDraft = ref("");
@@ -704,6 +740,11 @@ const contextMenuItems = computed<MenuItem[]>(() => {
       disabled: copyablePaths.value.length === 0,
       action: bulkCopyPath,
     });
+    items.push({
+      label: `对选中 ${n} 项 · 删除文件… (${deletablePaths.value.length})`,
+      disabled: deletablePaths.value.length === 0,
+      action: bulkDelete,
+    });
     items.push({ separator: true, label: "" });
   }
 
@@ -906,6 +947,14 @@ const contextMenuItems = computed<MenuItem[]>(() => {
                 @click="bulkCopyPath"
               >
                 复制路径 ({{ copyablePaths.length }})
+              </button>
+              <button
+                class="bulk-btn danger"
+                :disabled="deletablePaths.length === 0"
+                :title="`从磁盘删除 ${deletablePaths.length} 个文件（不可撤销）`"
+                @click="bulkDelete"
+              >
+                删除 ({{ deletablePaths.length }})
               </button>
               <button class="bulk-btn ghost" title="清除选择" @click="clearSelection">
                 清除
@@ -1510,6 +1559,10 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   color: var(--color-foreground);
   line-height: 1.5;
   margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 50vh;
+  overflow-y: auto;
 }
 
 .modal-footer {
