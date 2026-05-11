@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-electron/
+dist-server/
+release/
+release-verify/
+src-tauri/target/
+build/icon.ico
+
+# Vue / TS internal cache
+node_modules/.vue-global-types/
+.vue-global-types/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Tests / coverage
+coverage/
+.nyc_output/
+
+# Misc
+*.tsbuildinfo
