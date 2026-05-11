@@ -1,8 +1,40 @@
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, session, shell } from "electron";
 import * as path from "path";
 import { gitService } from "../server/git-service";
 
 let mainWindow: BrowserWindow | null = null;
+
+function installCsp() {
+  // 生产环境严格 CSP；开发环境允许 Vite HMR
+  const isDev = !!process.env.VITE_DEV_SERVER_URL;
+  const csp = isDev
+    ? [
+        "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: ws: wss: http: https:",
+        "img-src 'self' data: blob: https: http:",
+        "font-src 'self' data:",
+        "connect-src 'self' ws: wss: http: https:",
+      ].join("; ")
+    : [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob:",
+        "font-src 'self' data:",
+        "connect-src 'self'",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "frame-ancestors 'none'",
+      ].join("; ");
+
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [csp],
+      },
+    });
+  });
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -15,6 +47,9 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
     },
   });
 
@@ -25,12 +60,43 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, "../../dist/index.html"));
   }
 
+  // 拦截新窗口打开：一律走系统浏览器，不允许在 app 内导航
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) {
+      shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
+
+  // 阻止导航跳出 app 范围
+  mainWindow.webContents.on("will-navigate", (e, url) => {
+    const isDev = !!process.env.VITE_DEV_SERVER_URL;
+    const allowedPrefixes = isDev
+      ? [process.env.VITE_DEV_SERVER_URL ?? ""]
+      : ["file://"];
+    if (!allowedPrefixes.some((prefix) => prefix && url.startsWith(prefix))) {
+      e.preventDefault();
+      if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    }
+  });
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  installCsp();
+  createWindow();
+});
+
+// 全局拦截：禁止应用层 webContents 创建跨域子 webContents
+app.on("web-contents-created", (_e, contents) => {
+  contents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    return { action: "deny" };
+  });
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
@@ -249,6 +315,28 @@ ipcMain.handle(
   "get_working_file_content",
   (_e, repoPath: string, filePath: string) =>
     gitService.getWorkingFileContent(repoPath, filePath)
+);
+
+ipcMain.handle("get_merge_state", (_e, repoPath: string) =>
+  gitService.getMergeState(repoPath)
+);
+
+ipcMain.handle(
+  "continue_operation",
+  (
+    _e,
+    repoPath: string,
+    op: "merge" | "rebase" | "cherry-pick" | "revert"
+  ) => gitService.continueOperation(repoPath, op)
+);
+
+ipcMain.handle(
+  "abort_operation",
+  (
+    _e,
+    repoPath: string,
+    op: "merge" | "rebase" | "cherry-pick" | "revert"
+  ) => gitService.abortOperation(repoPath, op)
 );
 
 ipcMain.handle("clone_repo", (_e, url: string, targetPath: string) =>
