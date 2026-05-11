@@ -167,6 +167,19 @@ const stageablePaths = computed(() => [
 
 const unstageablePaths = computed(() => selectedFilesBySection.value.staged);
 
+// 回滚仅适用 staged + unstaged，与单文件菜单一致（untracked 应使用「删除文件」）
+const discardablePaths = computed(() => [
+  ...selectedFilesBySection.value.staged,
+  ...selectedFilesBySection.value.unstaged,
+]);
+
+// 复制路径：所有选中项（包含 untracked）
+const copyablePaths = computed(() => [
+  ...selectedFilesBySection.value.staged,
+  ...selectedFilesBySection.value.unstaged,
+  ...selectedFilesBySection.value.untracked,
+]);
+
 function isRowSelected(section: SectionInfo["key"], path: string) {
   return selectedKeys.value.has(makeKey(section, path));
 }
@@ -225,6 +238,49 @@ async function bulkUnstage() {
     clearSelection();
   } catch (e: any) {
     showToast(`取消暂存失败: ${e.message}`);
+  }
+}
+
+function bulkDiscard() {
+  const paths = discardablePaths.value;
+  if (paths.length === 0) return;
+  confirmTitle.value = "回滚选中更改";
+  confirmText.value = `确定要丢弃 ${paths.length} 个文件的本地修改吗？此操作不可撤销。`;
+  pendingConfirmAction.value = async () => {
+    const result = await commitStore.discardFiles(paths);
+    // 已被回滚的文件如果是当前预览，清空预览
+    if (selectedFile.value && result.ok.includes(selectedFile.value.path)) {
+      selectedFile.value = null;
+      diffResult.value = null;
+    }
+    if (result.failed.length === 0) {
+      showToast(`已回滚 ${result.ok.length} 个文件`);
+      clearSelection();
+    } else if (result.ok.length === 0) {
+      showToast(`回滚全部失败：${result.failed[0].error}`);
+    } else {
+      showToast(`已回滚 ${result.ok.length} / ${paths.length}，失败 ${result.failed.length}`);
+      // 部分失败时只清除已成功的选中项
+      const next = new Set(selectedKeys.value);
+      for (const p of result.ok) {
+        next.delete(makeKey("staged", p));
+        next.delete(makeKey("unstaged", p));
+      }
+      selectedKeys.value = next;
+    }
+  };
+  showConfirmDialog.value = true;
+}
+
+async function bulkCopyPath() {
+  const paths = copyablePaths.value;
+  if (paths.length === 0) return;
+  const text = paths.join("\n");
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(`已复制 ${paths.length} 个路径`);
+  } catch (e: any) {
+    showToast(`复制失败: ${e?.message ?? "剪贴板不可用"}`);
   }
 }
 
@@ -623,6 +679,34 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   const section = contextSection.value;
   const items: MenuItem[] = [];
 
+  // 多选 > 1 时，顶部展示 4 个最重要的批量操作（添加/取消/回滚/复制路径）
+  // 仅当当前右键的文件本身也在多选集合里时显示，避免误以为对单文件生效
+  const ctxKey = makeKey(section, contextFile.value.path);
+  if (selectedTotal.value > 1 && selectedKeys.value.has(ctxKey)) {
+    const n = selectedTotal.value;
+    items.push({
+      label: `对选中 ${n} 项 · 添加到 VCS (${stageablePaths.value.length})`,
+      disabled: stageablePaths.value.length === 0,
+      action: bulkStage,
+    });
+    items.push({
+      label: `对选中 ${n} 项 · 取消暂存 (${unstageablePaths.value.length})`,
+      disabled: unstageablePaths.value.length === 0,
+      action: bulkUnstage,
+    });
+    items.push({
+      label: `对选中 ${n} 项 · 回滚 (${discardablePaths.value.length})`,
+      disabled: discardablePaths.value.length === 0,
+      action: bulkDiscard,
+    });
+    items.push({
+      label: `对选中 ${n} 项 · 复制路径 (${copyablePaths.value.length})`,
+      disabled: copyablePaths.value.length === 0,
+      action: bulkCopyPath,
+    });
+    items.push({ separator: true, label: "" });
+  }
+
   // 冲突文件：优先显示「解决冲突」
   if (contextFile.value.status === "conflicted") {
     items.push({ label: "解决冲突...", action: () => openMergeDialog(contextFile.value!.path) });
@@ -806,6 +890,22 @@ const contextMenuItems = computed<MenuItem[]>(() => {
                 @click="bulkUnstage"
               >
                 取消暂存 ({{ unstageablePaths.length }})
+              </button>
+              <button
+                class="bulk-btn danger"
+                :disabled="discardablePaths.length === 0"
+                :title="`回滚 ${discardablePaths.length} 个文件的本地修改（untracked 不参与）`"
+                @click="bulkDiscard"
+              >
+                回滚 ({{ discardablePaths.length }})
+              </button>
+              <button
+                class="bulk-btn ghost"
+                :disabled="copyablePaths.length === 0"
+                :title="`复制 ${copyablePaths.length} 个文件路径到剪贴板`"
+                @click="bulkCopyPath"
+              >
+                复制路径 ({{ copyablePaths.length }})
               </button>
               <button class="bulk-btn ghost" title="清除选择" @click="clearSelection">
                 清除
@@ -1625,9 +1725,19 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   border: 1px solid var(--color-border);
 }
 
-.bulk-btn.ghost:hover {
+.bulk-btn.ghost:hover:not(:disabled) {
   background: var(--color-surface-hover);
   color: var(--color-foreground);
+}
+
+.bulk-btn.danger {
+  background: var(--color-error, #e05252);
+  color: white;
+  border: none;
+}
+
+.bulk-btn.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-error, #e05252) 85%, black);
 }
 
 /* ---- 过滤规则弹窗 ---- */

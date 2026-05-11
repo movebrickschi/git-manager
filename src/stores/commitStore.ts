@@ -62,15 +62,37 @@ export const useCommitStore = defineStore("commit", () => {
   async function stageFiles(paths: string[]) {
     if (!repoStore.activeRepo || paths.length === 0) return;
     const repoPath = repoStore.activeRepo.path;
-    await Promise.all(paths.map((p) => commands.stageFile(repoPath, p)));
+    for (const p of paths) {
+      await commands.stageFile(repoPath, p);
+    }
     await loadStatus();
   }
 
   async function unstageFiles(paths: string[]) {
     if (!repoStore.activeRepo || paths.length === 0) return;
     const repoPath = repoStore.activeRepo.path;
-    await Promise.all(paths.map((p) => commands.unstageFile(repoPath, p)));
+    for (const p of paths) {
+      await commands.unstageFile(repoPath, p);
+    }
     await loadStatus();
+  }
+
+  async function discardFiles(
+    paths: string[]
+  ): Promise<{ ok: string[]; failed: { path: string; error: string }[] }> {
+    const result = { ok: [] as string[], failed: [] as { path: string; error: string }[] };
+    if (!repoStore.activeRepo || paths.length === 0) return result;
+    const repoPath = repoStore.activeRepo.path;
+    for (const p of paths) {
+      try {
+        await commands.discardFileChanges(repoPath, p);
+        result.ok.push(p);
+      } catch (e: any) {
+        result.failed.push({ path: p, error: e?.message ?? String(e) });
+      }
+    }
+    await loadStatus();
+    return result;
   }
 
   async function commit() {
@@ -108,6 +130,7 @@ export const useCommitStore = defineStore("commit", () => {
     unstageAll,
     stageFiles,
     unstageFiles,
+    discardFiles,
     commit,
     commitAndPush,
   };
