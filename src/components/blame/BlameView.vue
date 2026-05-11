@@ -5,6 +5,7 @@ import { useLogStore } from "@/stores/logStore";
 import type { BlameInfo, BlameLine } from "@/utils/commands";
 import { commands } from "@/utils/commands";
 import { formatTimestamp, shortenHash } from "@/utils/format";
+import VirtualList from "@/components/common/VirtualList.vue";
 
 const props = defineProps<{
   filePath: string;
@@ -85,34 +86,41 @@ function isNewGroup(lines: BlameLine[], index: number): boolean {
   <div class="blame-view">
     <div v-if="loading" class="loading">加载 Blame 数据...</div>
     <div v-else-if="!blameInfo" class="empty">无法加载 Blame 数据</div>
-    <div v-else class="blame-content">
-      <div
-        v-for="(line, i) in blameInfo.lines"
-        :key="i"
-        class="blame-line"
-        :style="{ background: hoveredCommit === line.commitId ? 'var(--color-surface-active)' : commitColorMap[line.commitId] }"
-      >
-        <!-- Blame gutter -->
+    <VirtualList
+      v-else
+      class="blame-content"
+      :items="blameInfo.lines"
+      :item-height="20"
+      :overscan="20"
+      :get-key="(_line, i) => i"
+    >
+      <template #default="{ item: line, index: i }">
         <div
-          class="blame-gutter"
-          @mouseenter="showTooltip($event, line)"
-          @mouseleave="hideTooltip"
-          @click="jumpToCommit(line.commitId)"
+          class="blame-line"
+          :style="{ background: hoveredCommit === line.commitId ? 'var(--color-surface-active)' : commitColorMap[line.commitId] }"
         >
-          <template v-if="isNewGroup(blameInfo.lines, i)">
-            <span class="blame-hash mono">{{ line.shortId }}</span>
-            <span class="blame-author">{{ line.author }}</span>
-            <span class="blame-date">{{ formatTimestamp(line.time) }}</span>
-          </template>
+          <!-- Blame gutter -->
+          <div
+            class="blame-gutter"
+            @mouseenter="showTooltip($event, line)"
+            @mouseleave="hideTooltip"
+            @click="jumpToCommit(line.commitId)"
+          >
+            <template v-if="isNewGroup(blameInfo.lines, i)">
+              <span class="blame-hash mono">{{ line.shortId }}</span>
+              <span class="blame-author">{{ line.author }}</span>
+              <span class="blame-date">{{ formatTimestamp(line.time) }}</span>
+            </template>
+          </div>
+
+          <!-- Line number -->
+          <span class="line-number mono">{{ line.lineNo }}</span>
+
+          <!-- Content -->
+          <span class="line-content mono">{{ line.content }}</span>
         </div>
-
-        <!-- Line number -->
-        <span class="line-number mono">{{ line.lineNo }}</span>
-
-        <!-- Content -->
-        <span class="line-content mono">{{ line.content }}</span>
-      </div>
-    </div>
+      </template>
+    </VirtualList>
 
     <!-- Tooltip -->
     <Teleport to="body">
