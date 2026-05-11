@@ -1,8 +1,19 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { useRepoStore } from "./repoStore";
 import { commands } from "@/utils/commands";
-import type { FileStatus } from "@/utils/commands";
+import type { FileStatus, StatusResult } from "@/utils/commands";
+import { errMsg } from "@/utils/error";
+import { useAbortable } from "@/composables/useAbortable";
+
+function isAbortError(e: unknown): boolean {
+  return (
+    typeof e === "object" &&
+    e !== null &&
+    "name" in e &&
+    (e as { name?: unknown }).name === "AbortError"
+  );
+}
 
 export const useCommitStore = defineStore("commit", () => {
   const stagedFiles = ref<FileStatus[]>([]);
@@ -15,25 +26,40 @@ export const useCommitStore = defineStore("commit", () => {
 
   const repoStore = useRepoStore();
 
-  async function loadStatus() {
+  const { run: runFetchStatus, cancel: cancelFetchStatus } = useAbortable(
+    async (signal: AbortSignal, repoPath: string): Promise<StatusResult> => {
+      const result = await commands.getStatus(repoPath);
+      if (signal.aborted) {
+        throw new DOMException("aborted", "AbortError");
+      }
+      return result;
+    },
+  );
+
+  async function loadStatus(): Promise<void> {
     if (!repoStore.activeRepo) return;
     loading.value = true;
     try {
-      console.log('About to call getStatus for path:', repoStore.activeRepo.path); // Debug log
-      const result = await commands.getStatus(repoStore.activeRepo.path);
-      console.log('getStatus result:', result); // Debug log
+      const result = await runFetchStatus(repoStore.activeRepo.path);
       stagedFiles.value = result.staged;
       unstagedFiles.value = result.unstaged;
       untrackedFiles.value = result.untracked;
-      console.log(`Loaded status: ${result.staged.length} staged, ${result.unstaged.length} unstaged, ${result.untracked.length} untracked`);
     } catch (error) {
-      console.error('Error in loadStatus:', error); // More detailed error logging
-      // Re-throw the error so upper layer can handle it
+      if (isAbortError(error)) return; // 仓库切换 / 新 loadStatus 顶替时安静退出
+      console.error("[commitStore] loadStatus failed:", errMsg(error));
       throw error;
     } finally {
       loading.value = false;
     }
   }
+
+  // 仓库切换时取消未完成的 getStatus，避免旧结果污染新仓库面板
+  watch(
+    () => repoStore.activeRepo?.path,
+    () => {
+      cancelFetchStatus("repo switched");
+    },
+  );
 
   async function stageFile(path: string) {
     if (!repoStore.activeRepo) return;
@@ -87,8 +113,8 @@ export const useCommitStore = defineStore("commit", () => {
       try {
         await commands.discardFileChanges(repoPath, p);
         result.ok.push(p);
-      } catch (e: any) {
-        result.failed.push({ path: p, error: e?.message ?? String(e) });
+      } catch (e: unknown) {
+        result.failed.push({ path: p, error: errMsg(e) });
       }
     }
     await loadStatus();
@@ -105,8 +131,8 @@ export const useCommitStore = defineStore("commit", () => {
       try {
         await commands.deleteFile(repoPath, p);
         result.ok.push(p);
-      } catch (e: any) {
-        result.failed.push({ path: p, error: e?.message ?? String(e) });
+      } catch (e: unknown) {
+        result.failed.push({ path: p, error: errMsg(e) });
       }
     }
     await loadStatus();
@@ -142,6 +168,7 @@ export const useCommitStore = defineStore("commit", () => {
     loading,
     messageHistory,
     loadStatus,
+    cancelFetchStatus,
     stageFile,
     unstageFile,
     stageAll,
