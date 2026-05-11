@@ -1,6 +1,7 @@
-import simpleGit, { SimpleGit, DiffResult as SGDiffResult } from "simple-git";
+import { simpleGit, type SimpleGit } from "simple-git";
 import * as path from "path";
 import * as fs from "fs";
+import { safeJoin } from "./utils/path-safe.js";
 
 export interface RepoOpenResult {
   path: string;
@@ -193,8 +194,72 @@ export interface RemoteInfo {
   fetchUrl: string;
 }
 
+const GIT_TIMEOUT_MS = 30_000;
+
+const NON_RETRYABLE_PATTERNS = [
+  /authentication/i,
+  /permission denied/i,
+  /non-fast-forward/i,
+  /conflict/i,
+  /path traversal/i,
+  /not a git repository/i,
+];
+const RETRYABLE_PATTERNS = [
+  /network/i,
+  /timeout|timed out/i,
+  /ENOTFOUND|ECONNRESET|ECONNREFUSED|ETIMEDOUT/i,
+  /temporarily/i,
+  /could not resolve/i,
+  /unable to access/i,
+  /server side error|service unavailable/i,
+];
+
+function shouldRetry(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (NON_RETRYABLE_PATTERNS.some((p) => p.test(msg))) return false;
+  return RETRYABLE_PATTERNS.some((p) => p.test(msg));
+}
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  opts: { tries?: number; baseMs?: number; label?: string } = {}
+): Promise<T> {
+  const tries = opts.tries ?? 3;
+  const base = opts.baseMs ?? 500;
+  let lastErr: unknown;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      if (i === tries - 1 || !shouldRetry(e)) throw e;
+      const delay = base * 2 ** i + Math.random() * base;
+      console.warn(
+        `[withRetry] ${opts.label ?? "op"} attempt ${i + 1}/${tries} failed: ${errStr(e)} ; retry in ${Math.round(delay)}ms`
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
+}
+
+function errStr(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  if (e && typeof e === "object" && "message" in e) {
+    const m = (e as { message?: unknown }).message;
+    if (typeof m === "string") return m;
+  }
+  return String(e);
+}
+
 function getGit(repoPath: string): SimpleGit {
-  return simpleGit(repoPath);
+  return simpleGit({
+    baseDir: repoPath,
+    binary: "git",
+    maxConcurrentProcesses: 6,
+    timeout: { block: GIT_TIMEOUT_MS },
+  });
 }
 
 function parseStatusCode(
@@ -463,24 +528,48 @@ export class GitService {
     return { commits, graphRows };
   }
 
+  /**
+   * 提交图构建。原 O(N²) 实现使用 `activeLanes.indexOf(...)` 在 1k+ 提交时显著卡顿。
+   * 改用 `lanes: (string|null)[]` + `laneByCommit: Map<commitId, col>` 双向索引：
+   * - 查找 lane: O(1) Map.get
+   * - 分配 lane: 优先复用第一个空闲 lane (lanes[i] === null)，减少 lane 单调增长
+   * - 总复杂度 O(N * avgParents)
+   */
   private buildSimpleGraph(commits: CommitInfo[]): GraphRow[] {
     const rows: GraphRow[] = [];
-    const activeLanes: string[] = [];
+    const lanes: (string | null)[] = [];
+    const laneByCommit = new Map<string, number>();
+
+    const allocLane = (commitId: string): number => {
+      for (let i = 0; i < lanes.length; i++) {
+        if (lanes[i] === null) {
+          lanes[i] = commitId;
+          laneByCommit.set(commitId, i);
+          return i;
+        }
+      }
+      const col = lanes.length;
+      lanes.push(commitId);
+      laneByCommit.set(commitId, col);
+      return col;
+    };
 
     for (const commit of commits) {
-      let col = activeLanes.indexOf(commit.id);
-      if (col === -1) {
-        col = activeLanes.length;
-        activeLanes.push(commit.id);
+      let col = laneByCommit.get(commit.id);
+      if (col === undefined) {
+        col = allocLane(commit.id);
       }
+      laneByCommit.delete(commit.id);
 
       const edges: GraphEdge[] = [];
       const colorIdx = col % 8;
 
       if (commit.parents.length === 0) {
-        activeLanes[col] = "";
+        lanes[col] = null;
       } else {
-        activeLanes[col] = commit.parents[0];
+        const firstParent = commit.parents[0];
+        lanes[col] = firstParent;
+        laneByCommit.set(firstParent, col);
         edges.push({
           fromCol: col,
           toCol: col,
@@ -490,10 +579,9 @@ export class GitService {
 
         for (let i = 1; i < commit.parents.length; i++) {
           const parentId = commit.parents[i];
-          let parentCol = activeLanes.indexOf(parentId);
-          if (parentCol === -1) {
-            parentCol = activeLanes.length;
-            activeLanes.push(parentId);
+          let parentCol = laneByCommit.get(parentId);
+          if (parentCol === undefined) {
+            parentCol = allocLane(parentId);
           }
           edges.push({
             fromCol: col,
@@ -743,17 +831,20 @@ export class GitService {
     const git = getGit(repoPath);
     try {
       const result = await git.merge([name]);
+      const conflicts = (result.conflicts ?? []).map((c) =>
+        typeof c === "string" ? c : (c as { file?: string }).file ?? String(c)
+      );
       return {
         success: true,
-        conflicts: (result.conflicts ?? []).map((c: any) => typeof c === "string" ? c : c.file ?? String(c)),
+        conflicts,
         message: result.result ?? "Merge completed",
       };
-    } catch (e: any) {
+    } catch (e: unknown) {
       const conflicts = await this.getConflictFiles(repoPath);
       return {
         success: false,
         conflicts,
-        message: e.message ?? "Merge failed with conflicts",
+        message: errStr(e) || "Merge failed with conflicts",
       };
     }
   }
@@ -763,12 +854,12 @@ export class GitService {
     try {
       await git.rebase([upstream]);
       return { success: true, conflicts: [], message: "Rebase completed" };
-    } catch (e: any) {
+    } catch (e: unknown) {
       const conflicts = await this.getConflictFiles(repoPath);
       return {
         success: false,
         conflicts,
-        message: e.message ?? "Rebase failed with conflicts",
+        message: errStr(e) || "Rebase failed with conflicts",
       };
     }
   }
@@ -778,12 +869,12 @@ export class GitService {
     try {
       await git.raw(["cherry-pick", commitId]);
       return { success: true, conflicts: [], message: "Cherry-pick completed" };
-    } catch (e: any) {
+    } catch (e: unknown) {
       const conflicts = await this.getConflictFiles(repoPath);
       return {
         success: false,
         conflicts,
-        message: e.message ?? "Cherry-pick failed with conflicts",
+        message: errStr(e) || "Cherry-pick failed with conflicts",
       };
     }
   }
@@ -871,7 +962,7 @@ export class GitService {
     const args: string[] = ["push"];
     if (remote) args.push(remote);
     if (branch) args.push(branch);
-    await git.raw(args);
+    await withRetry(() => git.raw(args), { label: `push ${remote ?? ""} ${branch ?? ""}` });
   }
 
   async getUnpushedCommits(
@@ -949,33 +1040,35 @@ export class GitService {
       if (remote) args.push(remote);
       await git.raw(args);
       return { success: true, conflicts: [], message: "Pull completed" };
-    } catch (e: any) {
+    } catch (e: unknown) {
       const conflicts = await this.getConflictFiles(repoPath);
       return {
         success: false,
         conflicts,
-        message: e.message ?? "Pull failed",
+        message: errStr(e) || "Pull failed",
       };
     }
   }
 
   async fetch(repoPath: string, remote?: string): Promise<void> {
     const git = getGit(repoPath);
-    if (remote) {
-      await git.fetch(remote);
-    } else {
-      await git.fetch();
-    }
+    await withRetry(
+      () => (remote ? git.fetch(remote) : git.fetch()),
+      { label: `fetch ${remote ?? "(default)"}` }
+    );
   }
 
   async fetchAll(repoPath: string): Promise<void> {
     const git = getGit(repoPath);
-    await git.fetch(["--all"]);
+    await withRetry(() => git.fetch(["--all"]), { label: "fetch --all" });
   }
 
   async fetchBranch(repoPath: string, remote: string, branchName: string): Promise<void> {
     const git = getGit(repoPath);
-    await git.raw(["fetch", remote, `${branchName}:${branchName}`]);
+    await withRetry(
+      () => git.raw(["fetch", remote, `${branchName}:${branchName}`]),
+      { label: `fetch ${remote} ${branchName}` }
+    );
   }
 
   async getRemotes(repoPath: string): Promise<RemoteInfo[]> {
@@ -1173,23 +1266,100 @@ export class GitService {
     filePath: string,
     content: string
   ): Promise<void> {
-    const fullPath = path.join(repoPath, filePath);
+    const fullPath = safeJoin(repoPath, filePath);
     fs.writeFileSync(fullPath, content, "utf-8");
     const git = getGit(repoPath);
     await git.add(filePath);
+  }
+
+  /**
+   * 检测仓库当前是否处于 merge / rebase / cherry-pick / revert 半成态。
+   * 通过 .git 目录下的标记文件判断（git 标准实现）。
+   */
+  async getMergeState(repoPath: string): Promise<{
+    state: "none" | "merge" | "rebase" | "cherry-pick" | "revert";
+    hasConflicts: boolean;
+  }> {
+    const gitDir = path.join(repoPath, ".git");
+    const checkFile = (rel: string) => {
+      try {
+        return fs.existsSync(path.join(gitDir, rel));
+      } catch {
+        return false;
+      }
+    };
+    let state: "none" | "merge" | "rebase" | "cherry-pick" | "revert" = "none";
+    if (checkFile("MERGE_HEAD")) state = "merge";
+    else if (checkFile("rebase-merge") || checkFile("rebase-apply"))
+      state = "rebase";
+    else if (checkFile("CHERRY_PICK_HEAD")) state = "cherry-pick";
+    else if (checkFile("REVERT_HEAD")) state = "revert";
+
+    const conflicts = await this.getConflictFiles(repoPath);
+    return { state, hasConflicts: conflicts.length > 0 };
+  }
+
+  async continueOperation(
+    repoPath: string,
+    op: "merge" | "rebase" | "cherry-pick" | "revert"
+  ): Promise<MergeResult> {
+    const git = getGit(repoPath);
+    try {
+      if (op === "merge") {
+        await git.raw(["commit", "--no-edit"]);
+      } else if (op === "rebase") {
+        await git.raw(["rebase", "--continue"]);
+      } else if (op === "cherry-pick") {
+        await git.raw(["cherry-pick", "--continue"]);
+      } else {
+        await git.raw(["revert", "--continue"]);
+      }
+      return { success: true, conflicts: [], message: `${op} continued` };
+    } catch (e: unknown) {
+      const conflicts = await this.getConflictFiles(repoPath);
+      return {
+        success: false,
+        conflicts,
+        message: errStr(e) || `${op} continue failed`,
+      };
+    }
+  }
+
+  async abortOperation(
+    repoPath: string,
+    op: "merge" | "rebase" | "cherry-pick" | "revert"
+  ): Promise<void> {
+    const git = getGit(repoPath);
+    if (op === "merge") {
+      await git.raw(["merge", "--abort"]);
+    } else if (op === "rebase") {
+      await git.raw(["rebase", "--abort"]);
+    } else if (op === "cherry-pick") {
+      await git.raw(["cherry-pick", "--abort"]);
+    } else {
+      await git.raw(["revert", "--abort"]);
+    }
   }
 
   async getWorkingFileContent(
     repoPath: string,
     filePath: string
   ): Promise<string> {
-    const fullPath = path.join(repoPath, filePath);
+    const fullPath = safeJoin(repoPath, filePath);
     return fs.readFileSync(fullPath, "utf-8");
   }
 
   async cloneRepo(url: string, targetPath: string): Promise<void> {
-    const git = simpleGit();
-    await git.clone(url, targetPath);
+    const git = simpleGit({
+      binary: "git",
+      maxConcurrentProcesses: 1,
+      timeout: { block: GIT_TIMEOUT_MS * 4 },
+    });
+    await withRetry(() => git.clone(url, targetPath), {
+      tries: 3,
+      baseMs: 1000,
+      label: `clone ${url}`,
+    });
   }
 
   async getFileContent(
@@ -1206,12 +1376,12 @@ export class GitService {
     try {
       await git.raw(["revert", "--no-edit", commitId]);
       return { success: true, conflicts: [], message: "Revert completed" };
-    } catch (e: any) {
+    } catch (e: unknown) {
       const conflicts = await this.getConflictFiles(repoPath);
       return {
         success: false,
         conflicts,
-        message: e.message ?? "Revert failed with conflicts",
+        message: errStr(e) || "Revert failed with conflicts",
       };
     }
   }
@@ -1248,7 +1418,7 @@ export class GitService {
   }
 
   async deleteFile(repoPath: string, filePath: string): Promise<void> {
-    const fullPath = path.join(repoPath, filePath);
+    const fullPath = safeJoin(repoPath, filePath);
     fs.unlinkSync(fullPath);
   }
 

@@ -1,15 +1,53 @@
 import { Router, Request, Response } from "express";
-import { gitService } from "./git-service";
+import { randomUUID } from "crypto";
+import { gitService } from "./git-service.js";
 
 const router = Router();
 
+const IS_PROD = process.env.NODE_ENV === "production";
+
+function classifyError(e: any): { code: string; status: number } {
+  const msg = String(e?.message ?? e ?? "").toLowerCase();
+  if (msg.includes("path traversal") || msg.includes("invalid filepath")) {
+    return { code: "PATH_DENIED", status: 400 };
+  }
+  if (msg.includes("not a git repository") || msg.includes("enoent")) {
+    return { code: "REPO_NOT_FOUND", status: 404 };
+  }
+  if (msg.includes("conflict")) {
+    return { code: "GIT_CONFLICT", status: 409 };
+  }
+  if (msg.includes("non-fast-forward")) {
+    return { code: "NON_FAST_FORWARD", status: 409 };
+  }
+  if (msg.includes("authentication") || msg.includes("permission denied")) {
+    return { code: "AUTH_FAILED", status: 401 };
+  }
+  if (msg.includes("timeout") || msg.includes("timed out")) {
+    return { code: "GIT_TIMEOUT", status: 504 };
+  }
+  return { code: "GIT_ERR", status: 500 };
+}
+
 function wrap(fn: (req: Request) => Promise<any>) {
   return async (req: Request, res: Response) => {
+    const traceId = randomUUID();
+    res.setHeader("X-Trace-Id", traceId);
     try {
       const result = await fn(req);
       res.json({ success: true, data: result });
     } catch (e: any) {
-      res.status(500).json({ success: false, error: e.message ?? String(e) });
+      const { code, status } = classifyError(e);
+      console.error(
+        `[${traceId}] ${req.method} ${req.path} ${code}:`,
+        e?.stack ?? e
+      );
+      res.status(status).json({
+        success: false,
+        code,
+        traceId,
+        error: IS_PROD ? code : e?.message ?? String(e),
+      });
     }
   };
 }
@@ -266,6 +304,21 @@ router.post(
   wrap((req) =>
     gitService.getWorkingFileContent(req.body.repoPath, req.body.filePath)
   )
+);
+
+router.post(
+  "/merge-state",
+  wrap((req) => gitService.getMergeState(req.body.repoPath))
+);
+
+router.post(
+  "/merge-op/continue",
+  wrap((req) => gitService.continueOperation(req.body.repoPath, req.body.op))
+);
+
+router.post(
+  "/merge-op/abort",
+  wrap((req) => gitService.abortOperation(req.body.repoPath, req.body.op))
 );
 
 router.post(
