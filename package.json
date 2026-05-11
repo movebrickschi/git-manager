@@ -15,7 +15,19 @@
     "prebuild:electron": "node scripts/prebuild-clean.mjs",
     "build:electron": "npm run build:icon && vue-tsc --noEmit && vite build && tsc -p tsconfig.electron.json && node scripts/postbuild-electron.mjs && electron-builder",
     "build:web": "vue-tsc --noEmit && vite build && tsc -p tsconfig.server.json",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck:web": "vue-tsc --noEmit",
+    "typecheck:server": "tsc --noEmit -p tsconfig.server.json",
+    "typecheck:electron": "tsc --noEmit -p tsconfig.electron.json",
+    "typecheck": "npm run typecheck:web && npm run typecheck:server && npm run typecheck:electron",
+    "lint": "eslint . --ext .ts,.vue --max-warnings 0",
+    "lint:fix": "eslint . --ext .ts,.vue --fix",
+    "format": "prettier --write \"src/**/*.{ts,vue,css}\" \"server/**/*.ts\" \"electron/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.{ts,vue,css}\" \"server/**/*.ts\" \"electron/**/*.ts\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check": "npm run typecheck && npm run lint && npm run test"
   },
   "dependencies": {
     "@vueuse/core": "^12.5.0",
@@ -27,6 +39,7 @@
     "simple-git": "^3.27.0",
     "splitpanes": "^3.1.5",
     "vue": "^3.5.13",
+    "vue-i18n": "^11.4.2",
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
@@ -34,17 +47,21 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
+    "@types/supertest": "^7.2.0",
     "@vitejs/plugin-vue": "^5.2.0",
+    "@vitest/coverage-v8": "^4.1.5",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.0",
     "electron": "^33.0.0",
     "electron-builder": "^25.1.0",
     "png-to-ico": "^3.0.1",
     "sharp": "^0.34.5",
+    "supertest": "^7.2.2",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vite": "^6.1.0",
+    "vitest": "^4.1.5",
     "vue-tsc": "^2.2.0"
   },
   "build": {
