@@ -1,0 +1,64 @@
+import type { Commands } from "../src/utils/types.js";
+
+export interface CommandSpec<K extends keyof Commands = keyof Commands> {
+  method: K;
+  ipc: string;
+  http: string;
+  bodyKeys: readonly string[];
+}
+
+export const COMMANDS = [
+  { method: "openRepo", ipc: "open_repo", http: "/repo/open", bodyKeys: ["path"] },
+  { method: "getLog", ipc: "get_log", http: "/log", bodyKeys: ["repoPath", "filter"] },
+  { method: "getCommitDetail", ipc: "get_commit_detail", http: "/commit/detail", bodyKeys: ["repoPath", "commitId"] },
+  { method: "getCommitFiles", ipc: "get_commit_files", http: "/commit/files", bodyKeys: ["repoPath", "commitId"] },
+  { method: "getCommitDiff", ipc: "get_commit_diff", http: "/commit/diff", bodyKeys: ["repoPath", "commitId", "filePath"] },
+  { method: "getFileDiff", ipc: "get_file_diff", http: "/file/diff", bodyKeys: ["repoPath", "filePath", "staged"] },
+  { method: "compareCommits", ipc: "compare_commits", http: "/commits/compare", bodyKeys: ["repoPath", "fromId", "toId"] },
+  { method: "getBranches", ipc: "get_branches", http: "/branches", bodyKeys: ["repoPath"] },
+  { method: "createBranch", ipc: "create_branch", http: "/branch/create", bodyKeys: ["repoPath", "name", "startPoint"] },
+  { method: "checkoutBranch", ipc: "checkout_branch", http: "/branch/checkout", bodyKeys: ["repoPath", "name"] },
+  { method: "deleteBranch", ipc: "delete_branch", http: "/branch/delete", bodyKeys: ["repoPath", "name", "force"] },
+  { method: "renameBranch", ipc: "rename_branch", http: "/branch/rename", bodyKeys: ["repoPath", "oldName", "newName"] },
+  { method: "mergeBranch", ipc: "merge_branch", http: "/branch/merge", bodyKeys: ["repoPath", "name"] },
+  { method: "rebaseBranch", ipc: "rebase_branch", http: "/branch/rebase", bodyKeys: ["repoPath", "upstream"] },
+  { method: "cherryPick", ipc: "cherry_pick", http: "/cherry-pick", bodyKeys: ["repoPath", "commitId"] },
+  { method: "revertCommit", ipc: "revert_commit", http: "/commit/revert", bodyKeys: ["repoPath", "commitId"] },
+  { method: "resetToCommit", ipc: "reset_to_commit", http: "/commit/reset", bodyKeys: ["repoPath", "commitId", "mode"] },
+  { method: "getStatus", ipc: "get_status", http: "/status", bodyKeys: ["repoPath"] },
+  { method: "stageFile", ipc: "stage_file", http: "/stage/file", bodyKeys: ["repoPath", "filePath"] },
+  { method: "unstageFile", ipc: "unstage_file", http: "/unstage/file", bodyKeys: ["repoPath", "filePath"] },
+  { method: "stageAll", ipc: "stage_all", http: "/stage/all", bodyKeys: ["repoPath"] },
+  { method: "unstageAll", ipc: "unstage_all", http: "/unstage/all", bodyKeys: ["repoPath"] },
+  { method: "commit", ipc: "commit", http: "/commit", bodyKeys: ["repoPath", "message", "amend"] },
+  { method: "push", ipc: "push_remote", http: "/push", bodyKeys: ["repoPath", "remote", "branch"] },
+  { method: "getUnpushedCommits", ipc: "get_unpushed_commits", http: "/unpushed-commits", bodyKeys: ["repoPath", "remote", "branch"] },
+  { method: "pull", ipc: "pull_remote", http: "/pull", bodyKeys: ["repoPath", "remote", "rebase"] },
+  { method: "fetch", ipc: "fetch_remote", http: "/fetch", bodyKeys: ["repoPath", "remote"] },
+  { method: "fetchAll", ipc: "fetch_all", http: "/fetch/all", bodyKeys: ["repoPath"] },
+  { method: "fetchBranch", ipc: "fetch_branch", http: "/branch/fetch-update", bodyKeys: ["repoPath", "remote", "branchName"] },
+  { method: "getRemotes", ipc: "get_remotes", http: "/remotes", bodyKeys: ["repoPath"] },
+  { method: "getStashList", ipc: "get_stash_list", http: "/stash/list", bodyKeys: ["repoPath"] },
+  { method: "stashSave", ipc: "stash_save", http: "/stash/save", bodyKeys: ["repoPath", "message", "includeUntracked"] },
+  { method: "stashApply", ipc: "stash_apply", http: "/stash/apply", bodyKeys: ["repoPath", "index"] },
+  { method: "stashPop", ipc: "stash_pop", http: "/stash/pop", bodyKeys: ["repoPath", "index"] },
+  { method: "stashDrop", ipc: "stash_drop", http: "/stash/drop", bodyKeys: ["repoPath", "index"] },
+  { method: "getStashFiles", ipc: "get_stash_files", http: "/stash/files", bodyKeys: ["repoPath", "index"] },
+  { method: "getStashFileDiff", ipc: "get_stash_file_diff", http: "/stash/file-diff", bodyKeys: ["repoPath", "index", "filePath"] },
+  { method: "getBlame", ipc: "get_blame", http: "/blame", bodyKeys: ["repoPath", "filePath", "commitId"] },
+  { method: "getConflictFiles", ipc: "get_conflict_files", http: "/conflict/files", bodyKeys: ["repoPath"] },
+  { method: "getConflictContent", ipc: "get_conflict_content", http: "/conflict/content", bodyKeys: ["repoPath", "filePath"] },
+  { method: "resolveConflict", ipc: "resolve_conflict", http: "/conflict/resolve", bodyKeys: ["repoPath", "filePath", "content"] },
+  { method: "getWorkingFileContent", ipc: "get_working_file_content", http: "/conflict/working-content", bodyKeys: ["repoPath", "filePath"] },
+  { method: "getMergeState", ipc: "get_merge_state", http: "/merge-state", bodyKeys: ["repoPath"] },
+  { method: "continueOperation", ipc: "continue_operation", http: "/merge-op/continue", bodyKeys: ["repoPath", "op"] },
+  { method: "abortOperation", ipc: "abort_operation", http: "/merge-op/abort", bodyKeys: ["repoPath", "op"] },
+  { method: "cloneRepo", ipc: "clone_repo", http: "/clone", bodyKeys: ["url", "path"] },
+  { method: "getFileContent", ipc: "get_file_content", http: "/file/content", bodyKeys: ["repoPath", "commitId", "filePath"] },
+  { method: "discardFileChanges", ipc: "discard_file_changes", http: "/file/discard", bodyKeys: ["repoPath", "filePath"] },
+  { method: "getFileDiffRaw", ipc: "get_file_diff_raw", http: "/file/diff-raw", bodyKeys: ["repoPath", "filePath", "staged"] },
+  { method: "deleteFile", ipc: "delete_file", http: "/file/delete", bodyKeys: ["repoPath", "filePath"] },
+  { method: "stashFile", ipc: "stash_file", http: "/stash/file", bodyKeys: ["repoPath", "filePath", "message"] },
+] as const satisfies readonly CommandSpec[];
+
+export type CommandMethod = (typeof COMMANDS)[number]["method"];

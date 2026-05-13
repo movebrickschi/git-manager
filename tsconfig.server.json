@@ -15,5 +15,5 @@
     "declaration": false,
     "sourceMap": true
   },
-  "include": ["server/**/*.ts"]
+  "include": ["server/**/*.ts", "shared/**/*.ts", "src/utils/types.ts"]
 }
