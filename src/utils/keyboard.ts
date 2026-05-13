@@ -12,7 +12,7 @@ export interface KeyBinding {
 export function useKeyboardShortcuts(bindings: KeyBinding[]) {
   function handler(e: KeyboardEvent) {
     for (const binding of bindings) {
-      const ctrlMatch = binding.ctrl ? (e.ctrlKey || e.metaKey) : !(e.ctrlKey || e.metaKey);
+      const ctrlMatch = binding.ctrl ? e.ctrlKey || e.metaKey : !(e.ctrlKey || e.metaKey);
       const shiftMatch = binding.shift ? e.shiftKey : !e.shiftKey;
       const altMatch = binding.alt ? e.altKey : !e.altKey;
 
@@ -23,7 +23,11 @@ export function useKeyboardShortcuts(bindings: KeyBinding[]) {
         altMatch
       ) {
         const target = e.target as HTMLElement;
-        if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
+        if (
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable
+        ) {
           if (!binding.ctrl) continue;
         }
 

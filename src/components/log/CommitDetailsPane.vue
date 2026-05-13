@@ -47,9 +47,7 @@ function copyHash() {
 
     <div v-if="loading" class="empty">加载中...</div>
 
-    <div v-else-if="!selectedCommit" class="empty">
-      选择一个提交查看详情
-    </div>
+    <div v-else-if="!selectedCommit" class="empty">选择一个提交查看详情</div>
 
     <div v-else class="details-content">
       <div class="commit-message">{{ selectedCommit.message }}</div>
@@ -91,7 +89,8 @@ function copyHash() {
               :key="parent"
               class="parent-hash mono"
               @click="logStore.selectCommit(parent)"
-            >{{ shortenHash(parent) }}</span>
+              >{{ shortenHash(parent) }}</span
+            >
           </span>
         </div>
 
@@ -103,7 +102,8 @@ function copyHash() {
               :key="ref.name"
               class="ref-badge"
               :class="'ref-' + ref.refType"
-            >{{ ref.name }}</span>
+              >{{ ref.name }}</span
+            >
           </span>
         </div>
       </div>
@@ -218,8 +218,23 @@ function copyHash() {
   font-weight: 500;
 }
 
-.ref-head { background: var(--color-branch-head); color: #1e1e1e; }
-.ref-local { background: rgba(78, 201, 176, 0.2); color: var(--color-branch-local); border: 1px solid var(--color-branch-local); }
-.ref-remote { background: rgba(197, 134, 192, 0.2); color: var(--color-branch-remote); border: 1px solid var(--color-branch-remote); }
-.ref-tag { background: rgba(220, 220, 170, 0.2); color: var(--color-branch-tag); border: 1px solid var(--color-branch-tag); }
+.ref-head {
+  background: var(--color-branch-head);
+  color: #1e1e1e;
+}
+.ref-local {
+  background: rgba(78, 201, 176, 0.2);
+  color: var(--color-branch-local);
+  border: 1px solid var(--color-branch-local);
+}
+.ref-remote {
+  background: rgba(197, 134, 192, 0.2);
+  color: var(--color-branch-remote);
+  border: 1px solid var(--color-branch-remote);
+}
+.ref-tag {
+  background: rgba(220, 220, 170, 0.2);
+  color: var(--color-branch-tag);
+  border: 1px solid var(--color-branch-tag);
+}
 </style>

@@ -33,7 +33,7 @@ export const useCommitStore = defineStore("commit", () => {
         throw new DOMException("aborted", "AbortError");
       }
       return result;
-    },
+    }
   );
 
   async function loadStatus(): Promise<void> {
@@ -58,7 +58,7 @@ export const useCommitStore = defineStore("commit", () => {
     () => repoStore.activeRepo?.path,
     () => {
       cancelFetchStatus("repo switched");
-    },
+    }
   );
 
   async function stageFile(path: string) {
@@ -141,11 +141,7 @@ export const useCommitStore = defineStore("commit", () => {
 
   async function commit() {
     if (!repoStore.activeRepo || !commitMessage.value.trim()) return;
-    await commands.commit(
-      repoStore.activeRepo.path,
-      commitMessage.value,
-      isAmend.value
-    );
+    await commands.commit(repoStore.activeRepo.path, commitMessage.value, isAmend.value);
     messageHistory.value.unshift(commitMessage.value);
     if (messageHistory.value.length > 20) messageHistory.value.pop();
     commitMessage.value = "";

@@ -57,8 +57,12 @@ function getStatusLabel(status: string): string {
           @click="toggleDir(node.path)"
         >
           <svg
-            width="12" height="12" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" stroke-width="2"
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
             :style="{ transform: isCollapsed(node.path) ? 'rotate(-90deg)' : '' }"
           >
             <polyline points="6 9 12 15 18 9" />
@@ -79,7 +83,8 @@ function getStatusLabel(status: string): string {
             v-if="node.file"
             class="file-status"
             :style="{ color: getStatusColor(node.file.status) }"
-          >{{ getStatusLabel(node.file.status) }}</span>
+            >{{ getStatusLabel(node.file.status) }}</span
+          >
         </div>
       </template>
     </template>
@@ -95,10 +100,9 @@ function getStatusLabel(status: string): string {
       >
         <span class="file-name">{{ getFileName(file.path) }}</span>
         <span class="file-dir">{{ getFileDir(file.path) }}</span>
-        <span
-          class="file-status"
-          :style="{ color: getStatusColor(file.status) }"
-        >{{ getStatusLabel(file.status) }}</span>
+        <span class="file-status" :style="{ color: getStatusColor(file.status) }">{{
+          getStatusLabel(file.status)
+        }}</span>
       </div>
     </template>
   </div>
@@ -123,7 +127,8 @@ function getStatusLabel(status: string): string {
   background: var(--color-surface-hover);
 }
 
-.tree-file, .flat-file {
+.tree-file,
+.flat-file {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -135,11 +140,13 @@ function getStatusLabel(status: string): string {
   padding-left: 8px;
 }
 
-.tree-file:hover, .flat-file:hover {
+.tree-file:hover,
+.flat-file:hover {
   background: var(--color-surface-hover);
 }
 
-.tree-file.selected, .flat-file.selected {
+.tree-file.selected,
+.flat-file.selected {
   background: var(--color-surface-active);
 }
 

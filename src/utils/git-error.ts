@@ -25,7 +25,10 @@ const PATTERN_MAP: Array<[RegExp, string]> = [
   [/connection (timed out|refused|reset)/i, "连接异常，请稍后重试"],
   [/network is unreachable/i, "网络不可达"],
   [/repository not found/i, "仓库不存在或无访问权限"],
-  [/refusing to merge unrelated histories/i, "拒绝合并不相关的历史（需 --allow-unrelated-histories）"],
+  [
+    /refusing to merge unrelated histories/i,
+    "拒绝合并不相关的历史（需 --allow-unrelated-histories）",
+  ],
   [/your local changes.*would be overwritten/i, "本地未提交的改动会被覆盖，请先 commit / stash"],
   [/please commit your changes or stash them/i, "请先提交或搁置本地改动"],
   [/cannot lock ref|unable to create.*lock/i, "git 索引被锁定，请关闭其他 git 进程后重试"],
@@ -43,7 +46,9 @@ const PATTERN_MAP: Array<[RegExp, string]> = [
   [/timeout|timed out/i, "操作超时"],
 ];
 
-export function translateGitError(input: { code?: string; error?: string; message?: string } | string | null | undefined): string {
+export function translateGitError(
+  input: { code?: string; error?: string; message?: string } | string | null | undefined
+): string {
   if (input == null) return "未知错误";
   if (typeof input === "string") return translateRaw(input);
   const code = input.code;

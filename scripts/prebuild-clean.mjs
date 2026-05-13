@@ -12,19 +12,13 @@ if (process.platform !== "win32") {
   process.exit(0);
 }
 
-const TARGET_NAMES = [
-  "Git Manager.exe",
-  "rcedit-x64.exe",
-  "rcedit-ia32.exe",
-  "app-builder.exe",
-];
+const TARGET_NAMES = ["Git Manager.exe", "rcedit-x64.exe", "rcedit-ia32.exe", "app-builder.exe"];
 
 function killByName(name) {
   try {
     execSync(`taskkill /F /IM "${name}" /T`, { stdio: "pipe" });
     console.log(`[prebuild-clean] killed ${name}`);
-  } catch {
-  }
+  } catch {}
 }
 
 function killProjectLocalProcesses() {
@@ -35,16 +29,17 @@ function killProjectLocalProcesses() {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     });
-    const pids = out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    const pids = out
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
     for (const pid of pids) {
       try {
         execSync(`taskkill /F /PID ${pid} /T`, { stdio: "pipe" });
         console.log(`[prebuild-clean] killed PID ${pid} (running from project dir)`);
-      } catch {
-      }
+      } catch {}
     }
-  } catch {
-  }
+  } catch {}
 }
 
 async function exists(p) {
@@ -78,5 +73,7 @@ killProjectLocalProcesses();
 
 const ok = await tryRemoveRelease();
 if (!ok) {
-  console.log("[prebuild-clean] release/ still locked; electron-builder will try to overwrite in place.");
+  console.log(
+    "[prebuild-clean] release/ still locked; electron-builder will try to overwrite in place."
+  );
 }

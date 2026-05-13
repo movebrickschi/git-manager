@@ -65,9 +65,7 @@ const ALLOWED_CHANNELS = new Set<string>([
 contextBridge.exposeInMainWorld("electronAPI", {
   invoke: (channel: string, ...args: unknown[]) => {
     if (typeof channel !== "string" || !ALLOWED_CHANNELS.has(channel)) {
-      return Promise.reject(
-        new Error(`IPC channel "${channel}" is not allowed`)
-      );
+      return Promise.reject(new Error(`IPC channel "${channel}" is not allowed`));
     }
     return ipcRenderer.invoke(channel, ...args);
   },

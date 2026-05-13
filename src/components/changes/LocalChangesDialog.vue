@@ -66,29 +66,47 @@ const allFilesWithSections = computed(() => {
 
 function getStatusLetter(status: FileStatus["status"]): string {
   switch (status) {
-    case "added": return "A";
-    case "modified": return "M";
-    case "deleted": return "D";
-    case "renamed": return "R";
-    case "copied": return "C";
-    case "untracked": return "U";
-    case "conflicted": return "!";
-    case "ignored": return "I";
-    default: return "?";
+    case "added":
+      return "A";
+    case "modified":
+      return "M";
+    case "deleted":
+      return "D";
+    case "renamed":
+      return "R";
+    case "copied":
+      return "C";
+    case "untracked":
+      return "U";
+    case "conflicted":
+      return "!";
+    case "ignored":
+      return "I";
+    default:
+      return "?";
   }
 }
 
 function getStatusClass(status: FileStatus["status"]): string {
   switch (status) {
-    case "added": return "status-added";
-    case "modified": return "status-modified";
-    case "deleted": return "status-deleted";
-    case "renamed": return "status-renamed";
-    case "copied": return "status-renamed";
-    case "untracked": return "status-untracked";
-    case "conflicted": return "status-conflicted";
-    case "ignored": return "status-ignored";
-    default: return "";
+    case "added":
+      return "status-added";
+    case "modified":
+      return "status-modified";
+    case "deleted":
+      return "status-deleted";
+    case "renamed":
+      return "status-renamed";
+    case "copied":
+      return "status-renamed";
+    case "untracked":
+      return "status-untracked";
+    case "conflicted":
+      return "status-conflicted";
+    case "ignored":
+      return "status-ignored";
+    default:
+      return "";
   }
 }
 
@@ -102,7 +120,7 @@ watch(
         await commitStore.loadStatus();
       } catch (error: any) {
         errorMessage.value = `加载状态失败: ${error.message}`;
-        console.error('Failed to load status:', error);
+        console.error("Failed to load status:", error);
       } finally {
         loading.value = false;
       }
@@ -213,7 +231,7 @@ async function handleShowBlame() {
 async function handleOpenInEditor() {
   if (!contextFile.value || !repoStore.activeRepo) return;
   // 打开文件在外部编辑器
-  const fullPath = repoStore.activeRepo.path + '/' + contextFile.value.path;
+  const fullPath = repoStore.activeRepo.path + "/" + contextFile.value.path;
   console.log("Opening file in editor:", fullPath);
   // 这里可能需要特定的编辑器协议
 }
@@ -234,21 +252,30 @@ const contextMenuItems = computed<MenuItem[]>(() => {
 
   // 添加 Git 操作分组
   items.push({ separator: true, label: "" });
-  items.push({ label: "Git 操作", children: [
-    { label: "查看文件历史记录", action: handleShowFileHistory },
-    { label: "显示注解 (Blame)", action: handleShowBlame },
-    { label: "与分支比较", action: handleCompareWithBranch },
-    { separator: true, label: "" },
-    { label: "放弃更改", action: handleDiscardFile }
-  ]});
+  items.push({
+    label: "Git 操作",
+    children: [
+      { label: "查看文件历史记录", action: handleShowFileHistory },
+      { label: "显示注解 (Blame)", action: handleShowBlame },
+      { label: "与分支比较", action: handleCompareWithBranch },
+      { separator: true, label: "" },
+      { label: "放弃更改", action: handleDiscardFile },
+    ],
+  });
 
   // 文件操作分组
   items.push({ separator: true, label: "" });
-  items.push({ label: "文件操作", children: [
-    { label: "在编辑器中打开", action: handleOpenInEditor },
-    { label: "查看 Diff", action: () => onDblClickFile(file, sections.value.find(s => s.key === section)!)},
-    { label: "复制路径", action: () => navigator.clipboard.writeText(file.path) }
-  ]});
+  items.push({
+    label: "文件操作",
+    children: [
+      { label: "在编辑器中打开", action: handleOpenInEditor },
+      {
+        label: "查看 Diff",
+        action: () => onDblClickFile(file, sections.value.find((s) => s.key === section)!),
+      },
+      { label: "复制路径", action: () => navigator.clipboard.writeText(file.path) },
+    ],
+  });
 
   return items;
 });
@@ -266,17 +293,47 @@ const contextMenuItems = computed<MenuItem[]>(() => {
               :active="treeView"
               @click="treeView = !treeView"
             >
-              <svg v-if="treeView" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" />
-                <line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+              <svg
+                v-if="treeView"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="8" y1="6" x2="21" y2="6" />
+                <line x1="8" y1="12" x2="21" y2="12" />
+                <line x1="8" y1="18" x2="21" y2="18" />
+                <line x1="3" y1="6" x2="3.01" y2="6" />
+                <line x1="3" y1="12" x2="3.01" y2="12" />
+                <line x1="3" y1="18" x2="3.01" y2="18" />
               </svg>
-              <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+              <svg
+                v-else
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+                />
               </svg>
             </ToolbarButton>
             <button class="close-btn" @click="closeDialog">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
           </div>
@@ -288,9 +345,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
               <span class="error-icon">⚠️</span> {{ errorMessage }}
             </div>
             <div v-else-if="loading" class="loading">加载中...</div>
-            <div v-else-if="allFilesWithSections.length === 0" class="empty">
-              工作区无变更
-            </div>
+            <div v-else-if="allFilesWithSections.length === 0" class="empty">工作区无变更</div>
             <template v-else>
               <div v-for="section in sections" :key="section.key" class="section">
                 <div v-if="section.files.length > 0" class="section-header">
@@ -303,7 +358,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
                   class="file-item"
                   :class="{
                     selected: selectedFile?.path === file.path && selectedSection === section.key,
-                    ['section-' + section.key]: true
+                    ['section-' + section.key]: true,
                   }"
                   @click="onSelectFile(file, section)"
                   @dblclick="onDblClickFile(file, section)"
@@ -322,15 +377,20 @@ const contextMenuItems = computed<MenuItem[]>(() => {
             <div class="diff-header">
               <span>{{ selectedFile.path }}</span>
               <button v-if="showInlineDiff" class="close-diff-btn" @click="showInlineDiff = false">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
               </button>
             </div>
-            <DiffViewer
-              v-if="showInlineDiff"
-              :diff="diffResult"
-            />
+            <DiffViewer v-if="showInlineDiff" :diff="diffResult" />
             <div v-else class="diff-preview">
               <DiffViewer :diff="diffResult" :inline="true" />
             </div>
@@ -343,9 +403,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
             <div class="diff-loading">加载 Diff 中...</div>
           </div>
 
-          <div v-else class="diff-empty">
-            选择一个文件查看变更
-          </div>
+          <div v-else class="diff-empty">选择一个文件查看变更</div>
         </div>
       </div>
     </div>
@@ -486,13 +544,27 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   flex-shrink: 0;
 }
 
-.status-added { color: var(--color-git-added); }
-.status-modified { color: var(--color-git-modified); }
-.status-deleted { color: var(--color-git-deleted); }
-.status-renamed { color: var(--color-git-renamed); }
-.status-untracked { color: var(--color-git-untracked); }
-.status-conflicted { color: var(--color-error); }
-.status-ignored { color: var(--color-foreground-muted); }
+.status-added {
+  color: var(--color-git-added);
+}
+.status-modified {
+  color: var(--color-git-modified);
+}
+.status-deleted {
+  color: var(--color-git-deleted);
+}
+.status-renamed {
+  color: var(--color-git-renamed);
+}
+.status-untracked {
+  color: var(--color-git-untracked);
+}
+.status-conflicted {
+  color: var(--color-error);
+}
+.status-ignored {
+  color: var(--color-foreground-muted);
+}
 
 .file-path {
   flex: 1;

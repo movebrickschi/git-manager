@@ -45,7 +45,10 @@ async function onContinueMerge() {
   if (!repoStore.activeRepo || !mergeState.value || mergeState.value.state === "none") return;
   mergeBusy.value = true;
   try {
-    const result = await commands.continueOperation(repoStore.activeRepo.path, mergeState.value.state);
+    const result = await commands.continueOperation(
+      repoStore.activeRepo.path,
+      mergeState.value.state
+    );
     if (!result.success) {
       showToast(`继续失败：${result.message}`);
     } else {
@@ -174,13 +177,9 @@ const sections = computed<SectionInfo[]>(() => {
   });
 });
 
-const totalCount = computed(
-  () => sections.value.reduce((sum, s) => sum + s.files.length, 0),
-);
+const totalCount = computed(() => sections.value.reduce((sum, s) => sum + s.files.length, 0));
 
-const totalHiddenCount = computed(
-  () => sections.value.reduce((sum, s) => sum + s.hiddenCount, 0),
-);
+const totalHiddenCount = computed(() => sections.value.reduce((sum, s) => sum + s.hiddenCount, 0));
 
 const hasFilterRules = computed(() => filterStore.hasRules(repoPathOrEmpty()));
 
@@ -249,9 +248,8 @@ function toggleRow(section: SectionInfo["key"], path: string) {
 function selectRange(section: SectionInfo["key"], path: string) {
   const key = makeKey(section, path);
   const flat = flatFileKeys.value;
-  const anchor = lastClickedKey.value && flat.includes(lastClickedKey.value)
-    ? lastClickedKey.value
-    : key;
+  const anchor =
+    lastClickedKey.value && flat.includes(lastClickedKey.value) ? lastClickedKey.value : key;
   const a = flat.indexOf(anchor);
   const b = flat.indexOf(key);
   if (a < 0 || b < 0) {
@@ -403,29 +401,47 @@ function insertFilterExample() {
 
 function getStatusLetter(status: FileStatus["status"]): string {
   switch (status) {
-    case "added": return "A";
-    case "modified": return "M";
-    case "deleted": return "D";
-    case "renamed": return "R";
-    case "copied": return "C";
-    case "untracked": return "?";
-    case "conflicted": return "!";
-    case "ignored": return "I";
-    default: return "?";
+    case "added":
+      return "A";
+    case "modified":
+      return "M";
+    case "deleted":
+      return "D";
+    case "renamed":
+      return "R";
+    case "copied":
+      return "C";
+    case "untracked":
+      return "?";
+    case "conflicted":
+      return "!";
+    case "ignored":
+      return "I";
+    default:
+      return "?";
   }
 }
 
 function getStatusClass(status: FileStatus["status"]): string {
   switch (status) {
-    case "added": return "status-added";
-    case "modified": return "status-modified";
-    case "deleted": return "status-deleted";
-    case "renamed": return "status-renamed";
-    case "copied": return "status-renamed";
-    case "untracked": return "status-untracked";
-    case "conflicted": return "status-conflicted";
-    case "ignored": return "status-ignored";
-    default: return "";
+    case "added":
+      return "status-added";
+    case "modified":
+      return "status-modified";
+    case "deleted":
+      return "status-deleted";
+    case "renamed":
+      return "status-renamed";
+    case "copied":
+      return "status-renamed";
+    case "untracked":
+      return "status-untracked";
+    case "conflicted":
+      return "status-conflicted";
+    case "ignored":
+      return "status-ignored";
+    default:
+      return "";
   }
 }
 
@@ -461,7 +477,7 @@ onMounted(async () => {
       await refreshMergeState();
     } catch (error: unknown) {
       errorMessage.value = `加载状态失败: ${errMsg(error)}`;
-      console.error('Failed to load status:', error);
+      console.error("Failed to load status:", error);
     } finally {
       loading.value = false;
     }
@@ -488,7 +504,7 @@ watch(
         await refreshMergeState();
       } catch (error: unknown) {
         errorMessage.value = `加载状态失败: ${errMsg(error)}`;
-        console.error('Failed to load status:', error);
+        console.error("Failed to load status:", error);
       } finally {
         loading.value = false;
       }
@@ -750,10 +766,9 @@ function cancelConfirm() {
 
 // ---- 冲突解决 ----
 function openMergeDialog(filePath: string) {
-  const allConflicted = [
-    ...commitStore.stagedFiles,
-    ...commitStore.unstagedFiles,
-  ].filter((f) => f.status === "conflicted").map((f) => f.path);
+  const allConflicted = [...commitStore.stagedFiles, ...commitStore.unstagedFiles]
+    .filter((f) => f.status === "conflicted")
+    .map((f) => f.path);
 
   mergeConflictFiles.value = allConflicted.length > 0 ? allConflicted : [filePath];
   mergeFilePath.value = filePath;
@@ -847,18 +862,30 @@ const contextMenuItems = computed<MenuItem[]>(() => {
 
 <template>
   <div class="local-changes-view">
-    <div v-if="mergeState && mergeState.state !== 'none'" class="merge-banner" :class="`merge-banner--${mergeState.state}`">
+    <div
+      v-if="mergeState && mergeState.state !== 'none'"
+      class="merge-banner"
+      :class="`merge-banner--${mergeState.state}`"
+    >
       <span class="merge-banner__icon">⚠</span>
       <span class="merge-banner__text">
         当前处于 <strong>{{ mergeState.state }}</strong> 进行中
         <template v-if="mergeState.hasConflicts">，存在未解决的冲突</template>
       </span>
-      <button class="merge-banner__btn merge-banner__btn--primary"
-              :disabled="mergeState.hasConflicts || mergeBusy"
-              @click="onContinueMerge">继续</button>
-      <button class="merge-banner__btn merge-banner__btn--danger"
-              :disabled="mergeBusy"
-              @click="onAbortMerge">中止</button>
+      <button
+        class="merge-banner__btn merge-banner__btn--primary"
+        :disabled="mergeState.hasConflicts || mergeBusy"
+        @click="onContinueMerge"
+      >
+        继续
+      </button>
+      <button
+        class="merge-banner__btn merge-banner__btn--danger"
+        :disabled="mergeBusy"
+        @click="onAbortMerge"
+      >
+        中止
+      </button>
     </div>
     <Splitpanes class="default-theme" style="height: 100%">
       <!-- Left: file list -->
@@ -881,7 +908,14 @@ const contextMenuItems = computed<MenuItem[]>(() => {
                 title="过滤规则"
                 @click="openFilterDialog"
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
                   <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
                 </svg>
               </button>
@@ -892,38 +926,68 @@ const contextMenuItems = computed<MenuItem[]>(() => {
                 :title="filterStore.showFiltered ? '隐藏被过滤项' : '显示被过滤项'"
                 @click="filterStore.toggleShowFiltered()"
               >
-                <svg v-if="filterStore.showFiltered" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+                <svg
+                  v-if="filterStore.showFiltered"
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
                 </svg>
-                <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                <svg
+                  v-else
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
+                  />
                   <line x1="1" y1="1" x2="23" y2="23" />
                 </svg>
               </button>
-              <button
-                class="action-btn"
-                title="暂存所有"
-                @click="commitStore.stageAll()"
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="7 13 12 18 17 13" /><line x1="12" y1="6" x2="12" y2="18" />
+              <button class="action-btn" title="暂存所有" @click="commitStore.stageAll()">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <polyline points="7 13 12 18 17 13" />
+                  <line x1="12" y1="6" x2="12" y2="18" />
                 </svg>
               </button>
-              <button
-                class="action-btn"
-                title="取消暂存所有"
-                @click="commitStore.unstageAll()"
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="17 11 12 6 7 11" /><line x1="12" y1="18" x2="12" y2="6" />
+              <button class="action-btn" title="取消暂存所有" @click="commitStore.unstageAll()">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <polyline points="17 11 12 6 7 11" />
+                  <line x1="12" y1="18" x2="12" y2="6" />
                 </svg>
               </button>
-              <button
-                class="action-btn"
-                title="刷新"
-                @click="commitStore.loadStatus()"
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <button class="action-btn" title="刷新" @click="commitStore.loadStatus()">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
                   <polyline points="1 4 1 10 7 10" />
                   <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
                 </svg>
@@ -958,9 +1022,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
                   :key="section.key + ':' + file.path"
                   class="file-item"
                   :class="{
-                    selected:
-                      selectedFile?.path === file.path &&
-                      selectedSection === section.key,
+                    selected: selectedFile?.path === file.path && selectedSection === section.key,
                     checked: isRowSelected(section.key, file.path),
                   }"
                   @click="(e) => onFileRowClick(e, file, section)"
@@ -1025,9 +1087,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
               >
                 删除 ({{ deletablePaths.length }})
               </button>
-              <button class="bulk-btn ghost" title="清除选择" @click="clearSelection">
-                清除
-              </button>
+              <button class="bulk-btn ghost" title="清除选择" @click="clearSelection">清除</button>
             </div>
           </div>
 
@@ -1048,8 +1108,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
                 <button
                   class="commit-btn"
                   :disabled="
-                    !commitStore.commitMessage.trim() ||
-                    commitStore.stagedFiles.length === 0
+                    !commitStore.commitMessage.trim() || commitStore.stagedFiles.length === 0
                   "
                   @click="commitStore.commit()"
                 >
@@ -1058,8 +1117,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
                 <button
                   class="commit-btn push-btn"
                   :disabled="
-                    !commitStore.commitMessage.trim() ||
-                    commitStore.stagedFiles.length === 0
+                    !commitStore.commitMessage.trim() || commitStore.stagedFiles.length === 0
                   "
                   @click="handleCommitAndPush()"
                 >
@@ -1152,8 +1210,12 @@ const contextMenuItems = computed<MenuItem[]>(() => {
           </div>
           <div class="modal-body">
             <p class="modal-hint filter-hint">
-              每行一条规则，支持目录后缀 <code>/</code>、<code>**</code>、<code>*</code>、<code>!</code> 取反与 <code>#</code> 注释。<br />
-              示例：<code>.idea/</code> 隐藏 .idea 目录下所有文件；<code>**/*.log</code> 隐藏所有 .log 文件。
+              每行一条规则，支持目录后缀 <code>/</code>、<code>**</code>、<code>*</code>、<code
+                >!</code
+              >
+              取反与 <code>#</code> 注释。<br />
+              示例：<code>.idea/</code> 隐藏 .idea 目录下所有文件；<code>**/*.log</code> 隐藏所有
+              .log 文件。
             </p>
             <textarea
               v-model="filterRulesDraft"
@@ -1416,13 +1478,27 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   flex-shrink: 0;
 }
 
-.status-added { color: var(--color-git-added); }
-.status-modified { color: var(--color-git-modified); }
-.status-deleted { color: var(--color-git-deleted); }
-.status-renamed { color: var(--color-git-renamed); }
-.status-untracked { color: var(--color-git-untracked); }
-.status-conflicted { color: var(--color-error); }
-.status-ignored { color: var(--color-foreground-muted); }
+.status-added {
+  color: var(--color-git-added);
+}
+.status-modified {
+  color: var(--color-git-modified);
+}
+.status-deleted {
+  color: var(--color-git-deleted);
+}
+.status-renamed {
+  color: var(--color-git-renamed);
+}
+.status-untracked {
+  color: var(--color-git-untracked);
+}
+.status-conflicted {
+  color: var(--color-error);
+}
+.status-ignored {
+  color: var(--color-foreground-muted);
+}
 
 .file-path {
   flex: 1;
@@ -1754,7 +1830,9 @@ const contextMenuItems = computed<MenuItem[]>(() => {
 
 .toast-enter-active,
 .toast-leave-active {
-  transition: opacity 0.2s, transform 0.2s;
+  transition:
+    opacity 0.2s,
+    transform 0.2s;
 }
 
 .toast-enter-from,

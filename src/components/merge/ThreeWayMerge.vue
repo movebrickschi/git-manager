@@ -45,9 +45,14 @@ const repoStore = useRepoStore();
 // State
 // ---------------------------------------------------------------------------
 const currentFile = ref(props.filePath);
-const conflict = ref<{ path: string; oursContent: string; theirsContent: string; baseContent: string } | null>(null);
-const rawContent = ref("");        // working-tree file with conflict markers
-const resultContent = ref("");     // editable merged result
+const conflict = ref<{
+  path: string;
+  oursContent: string;
+  theirsContent: string;
+  baseContent: string;
+} | null>(null);
+const rawContent = ref(""); // working-tree file with conflict markers
+const resultContent = ref(""); // editable merged result
 const loading = ref(false);
 const saving = ref(false);
 const resolvedFiles = ref<string[]>([]);
@@ -113,23 +118,29 @@ const segments = computed<MergeSegment[]>(() => {
       flushContext();
       const oursLines: string[] = [];
       const theirsLines: string[] = [];
-      i++; lineNo++;
+      i++;
+      lineNo++;
       while (i < lines.length && !lines[i]!.startsWith("=======")) {
         oursLines.push(lines[i]!);
-        i++; lineNo++;
+        i++;
+        lineNo++;
       }
-      i++; lineNo++; // skip =======
+      i++;
+      lineNo++; // skip =======
       while (i < lines.length && !lines[i]!.startsWith(">>>>>>>")) {
         theirsLines.push(lines[i]!);
-        i++; lineNo++;
+        i++;
+        lineNo++;
       }
-      i++; lineNo++; // skip >>>>>>>
+      i++;
+      lineNo++; // skip >>>>>>>
       result.push({ type: "hunk", index: hunkIdx++, oursLines, theirsLines });
       ctxStartLineNo = lineNo;
     } else {
       if (ctxLines.length === 0) ctxStartLineNo = lineNo;
       ctxLines.push(line);
-      i++; lineNo++;
+      i++;
+      lineNo++;
     }
   }
   flushContext();
@@ -147,9 +158,7 @@ const showFileList = computed(() => allFiles.value.length > 1);
 
 const hasConflicts = computed(() => hunks.value.length > 0);
 
-const currentHunk = computed(() =>
-  hunks.value[currentHunkIndex.value] ?? null
-);
+const currentHunk = computed(() => hunks.value[currentHunkIndex.value] ?? null);
 
 const totalUnresolved = computed(() => {
   if (!resultContent.value) return 0;
@@ -240,17 +249,34 @@ async function loadFile(filePath: string) {
 function detectLanguage(filePath: string): string {
   const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
   const map: Record<string, string> = {
-    ts: "typescript", tsx: "typescript",
-    js: "javascript", jsx: "javascript",
-    vue: "html", html: "html", htm: "html",
-    css: "css", scss: "scss", less: "less",
-    json: "json", md: "markdown",
-    py: "python", rs: "rust", go: "go",
-    java: "java", kt: "kotlin",
-    cs: "csharp", cpp: "cpp", c: "c", h: "c",
-    sh: "shell", bash: "shell",
-    yaml: "yaml", yml: "yaml", toml: "ini",
-    xml: "xml", svg: "xml",
+    ts: "typescript",
+    tsx: "typescript",
+    js: "javascript",
+    jsx: "javascript",
+    vue: "html",
+    html: "html",
+    htm: "html",
+    css: "css",
+    scss: "scss",
+    less: "less",
+    json: "json",
+    md: "markdown",
+    py: "python",
+    rs: "rust",
+    go: "go",
+    java: "java",
+    kt: "kotlin",
+    cs: "csharp",
+    cpp: "cpp",
+    c: "c",
+    h: "c",
+    sh: "shell",
+    bash: "shell",
+    yaml: "yaml",
+    yml: "yaml",
+    toml: "ini",
+    xml: "xml",
+    svg: "xml",
   };
   return map[ext] ?? "plaintext";
 }
@@ -378,7 +404,6 @@ function replaceHunkInEditor(hunk: ConflictHunk, replacement: string[]) {
       inOurs = false;
       inTheirs = true;
     } else if (line.startsWith(">>>>>>>") && inTheirs) {
-      inTheirs = false;
       hunkEnd = i;
       break;
     }
@@ -431,10 +456,13 @@ function resolveHunk(index: number, action: "ours" | "theirs" | "both" | "discar
   // Temporarily set currentHunkIndex so replaceHunkInEditor targets correct hunk
   currentHunkIndex.value = index;
   const replacement =
-    action === "ours"    ? hunk.oursLines :
-    action === "theirs"  ? hunk.theirsLines :
-    action === "both"    ? [...hunk.oursLines, ...hunk.theirsLines] :
-    []; // discard → empty
+    action === "ours"
+      ? hunk.oursLines
+      : action === "theirs"
+        ? hunk.theirsLines
+        : action === "both"
+          ? [...hunk.oursLines, ...hunk.theirsLines]
+          : []; // discard → empty
   replaceHunkInEditor(hunk, replacement);
 }
 
@@ -544,7 +572,15 @@ onBeforeUnmount(() => {
         @click="switchFile(f)"
       >
         <span class="file-status-icon">
-          <svg v-if="resolvedFiles.includes(f)" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+          <svg
+            v-if="resolvedFiles.includes(f)"
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="3"
+          >
             <polyline points="20 6 9 17 4 12" />
           </svg>
           <span v-else class="conflict-dot">!</span>
@@ -579,7 +615,14 @@ onBeforeUnmount(() => {
           <!-- Hunk navigation -->
           <template v-if="hasConflicts">
             <button class="tbtn" :disabled="currentHunkIndex === 0" @click="prevHunk">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+              >
                 <polyline points="15 18 9 12 15 6" />
               </svg>
               上一处
@@ -587,21 +630,22 @@ onBeforeUnmount(() => {
             <span class="hunk-counter">{{ currentHunkIndex + 1 }} / {{ hunks.length }}</span>
             <button class="tbtn" :disabled="currentHunkIndex >= hunks.length - 1" @click="nextHunk">
               下一处
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+              >
                 <polyline points="9 18 15 12 9 6" />
               </svg>
             </button>
             <div class="toolbar-sep" />
             <!-- Per-hunk accept -->
-            <button class="tbtn tbtn-green" @click="acceptOurs">
-              ← 接受左侧
-            </button>
-            <button class="tbtn" @click="acceptBoth">
-              接受两者
-            </button>
-            <button class="tbtn tbtn-blue" @click="acceptTheirs">
-              接受右侧 →
-            </button>
+            <button class="tbtn tbtn-green" @click="acceptOurs">← 接受左侧</button>
+            <button class="tbtn" @click="acceptBoth">接受两者</button>
+            <button class="tbtn tbtn-blue" @click="acceptTheirs">接受右侧 →</button>
             <div class="toolbar-sep" />
           </template>
 
@@ -610,7 +654,14 @@ onBeforeUnmount(() => {
             {{ totalUnresolved }} 处未解决
           </span>
           <span v-else-if="!loading" class="resolved-badge">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="3"
+            >
               <polyline points="20 6 9 17 4 12" />
             </svg>
             已解决
@@ -646,7 +697,10 @@ onBeforeUnmount(() => {
         <div class="merge-panels">
           <!-- Left: Yours (read-only, segment-based) -->
           <div ref="leftPanel" class="side-panel">
-            <template v-for="seg in segments" :key="seg.type === 'hunk' ? 'lh' + seg.index : 'lc' + seg.startLineNo">
+            <template
+              v-for="seg in segments"
+              :key="seg.type === 'hunk' ? 'lh' + seg.index : 'lc' + seg.startLineNo"
+            >
               <!-- Context lines -->
               <template v-if="seg.type === 'context'">
                 <div
@@ -664,7 +718,10 @@ onBeforeUnmount(() => {
                   <button class="hunk-btn hunk-btn--ours" @click="resolveHunk(seg.index, 'ours')">
                     ← 接受此处
                   </button>
-                  <button class="hunk-btn hunk-btn--discard" @click="resolveHunk(seg.index, 'discard')">
+                  <button
+                    class="hunk-btn hunk-btn--discard"
+                    @click="resolveHunk(seg.index, 'discard')"
+                  >
                     丢弃
                   </button>
                 </div>
@@ -691,7 +748,10 @@ onBeforeUnmount(() => {
 
           <!-- Right: Theirs (read-only, segment-based) -->
           <div ref="rightPanel" class="side-panel">
-            <template v-for="seg in segments" :key="seg.type === 'hunk' ? 'rh' + seg.index : 'rc' + seg.startLineNo">
+            <template
+              v-for="seg in segments"
+              :key="seg.type === 'hunk' ? 'rh' + seg.index : 'rc' + seg.startLineNo"
+            >
               <!-- Context lines -->
               <template v-if="seg.type === 'context'">
                 <div
@@ -706,10 +766,16 @@ onBeforeUnmount(() => {
               <!-- Hunk: theirs lines with action buttons -->
               <template v-else-if="seg.type === 'hunk'">
                 <div class="hunk-action-bar hunk-action-bar--theirs">
-                  <button class="hunk-btn hunk-btn--theirs" @click="resolveHunk(seg.index, 'theirs')">
+                  <button
+                    class="hunk-btn hunk-btn--theirs"
+                    @click="resolveHunk(seg.index, 'theirs')"
+                  >
                     接受此处 →
                   </button>
-                  <button class="hunk-btn hunk-btn--discard" @click="resolveHunk(seg.index, 'discard')">
+                  <button
+                    class="hunk-btn hunk-btn--discard"
+                    @click="resolveHunk(seg.index, 'discard')"
+                  >
                     丢弃
                   </button>
                 </div>
@@ -721,7 +787,10 @@ onBeforeUnmount(() => {
                   <span class="line-no">{{ i + 1 }}</span>
                   <span class="line-text">{{ line }}</span>
                 </div>
-                <div v-if="seg.theirsLines.length === 0" class="code-line theirs-line empty-hunk-line">
+                <div
+                  v-if="seg.theirsLines.length === 0"
+                  class="code-line theirs-line empty-hunk-line"
+                >
                   <span class="line-no" />
                   <span class="line-text empty-hint">（无内容）</span>
                 </div>

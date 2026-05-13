@@ -10,9 +10,7 @@ describe("safeJoin", () => {
       expect(safeJoin(REPO, "README.md")).toBe(path.join(REPO, "README.md"));
     });
     it("子目录", () => {
-      expect(safeJoin(REPO, "src/utils/foo.ts")).toBe(
-        path.join(REPO, "src/utils/foo.ts")
-      );
+      expect(safeJoin(REPO, "src/utils/foo.ts")).toBe(path.join(REPO, "src/utils/foo.ts"));
     });
     it("./ 前缀", () => {
       expect(safeJoin(REPO, "./a/b.ts")).toBe(path.join(REPO, "a/b.ts"));
@@ -21,14 +19,10 @@ describe("safeJoin", () => {
 
   describe("拒绝路径遍历", () => {
     it("../etc/passwd", () => {
-      expect(() => safeJoin(REPO, "../etc/passwd")).toThrow(
-        /path traversal denied/
-      );
+      expect(() => safeJoin(REPO, "../etc/passwd")).toThrow(/path traversal denied/);
     });
     it("a/../../etc/passwd", () => {
-      expect(() => safeJoin(REPO, "a/../../etc/passwd")).toThrow(
-        /path traversal denied/
-      );
+      expect(() => safeJoin(REPO, "a/../../etc/passwd")).toThrow(/path traversal denied/);
     });
     it("绝对路径", () => {
       const abs = process.platform === "win32" ? "C:\\Windows\\hosts" : "/etc/passwd";

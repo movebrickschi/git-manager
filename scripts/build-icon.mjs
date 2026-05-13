@@ -34,10 +34,7 @@ async function main() {
 
 function wrapSvg(src) {
   if (/viewBox\s*=/.test(src)) return src;
-  return src.replace(
-    /<svg\b/,
-    '<svg viewBox="0 0 24 24"'
-  );
+  return src.replace(/<svg\b/, '<svg viewBox="0 0 24 24"');
 }
 
 main().catch((err) => {

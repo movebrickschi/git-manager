@@ -42,7 +42,7 @@ export const useFilterStore = defineStore("changeFilter", () => {
         JSON.stringify({
           rulesByRepo: rulesByRepo.value,
           showFiltered: showFiltered.value,
-        }),
+        })
       );
     } catch {
       // 忽略写入失败（隐私模式 / 配额）

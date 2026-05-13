@@ -73,9 +73,7 @@ function getLineClass(lineType: string): string {
 
 <template>
   <div class="diff-viewer" :class="{ inline: props.inline }">
-    <div v-if="diff.binary" class="binary-notice">
-      Binary file - cannot display diff
-    </div>
+    <div v-if="diff.binary" class="binary-notice">Binary file - cannot display diff</div>
 
     <template v-else>
       <!-- Mode toggle -->
@@ -84,18 +82,22 @@ function getLineClass(lineType: string): string {
           class="mode-btn"
           :class="{ active: viewMode === 'side-by-side' }"
           @click="viewMode = 'side-by-side'"
-        >Side by Side</button>
+        >
+          Side by Side
+        </button>
         <button
           class="mode-btn"
           :class="{ active: viewMode === 'unified' }"
           @click="viewMode = 'unified'"
-        >Unified</button>
+        >
+          Unified
+        </button>
       </div>
 
       <!-- Side by side view -->
       <div v-if="viewMode === 'side-by-side' && !inline" class="side-by-side">
         <div class="side left-side">
-          <div class="side-header">{{ diff.oldPath || '(new file)' }}</div>
+          <div class="side-header">{{ diff.oldPath || "(new file)" }}</div>
           <div class="side-content">
             <div
               v-for="(pair, i) in sideBySideLines"
@@ -103,13 +105,13 @@ function getLineClass(lineType: string): string {
               class="diff-line"
               :class="pair.left ? getLineClass(pair.left.lineType) : 'line-empty'"
             >
-              <span class="line-no">{{ pair.left?.oldLineNo ?? '' }}</span>
-              <span class="line-content mono">{{ pair.left?.content ?? '' }}</span>
+              <span class="line-no">{{ pair.left?.oldLineNo ?? "" }}</span>
+              <span class="line-content mono">{{ pair.left?.content ?? "" }}</span>
             </div>
           </div>
         </div>
         <div class="side right-side">
-          <div class="side-header">{{ diff.newPath || '(deleted)' }}</div>
+          <div class="side-header">{{ diff.newPath || "(deleted)" }}</div>
           <div class="side-content">
             <div
               v-for="(pair, i) in sideBySideLines"
@@ -117,8 +119,8 @@ function getLineClass(lineType: string): string {
               class="diff-line"
               :class="pair.right ? getLineClass(pair.right.lineType) : 'line-empty'"
             >
-              <span class="line-no">{{ pair.right?.newLineNo ?? '' }}</span>
-              <span class="line-content mono">{{ pair.right?.content ?? '' }}</span>
+              <span class="line-no">{{ pair.right?.newLineNo ?? "" }}</span>
+              <span class="line-content mono">{{ pair.right?.content ?? "" }}</span>
             </div>
           </div>
         </div>
@@ -132,9 +134,11 @@ function getLineClass(lineType: string): string {
           class="diff-line"
           :class="getLineClass(line.lineType)"
         >
-          <span class="line-no old-no">{{ line.oldLineNo ?? '' }}</span>
-          <span class="line-no new-no">{{ line.newLineNo ?? '' }}</span>
-          <span class="line-prefix">{{ line.lineType === 'addition' ? '+' : line.lineType === 'deletion' ? '-' : ' ' }}</span>
+          <span class="line-no old-no">{{ line.oldLineNo ?? "" }}</span>
+          <span class="line-no new-no">{{ line.newLineNo ?? "" }}</span>
+          <span class="line-prefix">{{
+            line.lineType === "addition" ? "+" : line.lineType === "deletion" ? "-" : " "
+          }}</span>
           <span class="line-content mono">{{ line.content }}</span>
         </div>
       </div>
@@ -178,8 +182,13 @@ function getLineClass(lineType: string): string {
   font-size: 11px;
 }
 
-.mode-btn:hover { background: var(--color-surface-hover); }
-.mode-btn.active { background: var(--color-surface-active); color: var(--color-foreground); }
+.mode-btn:hover {
+  background: var(--color-surface-hover);
+}
+.mode-btn.active {
+  background: var(--color-surface-active);
+  color: var(--color-foreground);
+}
 
 .side-by-side {
   display: flex;
@@ -248,7 +257,8 @@ function getLineClass(lineType: string): string {
   opacity: 0.6;
 }
 
-.old-no, .new-no {
+.old-no,
+.new-no {
   width: 40px;
 }
 
@@ -260,8 +270,12 @@ function getLineClass(lineType: string): string {
   user-select: none;
 }
 
-.line-added .line-prefix { color: var(--color-git-added); }
-.line-removed .line-prefix { color: var(--color-git-deleted); }
+.line-added .line-prefix {
+  color: var(--color-git-added);
+}
+.line-removed .line-prefix {
+  color: var(--color-git-deleted);
+}
 
 .line-content {
   flex: 1;

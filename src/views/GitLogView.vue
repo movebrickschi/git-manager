@@ -53,10 +53,7 @@ watch(
   () => repoStore.activeRepo?.path,
   async () => {
     if (repoStore.activeRepo) {
-      await Promise.all([
-        branchStore.loadBranches(),
-        commitStore.loadStatus(),
-      ]);
+      await Promise.all([branchStore.loadBranches(), commitStore.loadStatus()]);
     }
   }
 );
@@ -125,10 +122,7 @@ function closeMerge() {
       <!-- Left sidebar: Tab切换 + Branches/Git操作 -->
       <Pane :size="18" :min-size="12" :max-size="30">
         <div class="left-panel">
-          <BranchesPane
-            :active-tab="activeTab"
-            @update:active-tab="activeTab = $event"
-          />
+          <BranchesPane :active-tab="activeTab" @update:active-tab="activeTab = $event" />
         </div>
       </Pane>
 
@@ -188,8 +182,16 @@ function closeMerge() {
           <div class="fullscreen-header">
             <span>{{ selectedFile?.path }}</span>
             <button class="close-btn" @click="closeDiffViewer">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
           </div>
@@ -205,12 +207,23 @@ function closeMerge() {
           <div class="fullscreen-header">
             <span>Blame: {{ blameFilePath }}</span>
             <button class="close-btn" @click="closeBlame">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
           </div>
-          <BlameView :file-path="blameFilePath" :commit-id="logStore.selectedCommitId ?? undefined" />
+          <BlameView
+            :file-path="blameFilePath"
+            :commit-id="logStore.selectedCommitId ?? undefined"
+          />
         </div>
       </div>
     </Teleport>
@@ -222,16 +235,27 @@ function closeMerge() {
           <div class="fullscreen-header">
             <span>合并冲突: {{ mergeFilePath }}</span>
             <button class="close-btn" @click="closeMerge">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
           </div>
-          <ThreeWayMerge :file-path="mergeFilePath" :conflict-files="mergeConflictFiles" @resolved="closeMerge" />
+          <ThreeWayMerge
+            :file-path="mergeFilePath"
+            :conflict-files="mergeConflictFiles"
+            @resolved="closeMerge"
+          />
         </div>
       </div>
     </Teleport>
-
   </MainLayout>
 </template>
 

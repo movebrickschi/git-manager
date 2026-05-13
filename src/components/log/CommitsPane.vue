@@ -62,9 +62,7 @@ const visibleEnd = computed(() =>
   )
 );
 const offsetY = computed(() => visibleStart.value * ROW_HEIGHT);
-const visibleCommits = computed(() =>
-  logStore.commits.slice(visibleStart.value, visibleEnd.value)
-);
+const visibleCommits = computed(() => logStore.commits.slice(visibleStart.value, visibleEnd.value));
 
 function onScroll(e: Event) {
   const el = e.target as HTMLElement;
@@ -199,8 +197,14 @@ function cancelConfirm() {
 const contextMenuItems = computed<MenuItem[]>(() => {
   if (!contextCommit.value) return [];
   return [
-    { label: "复制 Revision", action: () => navigator.clipboard.writeText(contextCommit.value!.id) },
-    { label: "复制提交信息", action: () => navigator.clipboard.writeText(contextCommit.value!.summary) },
+    {
+      label: "复制 Revision",
+      action: () => navigator.clipboard.writeText(contextCommit.value!.id),
+    },
+    {
+      label: "复制提交信息",
+      action: () => navigator.clipboard.writeText(contextCommit.value!.summary),
+    },
     { separator: true, label: "" },
     { label: "Cherry-pick", action: handleCherryPick },
     { label: "Checkout Revision", action: handleCheckoutRevision },
@@ -240,23 +244,48 @@ function getRefClass(refType: string): string {
       />
 
       <ToolbarButton title="按作者筛选">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+          <circle cx="12" cy="7" r="4" />
         </svg>
       </ToolbarButton>
 
       <ToolbarButton title="按日期筛选">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" />
-          <line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+          <line x1="16" y1="2" x2="16" y2="6" />
+          <line x1="8" y1="2" x2="8" y2="6" />
+          <line x1="3" y1="10" x2="21" y2="10" />
         </svg>
       </ToolbarButton>
 
       <div style="flex: 1" />
 
       <ToolbarButton title="刷新" @click="logStore.loadCommits(true)">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <polyline points="23 4 23 10 17 10" />
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
         </svg>
       </ToolbarButton>
     </Toolbar>
@@ -298,7 +327,7 @@ function getRefClass(refType: string): string {
                   class="ref-badge"
                   :class="getRefClass(ref.refType)"
                 >
-                  {{ settings.compactReferences ? ref.name.split('/').pop() : ref.name }}
+                  {{ settings.compactReferences ? ref.name.split("/").pop() : ref.name }}
                 </span>
               </template>
             </div>
@@ -309,9 +338,7 @@ function getRefClass(refType: string): string {
         </div>
       </div>
 
-      <div v-if="logStore.loading" class="loading-indicator">
-        加载中...
-      </div>
+      <div v-if="logStore.loading" class="loading-indicator">加载中...</div>
     </div>
 
     <ContextMenu ref="contextMenuRef" :items="contextMenuItems" />
@@ -753,7 +780,9 @@ function getRefClass(refType: string): string {
 
 .toast-enter-active,
 .toast-leave-active {
-  transition: opacity 0.2s, transform 0.2s;
+  transition:
+    opacity 0.2s,
+    transform 0.2s;
 }
 
 .toast-enter-from,

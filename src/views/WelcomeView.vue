@@ -89,9 +89,18 @@ async function cloneRepo() {
   <div class="welcome-view">
     <div class="welcome-content">
       <div class="welcome-header">
-        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="1.5">
-          <circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" />
-          <path d="M13 6h3a2 2 0 0 1 2 2v7" /><line x1="6" y1="9" x2="6" y2="21" />
+        <svg
+          width="64"
+          height="64"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="var(--color-primary)"
+          stroke-width="1.5"
+        >
+          <circle cx="18" cy="18" r="3" />
+          <circle cx="6" cy="6" r="3" />
+          <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+          <line x1="6" y1="9" x2="6" y2="21" />
         </svg>
         <h1>Git Manager</h1>
         <p class="welcome-subtitle">IDEA-Style Git 管理工具</p>
@@ -99,15 +108,30 @@ async function cloneRepo() {
 
       <div class="welcome-actions">
         <button class="action-btn primary" @click="openFolder">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
           </svg>
           打开仓库
         </button>
 
         <button class="action-btn" @click="showCloneDialog = true">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="16 16 12 12 8 16" /><line x1="12" y1="12" x2="12" y2="21" />
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <polyline points="16 16 12 12 8 16" />
+            <line x1="12" y1="12" x2="12" y2="21" />
             <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3" />
           </svg>
           克隆仓库
@@ -122,7 +146,14 @@ async function cloneRepo() {
           class="recent-repo-item"
           @click="openRecentRepo(repo)"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
           </svg>
           <span>{{ repo }}</span>
@@ -147,7 +178,7 @@ async function cloneRepo() {
         <div class="dialog-actions">
           <button class="btn" @click="showManualInput = false" :disabled="loading">取消</button>
           <button class="btn primary" @click="openManualPath" :disabled="loading">
-            {{ loading ? '打开中...' : '打开' }}
+            {{ loading ? "打开中..." : "打开" }}
           </button>
         </div>
       </div>
@@ -159,17 +190,28 @@ async function cloneRepo() {
         <h3>克隆仓库</h3>
         <div class="dialog-field">
           <label>仓库 URL</label>
-          <input v-model="cloneUrl" placeholder="https://github.com/user/repo.git" :disabled="cloneLoading" />
+          <input
+            v-model="cloneUrl"
+            placeholder="https://github.com/user/repo.git"
+            :disabled="cloneLoading"
+          />
         </div>
         <div class="dialog-field">
           <label>本地路径</label>
-          <input v-model="clonePath" placeholder="C:\projects\repo" :disabled="cloneLoading" @keyup.enter="cloneRepo" />
+          <input
+            v-model="clonePath"
+            placeholder="C:\projects\repo"
+            :disabled="cloneLoading"
+            @keyup.enter="cloneRepo"
+          />
         </div>
         <div v-if="cloneError" class="error-msg">{{ cloneError }}</div>
         <div class="dialog-actions">
-          <button class="btn" @click="showCloneDialog = false" :disabled="cloneLoading">取消</button>
+          <button class="btn" @click="showCloneDialog = false" :disabled="cloneLoading">
+            取消
+          </button>
           <button class="btn primary" @click="cloneRepo" :disabled="cloneLoading">
-            {{ cloneLoading ? '克隆中...' : '克隆' }}
+            {{ cloneLoading ? "克隆中..." : "克隆" }}
           </button>
         </div>
       </div>

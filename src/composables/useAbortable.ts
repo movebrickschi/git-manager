@@ -31,7 +31,7 @@ export interface UseAbortableReturn<TArgs extends unknown[], TResult> {
  * - `fn` 自身需要正确响应 `signal.aborted`（监听 abort 事件抛出 DOMException 是惯例）
  */
 export function useAbortable<TArgs extends unknown[], TResult>(
-  fn: AbortableFn<TArgs, TResult>,
+  fn: AbortableFn<TArgs, TResult>
 ): UseAbortableReturn<TArgs, TResult> {
   let current: AbortController | null = null;
 

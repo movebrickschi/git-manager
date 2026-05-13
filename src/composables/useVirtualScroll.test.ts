@@ -35,15 +35,13 @@ describe("useVirtualScroll", () => {
     const scrollTop = ref(200); // 滚动到第 10 项 (200 / 20)
     const viewportHeight = ref(400); // 视口可见 20 项
     const totalItems = ref(1000);
-    const { visibleStart, visibleEnd, offsetY, totalHeight } = useVirtualScroll(
-      {
-        scrollTop,
-        viewportHeight,
-        totalItems,
-        itemHeight: 20,
-        overscan: 3,
-      },
-    );
+    const { visibleStart, visibleEnd, offsetY, totalHeight } = useVirtualScroll({
+      scrollTop,
+      viewportHeight,
+      totalItems,
+      itemHeight: 20,
+      overscan: 3,
+    });
     expect(visibleStart.value).toBe(10 - 3); // 7
     expect(visibleEnd.value).toBe(10 + 20 + 3); // 33
     expect(offsetY.value).toBe(7 * 20);

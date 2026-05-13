@@ -92,22 +92,14 @@ describe("useFileTree", () => {
   });
 
   it("collapseAll() / expandAll() 同时切换全部目录", () => {
-    const files = ref<FileStatus[]>([
-      makeFile("a/x.ts"),
-      makeFile("b/y.ts"),
-    ]);
+    const files = ref<FileStatus[]>([makeFile("a/x.ts"), makeFile("b/y.ts")]);
     const { visibleNodes, collapseAll, expandAll } = useFileTree(files);
 
     collapseAll();
     expect(visibleNodes.value.map((n) => n.path)).toEqual(["a", "b"]);
 
     expandAll();
-    expect(visibleNodes.value.map((n) => n.path)).toEqual([
-      "a",
-      "a/x.ts",
-      "b",
-      "b/y.ts",
-    ]);
+    expect(visibleNodes.value.map((n) => n.path)).toEqual(["a", "a/x.ts", "b", "b/y.ts"]);
   });
 
   it("files 引用变化应触发重建，但同一引用应被 memo 不重建", () => {
@@ -139,10 +131,7 @@ describe("useFileTree", () => {
   });
 
   it("折叠多层目录时，所有后代节点（孙、曾孙）均不可见", () => {
-    const files = ref<FileStatus[]>([
-      makeFile("a/b/c/d.ts"),
-      makeFile("a/b/e.ts"),
-    ]);
+    const files = ref<FileStatus[]>([makeFile("a/b/c/d.ts"), makeFile("a/b/e.ts")]);
     const { visibleNodes, toggleDir } = useFileTree(files);
 
     toggleDir("a");

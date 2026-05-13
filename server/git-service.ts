@@ -102,8 +102,7 @@ function parseBranchVerboseLabel(label: string): {
   const behindM = /behind (\d+)/.exec(inside);
   const ahead = aheadM ? parseInt(aheadM[1], 10) : 0;
   const behind = behindM ? parseInt(behindM[1], 10) : 0;
-  const aheadBehind: [number, number] | null =
-    ahead || behind ? [ahead, behind] : null;
+  const aheadBehind: [number, number] | null = ahead || behind ? [ahead, behind] : null;
   return { upstream, aheadBehind, subject: subject || trimmed };
 }
 
@@ -291,14 +290,21 @@ function parseStatusCode(
 
   const mapCode = (c: string): FileStatus["status"] | null => {
     switch (c) {
-      case "A": return "added";
-      case "M": return "modified";
-      case "D": return "deleted";
-      case "R": return "renamed";
-      case "C": return "copied";
+      case "A":
+        return "added";
+      case "M":
+        return "modified";
+      case "D":
+        return "deleted";
+      case "R":
+        return "renamed";
+      case "C":
+        return "copied";
       // Include "!" for ignored files
-      case "!": return "modified"; // or could be treated as "untracked" depending on needs
-      default: return null;
+      case "!":
+        return "modified"; // or could be treated as "untracked" depending on needs
+      default:
+        return null;
     }
   };
 
@@ -355,9 +361,7 @@ function parseDiffOutput(raw: string, filePath?: string): DiffResultModel {
       const p = line.substring(4);
       result.newPath = p === "/dev/null" ? null : p.replace(/^[ab]\//, "");
     } else if (line.startsWith("@@")) {
-      const match = line.match(
-        /@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)/
-      );
+      const match = line.match(/@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)/);
       if (match) {
         currentHunk = {
           oldStart: parseInt(match[1]),
@@ -404,10 +408,7 @@ function parseDiffOutput(raw: string, filePath?: string): DiffResultModel {
   return result;
 }
 
-function parseRefs(
-  refStr: string,
-  headBranch: string
-): RefInfo[] {
+function parseRefs(refStr: string, headBranch: string): RefInfo[] {
   if (!refStr) return [];
   return refStr
     .replace(/[()]/g, "")
@@ -462,7 +463,17 @@ export class GitService {
     const headBranch = branchSummary.current;
 
     const LOG_FORMAT = [
-      "%H", "%h", "%s", "%an", "%ae", "%at", "%cn", "%ce", "%ct", "%P", "%D"
+      "%H",
+      "%h",
+      "%s",
+      "%an",
+      "%ae",
+      "%at",
+      "%cn",
+      "%ce",
+      "%ct",
+      "%P",
+      "%D",
     ].join("%x00");
 
     const args: string[] = [
@@ -494,13 +505,28 @@ export class GitService {
 
     const raw = await git.raw(["log", ...args]);
     const commits: CommitInfo[] = [];
-    const entries = raw.split("\x01").map(s => s.trim()).filter(Boolean);
+    const entries = raw
+      .split("\x01")
+      .map((s) => s.trim())
+      .filter(Boolean);
 
     for (const entry of entries) {
       const fields = entry.split("\x00");
       if (fields.length < 11) continue;
 
-      const [id, shortId, summary, author, authorEmail, atStr, committer, committerEmail, ctStr, parentStr, refStr] = fields;
+      const [
+        id,
+        shortId,
+        summary,
+        author,
+        authorEmail,
+        atStr,
+        committer,
+        committerEmail,
+        ctStr,
+        parentStr,
+        refStr,
+      ] = fields;
 
       if (!id || id.length < 7) continue;
 
@@ -597,23 +623,15 @@ export class GitService {
     return rows;
   }
 
-  async getCommitDetail(
-    repoPath: string,
-    commitId: string
-  ): Promise<CommitInfo> {
+  async getCommitDetail(repoPath: string, commitId: string): Promise<CommitInfo> {
     const git = getGit(repoPath);
     const branchSummary = await git.branch();
 
-    const DETAIL_FORMAT = [
-      "%H", "%h", "%s", "%an", "%ae", "%at", "%cn", "%ce", "%ct", "%P", "%D"
-    ].join("%x00") + "%x00%B";
+    const DETAIL_FORMAT =
+      ["%H", "%h", "%s", "%an", "%ae", "%at", "%cn", "%ce", "%ct", "%P", "%D"].join("%x00") +
+      "%x00%B";
 
-    const raw = await git.raw([
-      "log",
-      "-1",
-      `--format=${DETAIL_FORMAT}`,
-      commitId,
-    ]);
+    const raw = await git.raw(["log", "-1", `--format=${DETAIL_FORMAT}`, commitId]);
 
     const fields = raw.trim().split("\x00");
     const id = fields[0] ?? "";
@@ -649,18 +667,9 @@ export class GitService {
     };
   }
 
-  async getCommitFiles(
-    repoPath: string,
-    commitId: string
-  ): Promise<FileStatus[]> {
+  async getCommitFiles(repoPath: string, commitId: string): Promise<FileStatus[]> {
     const git = getGit(repoPath);
-    const raw = await git.raw([
-      "diff-tree",
-      "--no-commit-id",
-      "-r",
-      "--name-status",
-      commitId,
-    ]);
+    const raw = await git.raw(["diff-tree", "--no-commit-id", "-r", "--name-status", commitId]);
     return raw
       .trim()
       .split("\n")
@@ -692,37 +701,22 @@ export class GitService {
     filePath: string
   ): Promise<DiffResultModel> {
     const git = getGit(repoPath);
-    const raw = await git.raw(["diff", `${commitId}~1`, commitId, "--", filePath]).catch(() =>
-      git.raw(["diff", "--root", commitId, "--", filePath])
-    );
+    const raw = await git
+      .raw(["diff", `${commitId}~1`, commitId, "--", filePath])
+      .catch(() => git.raw(["diff", "--root", commitId, "--", filePath]));
     return parseDiffOutput(raw, filePath);
   }
 
-  async getFileDiff(
-    repoPath: string,
-    filePath: string,
-    staged: boolean
-  ): Promise<DiffResultModel> {
+  async getFileDiff(repoPath: string, filePath: string, staged: boolean): Promise<DiffResultModel> {
     const git = getGit(repoPath);
-    const args = staged
-      ? ["diff", "--cached", "--", filePath]
-      : ["diff", "--", filePath];
+    const args = staged ? ["diff", "--cached", "--", filePath] : ["diff", "--", filePath];
     const raw = await git.raw(args);
     return parseDiffOutput(raw, filePath);
   }
 
-  async compareCommits(
-    repoPath: string,
-    fromId: string,
-    toId: string
-  ): Promise<FileStatus[]> {
+  async compareCommits(repoPath: string, fromId: string, toId: string): Promise<FileStatus[]> {
     const git = getGit(repoPath);
-    const raw = await git.raw([
-      "diff",
-      "--name-status",
-      fromId,
-      toId,
-    ]);
+    const raw = await git.raw(["diff", "--name-status", fromId, toId]);
     return raw
       .trim()
       .split("\n")
@@ -791,11 +785,7 @@ export class GitService {
     return { local, remote, tags };
   }
 
-  async createBranch(
-    repoPath: string,
-    name: string,
-    startPoint?: string
-  ): Promise<void> {
+  async createBranch(repoPath: string, name: string, startPoint?: string): Promise<void> {
     const git = getGit(repoPath);
     if (startPoint) {
       await git.branch([name, startPoint]);
@@ -809,20 +799,12 @@ export class GitService {
     await git.checkout(name);
   }
 
-  async deleteBranch(
-    repoPath: string,
-    name: string,
-    force: boolean
-  ): Promise<void> {
+  async deleteBranch(repoPath: string, name: string, force: boolean): Promise<void> {
     const git = getGit(repoPath);
     await git.branch([force ? "-D" : "-d", name]);
   }
 
-  async renameBranch(
-    repoPath: string,
-    oldName: string,
-    newName: string
-  ): Promise<void> {
+  async renameBranch(repoPath: string, oldName: string, newName: string): Promise<void> {
     const git = getGit(repoPath);
     await git.branch(["-m", oldName, newName]);
   }
@@ -832,7 +814,7 @@ export class GitService {
     try {
       const result = await git.merge([name]);
       const conflicts = (result.conflicts ?? []).map((c) =>
-        typeof c === "string" ? c : (c as { file?: string }).file ?? String(c)
+        typeof c === "string" ? c : ((c as { file?: string }).file ?? String(c))
       );
       return {
         success: true,
@@ -941,11 +923,7 @@ export class GitService {
     await git.raw(["reset", "HEAD"]);
   }
 
-  async commit(
-    repoPath: string,
-    message: string,
-    amend: boolean
-  ): Promise<string> {
+  async commit(repoPath: string, message: string, amend: boolean): Promise<string> {
     const git = getGit(repoPath);
     const args = amend ? ["commit", "--amend", "-m", message] : ["commit", "-m", message];
     const result = await git.raw(args);
@@ -953,11 +931,7 @@ export class GitService {
     return match?.[1] ?? "";
   }
 
-  async push(
-    repoPath: string,
-    remote?: string,
-    branch?: string
-  ): Promise<void> {
+  async push(repoPath: string, remote?: string, branch?: string): Promise<void> {
     const git = getGit(repoPath);
     const args: string[] = ["push"];
     if (remote) args.push(remote);
@@ -972,7 +946,17 @@ export class GitService {
   ): Promise<CommitInfo[]> {
     const git = getGit(repoPath);
     const LOG_FORMAT = [
-      "%H", "%h", "%s", "%an", "%ae", "%at", "%cn", "%ce", "%ct", "%P", "%D"
+      "%H",
+      "%h",
+      "%s",
+      "%an",
+      "%ae",
+      "%at",
+      "%cn",
+      "%ce",
+      "%ct",
+      "%P",
+      "%D",
     ].join("%x00");
 
     let rangeArg: string;
@@ -1000,12 +984,27 @@ export class GitService {
     const branchSummary = await git.branch();
     const headBranch = branchSummary.current;
     const commits: CommitInfo[] = [];
-    const entries = raw.split("\x01").map(s => s.trim()).filter(Boolean);
+    const entries = raw
+      .split("\x01")
+      .map((s) => s.trim())
+      .filter(Boolean);
 
     for (const entry of entries) {
       const fields = entry.split("\x00");
       if (fields.length < 11) continue;
-      const [id, shortId, summary, author, authorEmail, atStr, committer, committerEmail, ctStr, parentStr, refStr] = fields;
+      const [
+        id,
+        shortId,
+        summary,
+        author,
+        authorEmail,
+        atStr,
+        committer,
+        committerEmail,
+        ctStr,
+        parentStr,
+        refStr,
+      ] = fields;
       if (!id || id.length < 7) continue;
       const parents = parentStr ? parentStr.split(" ").filter(Boolean) : [];
       const refs = parseRefs(refStr ?? "", headBranch);
@@ -1028,11 +1027,7 @@ export class GitService {
     return commits;
   }
 
-  async pull(
-    repoPath: string,
-    remote?: string,
-    rebase?: boolean
-  ): Promise<MergeResult> {
+  async pull(repoPath: string, remote?: string, rebase?: boolean): Promise<MergeResult> {
     const git = getGit(repoPath);
     try {
       const args: string[] = ["pull"];
@@ -1052,10 +1047,9 @@ export class GitService {
 
   async fetch(repoPath: string, remote?: string): Promise<void> {
     const git = getGit(repoPath);
-    await withRetry(
-      () => (remote ? git.fetch(remote) : git.fetch()),
-      { label: `fetch ${remote ?? "(default)"}` }
-    );
+    await withRetry(() => (remote ? git.fetch(remote) : git.fetch()), {
+      label: `fetch ${remote ?? "(default)"}`,
+    });
   }
 
   async fetchAll(repoPath: string): Promise<void> {
@@ -1065,10 +1059,9 @@ export class GitService {
 
   async fetchBranch(repoPath: string, remote: string, branchName: string): Promise<void> {
     const git = getGit(repoPath);
-    await withRetry(
-      () => git.raw(["fetch", remote, `${branchName}:${branchName}`]),
-      { label: `fetch ${remote} ${branchName}` }
-    );
+    await withRetry(() => git.raw(["fetch", remote, `${branchName}:${branchName}`]), {
+      label: `fetch ${remote} ${branchName}`,
+    });
   }
 
   async getRemotes(repoPath: string): Promise<RemoteInfo[]> {
@@ -1098,11 +1091,7 @@ export class GitService {
     return entries;
   }
 
-  async stashSave(
-    repoPath: string,
-    message: string,
-    includeUntracked: boolean
-  ): Promise<void> {
+  async stashSave(repoPath: string, message: string, includeUntracked: boolean): Promise<void> {
     const git = getGit(repoPath);
     const args = ["stash", "push", "-m", message];
     if (includeUntracked) args.push("--include-untracked");
@@ -1126,12 +1115,7 @@ export class GitService {
 
   async getStashFiles(repoPath: string, index: number): Promise<FileStatus[]> {
     const git = getGit(repoPath);
-    const raw = await git.raw([
-      "stash",
-      "show",
-      "--name-status",
-      `stash@{${index}}`,
-    ]);
+    const raw = await git.raw(["stash", "show", "--name-status", `stash@{${index}}`]);
     if (!raw.trim()) return [];
     return raw
       .trim()
@@ -1166,13 +1150,7 @@ export class GitService {
   ): Promise<DiffResultModel> {
     const git = getGit(repoPath);
     const raw = await git
-      .raw([
-        "diff",
-        `stash@{${index}}^1`,
-        `stash@{${index}}`,
-        "--",
-        filePath,
-      ])
+      .raw(["diff", `stash@{${index}}^1`, `stash@{${index}}`, "--", filePath])
       .catch(() =>
         git.raw([
           "diff",
@@ -1185,11 +1163,7 @@ export class GitService {
     return parseDiffOutput(raw, filePath);
   }
 
-  async getBlame(
-    repoPath: string,
-    filePath: string,
-    commitId?: string
-  ): Promise<BlameInfo> {
+  async getBlame(repoPath: string, filePath: string, commitId?: string): Promise<BlameInfo> {
     const git = getGit(repoPath);
     const args = ["blame", "--porcelain"];
     if (commitId) args.push(commitId);
@@ -1243,10 +1217,7 @@ export class GitService {
     return status.conflicted;
   }
 
-  async getConflictContent(
-    repoPath: string,
-    filePath: string
-  ): Promise<ConflictFile> {
+  async getConflictContent(repoPath: string, filePath: string): Promise<ConflictFile> {
     const git = getGit(repoPath);
     const [ours, theirs, base] = await Promise.all([
       git.raw(["show", `:2:${filePath}`]).catch(() => ""),
@@ -1261,11 +1232,7 @@ export class GitService {
     };
   }
 
-  async resolveConflict(
-    repoPath: string,
-    filePath: string,
-    content: string
-  ): Promise<void> {
+  async resolveConflict(repoPath: string, filePath: string, content: string): Promise<void> {
     const fullPath = safeJoin(repoPath, filePath);
     fs.writeFileSync(fullPath, content, "utf-8");
     const git = getGit(repoPath);
@@ -1290,8 +1257,7 @@ export class GitService {
     };
     let state: "none" | "merge" | "rebase" | "cherry-pick" | "revert" = "none";
     if (checkFile("MERGE_HEAD")) state = "merge";
-    else if (checkFile("rebase-merge") || checkFile("rebase-apply"))
-      state = "rebase";
+    else if (checkFile("rebase-merge") || checkFile("rebase-apply")) state = "rebase";
     else if (checkFile("CHERRY_PICK_HEAD")) state = "cherry-pick";
     else if (checkFile("REVERT_HEAD")) state = "revert";
 
@@ -1341,10 +1307,7 @@ export class GitService {
     }
   }
 
-  async getWorkingFileContent(
-    repoPath: string,
-    filePath: string
-  ): Promise<string> {
+  async getWorkingFileContent(repoPath: string, filePath: string): Promise<string> {
     const fullPath = safeJoin(repoPath, filePath);
     return fs.readFileSync(fullPath, "utf-8");
   }
@@ -1362,11 +1325,7 @@ export class GitService {
     });
   }
 
-  async getFileContent(
-    repoPath: string,
-    commitId: string,
-    filePath: string
-  ): Promise<string> {
+  async getFileContent(repoPath: string, commitId: string, filePath: string): Promise<string> {
     const git = getGit(repoPath);
     return git.raw(["show", `${commitId}:${filePath}`]);
   }
@@ -1405,15 +1364,9 @@ export class GitService {
     });
   }
 
-  async getFileDiffRaw(
-    repoPath: string,
-    filePath: string,
-    staged: boolean
-  ): Promise<string> {
+  async getFileDiffRaw(repoPath: string, filePath: string, staged: boolean): Promise<string> {
     const git = getGit(repoPath);
-    const args = staged
-      ? ["diff", "--cached", "--", filePath]
-      : ["diff", "--", filePath];
+    const args = staged ? ["diff", "--cached", "--", filePath] : ["diff", "--", filePath];
     return git.raw(args);
   }
 
@@ -1422,11 +1375,7 @@ export class GitService {
     fs.unlinkSync(fullPath);
   }
 
-  async stashFile(
-    repoPath: string,
-    filePath: string,
-    message?: string
-  ): Promise<void> {
+  async stashFile(repoPath: string, filePath: string, message?: string): Promise<void> {
     const git = getGit(repoPath);
     const args = ["stash", "push", "--include-untracked"];
     if (message) {

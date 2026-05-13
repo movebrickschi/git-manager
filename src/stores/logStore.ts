@@ -52,7 +52,7 @@ export const useLogStore = defineStore("log", () => {
     async (
       signal: AbortSignal,
       repoPath: string,
-      params: Parameters<typeof commands.getLog>[1],
+      params: Parameters<typeof commands.getLog>[1]
     ): Promise<LogResult> => {
       const result = await commands.getLog(repoPath, params);
       // 即便底层 fetch/IPC 不感知 signal，结果到达时若已被新调用顶替则丢弃，避免污染 state
@@ -60,7 +60,7 @@ export const useLogStore = defineStore("log", () => {
         throw new DOMException("aborted", "AbortError");
       }
       return result;
-    },
+    }
   );
 
   async function loadCommits(reset = false): Promise<void> {
@@ -123,7 +123,7 @@ export const useLogStore = defineStore("log", () => {
       if (repoStore.activeRepo) {
         loadCommits(true);
       }
-    },
+    }
   );
 
   return {

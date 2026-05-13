@@ -12,11 +12,7 @@ const renderData = computed(() => computeGraphRender(props.row, 0, props.maxColu
 </script>
 
 <template>
-  <svg
-    :width="renderData.width"
-    :height="ROW_HEIGHT"
-    class="commit-graph"
-  >
+  <svg :width="renderData.width" :height="ROW_HEIGHT" class="commit-graph">
     <!-- Edges -->
     <template v-for="(line, i) in renderData.lines" :key="i">
       <line

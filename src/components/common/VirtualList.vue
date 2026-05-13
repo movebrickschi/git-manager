@@ -43,9 +43,7 @@ const { visibleStart, visibleEnd, offsetY, totalHeight } = useVirtualScroll({
   overscan: props.overscan ?? 10,
 });
 
-const visibleItems = computed(() =>
-  itemsRef.value.slice(visibleStart.value, visibleEnd.value),
-);
+const visibleItems = computed(() => itemsRef.value.slice(visibleStart.value, visibleEnd.value));
 
 function resolveKey(item: T, index: number): string | number {
   return props.getKey ? props.getKey(item, index) : index;
@@ -92,14 +90,8 @@ defineExpose({
 <template>
   <div ref="viewportRef" class="vlist-viewport" @scroll="onScroll">
     <div class="vlist-spacer" :style="{ height: totalHeight + 'px' }">
-      <div
-        class="vlist-items"
-        :style="{ transform: `translateY(${offsetY}px)` }"
-      >
-        <template
-          v-for="(item, i) in visibleItems"
-          :key="resolveKey(item, visibleStart + i)"
-        >
+      <div class="vlist-items" :style="{ transform: `translateY(${offsetY}px)` }">
+        <template v-for="(item, i) in visibleItems" :key="resolveKey(item, visibleStart + i)">
           <slot :item="item" :index="visibleStart + i" />
         </template>
       </div>

@@ -77,10 +77,7 @@ function buildTree(files: readonly FileStatus[]): InternalNode {
   return root;
 }
 
-function flatten(
-  root: InternalNode,
-  collapsed: ReadonlySet<string>,
-): TreeNode[] {
+function flatten(root: InternalNode, collapsed: ReadonlySet<string>): TreeNode[] {
   const out: TreeNode[] = [];
 
   function walk(node: InternalNode, depth: number): void {

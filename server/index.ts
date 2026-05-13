@@ -10,7 +10,9 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3847;
 
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "http://localhost:5173,http://localhost:3847")
+const ALLOWED_ORIGINS = (
+  process.env.ALLOWED_ORIGINS ?? "http://localhost:5173,http://localhost:3847"
+)
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
@@ -27,14 +29,9 @@ app.use(
   })
 );
 
-const HIGH_LIMIT_ROUTES = [
-  "/api/conflict/resolve",
-  "/api/commit",
-];
+const HIGH_LIMIT_ROUTES = ["/api/conflict/resolve", "/api/commit"];
 app.use((req, res, next) => {
-  const limit = HIGH_LIMIT_ROUTES.some((p) => req.path.startsWith(p))
-    ? "10mb"
-    : "1mb";
+  const limit = HIGH_LIMIT_ROUTES.some((p) => req.path.startsWith(p)) ? "10mb" : "1mb";
   express.json({ limit })(req, res, next);
 });
 

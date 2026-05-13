@@ -26,13 +26,8 @@ export type {
   ProgressEvent,
 } from "./types";
 
-const isElectron =
-  typeof window !== "undefined" && !!window.electronAPI;
+const isElectron = typeof window !== "undefined" && !!window.electronAPI;
 
-export const commands: Commands = isElectron
-  ? createElectronAdapter()
-  : createWebAdapter();
+export const commands: Commands = isElectron ? createElectronAdapter() : createWebAdapter();
 
-export const platform: Platform = isElectron
-  ? createElectronPlatform()
-  : createWebPlatform();
+export const platform: Platform = isElectron ? createElectronPlatform() : createWebPlatform();

@@ -38,15 +38,12 @@ function wrap(fn: (req: Request) => Promise<any>) {
       res.json({ success: true, data: result });
     } catch (e: any) {
       const { code, status } = classifyError(e);
-      console.error(
-        `[${traceId}] ${req.method} ${req.path} ${code}:`,
-        e?.stack ?? e
-      );
+      console.error(`[${traceId}] ${req.method} ${req.path} ${code}:`, e?.stack ?? e);
       res.status(status).json({
         success: false,
         code,
         traceId,
-        error: IS_PROD ? code : e?.message ?? String(e),
+        error: IS_PROD ? code : (e?.message ?? String(e)),
       });
     }
   };
@@ -74,23 +71,17 @@ router.post(
 
 router.post(
   "/commit/diff",
-  wrap((req) =>
-    gitService.getCommitDiff(req.body.repoPath, req.body.commitId, req.body.filePath)
-  )
+  wrap((req) => gitService.getCommitDiff(req.body.repoPath, req.body.commitId, req.body.filePath))
 );
 
 router.post(
   "/file/diff",
-  wrap((req) =>
-    gitService.getFileDiff(req.body.repoPath, req.body.filePath, req.body.staged)
-  )
+  wrap((req) => gitService.getFileDiff(req.body.repoPath, req.body.filePath, req.body.staged))
 );
 
 router.post(
   "/commits/compare",
-  wrap((req) =>
-    gitService.compareCommits(req.body.repoPath, req.body.fromId, req.body.toId)
-  )
+  wrap((req) => gitService.compareCommits(req.body.repoPath, req.body.fromId, req.body.toId))
 );
 
 router.post(
@@ -100,9 +91,7 @@ router.post(
 
 router.post(
   "/branch/create",
-  wrap((req) =>
-    gitService.createBranch(req.body.repoPath, req.body.name, req.body.startPoint)
-  )
+  wrap((req) => gitService.createBranch(req.body.repoPath, req.body.name, req.body.startPoint))
 );
 
 router.post(
@@ -112,16 +101,12 @@ router.post(
 
 router.post(
   "/branch/delete",
-  wrap((req) =>
-    gitService.deleteBranch(req.body.repoPath, req.body.name, req.body.force)
-  )
+  wrap((req) => gitService.deleteBranch(req.body.repoPath, req.body.name, req.body.force))
 );
 
 router.post(
   "/branch/rename",
-  wrap((req) =>
-    gitService.renameBranch(req.body.repoPath, req.body.oldName, req.body.newName)
-  )
+  wrap((req) => gitService.renameBranch(req.body.repoPath, req.body.oldName, req.body.newName))
 );
 
 router.post(
@@ -146,9 +131,7 @@ router.post(
 
 router.post(
   "/commit/reset",
-  wrap((req) =>
-    gitService.resetToCommit(req.body.repoPath, req.body.commitId, req.body.mode)
-  )
+  wrap((req) => gitService.resetToCommit(req.body.repoPath, req.body.commitId, req.body.mode))
 );
 
 router.post(
@@ -178,30 +161,22 @@ router.post(
 
 router.post(
   "/commit",
-  wrap((req) =>
-    gitService.commit(req.body.repoPath, req.body.message, req.body.amend)
-  )
+  wrap((req) => gitService.commit(req.body.repoPath, req.body.message, req.body.amend))
 );
 
 router.post(
   "/push",
-  wrap((req) =>
-    gitService.push(req.body.repoPath, req.body.remote, req.body.branch)
-  )
+  wrap((req) => gitService.push(req.body.repoPath, req.body.remote, req.body.branch))
 );
 
 router.post(
   "/unpushed-commits",
-  wrap((req) =>
-    gitService.getUnpushedCommits(req.body.repoPath, req.body.remote, req.body.branch)
-  )
+  wrap((req) => gitService.getUnpushedCommits(req.body.repoPath, req.body.remote, req.body.branch))
 );
 
 router.post(
   "/pull",
-  wrap((req) =>
-    gitService.pull(req.body.repoPath, req.body.remote, req.body.rebase)
-  )
+  wrap((req) => gitService.pull(req.body.repoPath, req.body.remote, req.body.rebase))
 );
 
 router.post(
@@ -216,9 +191,7 @@ router.post(
 
 router.post(
   "/branch/fetch-update",
-  wrap((req) =>
-    gitService.fetchBranch(req.body.repoPath, req.body.remote, req.body.branchName)
-  )
+  wrap((req) => gitService.fetchBranch(req.body.repoPath, req.body.remote, req.body.branchName))
 );
 
 router.post(
@@ -234,11 +207,7 @@ router.post(
 router.post(
   "/stash/save",
   wrap((req) =>
-    gitService.stashSave(
-      req.body.repoPath,
-      req.body.message,
-      req.body.includeUntracked
-    )
+    gitService.stashSave(req.body.repoPath, req.body.message, req.body.includeUntracked)
   )
 );
 
@@ -264,16 +233,12 @@ router.post(
 
 router.post(
   "/stash/file-diff",
-  wrap((req) =>
-    gitService.getStashFileDiff(req.body.repoPath, req.body.index, req.body.filePath)
-  )
+  wrap((req) => gitService.getStashFileDiff(req.body.repoPath, req.body.index, req.body.filePath))
 );
 
 router.post(
   "/blame",
-  wrap((req) =>
-    gitService.getBlame(req.body.repoPath, req.body.filePath, req.body.commitId)
-  )
+  wrap((req) => gitService.getBlame(req.body.repoPath, req.body.filePath, req.body.commitId))
 );
 
 router.post(
@@ -283,27 +248,17 @@ router.post(
 
 router.post(
   "/conflict/content",
-  wrap((req) =>
-    gitService.getConflictContent(req.body.repoPath, req.body.filePath)
-  )
+  wrap((req) => gitService.getConflictContent(req.body.repoPath, req.body.filePath))
 );
 
 router.post(
   "/conflict/resolve",
-  wrap((req) =>
-    gitService.resolveConflict(
-      req.body.repoPath,
-      req.body.filePath,
-      req.body.content
-    )
-  )
+  wrap((req) => gitService.resolveConflict(req.body.repoPath, req.body.filePath, req.body.content))
 );
 
 router.post(
   "/conflict/working-content",
-  wrap((req) =>
-    gitService.getWorkingFileContent(req.body.repoPath, req.body.filePath)
-  )
+  wrap((req) => gitService.getWorkingFileContent(req.body.repoPath, req.body.filePath))
 );
 
 router.post(
@@ -328,27 +283,17 @@ router.post(
 
 router.post(
   "/file/content",
-  wrap((req) =>
-    gitService.getFileContent(
-      req.body.repoPath,
-      req.body.commitId,
-      req.body.filePath
-    )
-  )
+  wrap((req) => gitService.getFileContent(req.body.repoPath, req.body.commitId, req.body.filePath))
 );
 
 router.post(
   "/file/discard",
-  wrap((req) =>
-    gitService.discardFileChanges(req.body.repoPath, req.body.filePath)
-  )
+  wrap((req) => gitService.discardFileChanges(req.body.repoPath, req.body.filePath))
 );
 
 router.post(
   "/file/diff-raw",
-  wrap((req) =>
-    gitService.getFileDiffRaw(req.body.repoPath, req.body.filePath, req.body.staged)
-  )
+  wrap((req) => gitService.getFileDiffRaw(req.body.repoPath, req.body.filePath, req.body.staged))
 );
 
 router.post(
@@ -358,9 +303,7 @@ router.post(
 
 router.post(
   "/stash/file",
-  wrap((req) =>
-    gitService.stashFile(req.body.repoPath, req.body.filePath, req.body.message)
-  )
+  wrap((req) => gitService.stashFile(req.body.repoPath, req.body.filePath, req.body.message))
 );
 
 export default router;

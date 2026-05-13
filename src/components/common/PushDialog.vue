@@ -30,7 +30,9 @@ const branchName = computed(() => props.branch ?? props.targetBranch ?? "");
 const destination = computed(() =>
   branchName.value ? `${remoteName.value}/${branchName.value}` : remoteName.value
 );
-const repoLabel = computed(() => props.repoName ?? props.repoPath.split(/[\\/]/).pop() ?? props.repoPath);
+const repoLabel = computed(
+  () => props.repoName ?? props.repoPath.split(/[\\/]/).pop() ?? props.repoPath
+);
 
 async function loadCommits() {
   if (!props.repoPath) return;
@@ -39,11 +41,7 @@ async function loadCommits() {
   selectedCommit.value = null;
   commitFiles.value = [];
   try {
-    commits.value = await commands.getUnpushedCommits(
-      props.repoPath,
-      props.remote,
-      props.branch
-    );
+    commits.value = await commands.getUnpushedCommits(props.repoPath, props.remote, props.branch);
     if (commits.value.length > 0) {
       await selectCommit(commits.value[0]!);
     }
@@ -117,15 +115,36 @@ watch(
           <div class="push-left">
             <!-- Repo / branch row -->
             <div class="repo-row">
-              <svg class="repo-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
+              <svg
+                class="repo-icon"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"
+                />
               </svg>
               <span class="repo-name">{{ repoLabel }}</span>
-              <svg class="arrow-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
+              <svg
+                class="arrow-icon"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="5" y1="12" x2="19" y2="12" />
+                <polyline points="12 5 19 12 12 19" />
               </svg>
               <span class="dest-name">{{ destination }}</span>
-              <span v-if="commits.length > 0" class="commit-count">{{ commits.length }} 个提交</span>
+              <span v-if="commits.length > 0" class="commit-count"
+                >{{ commits.length }} 个提交</span
+              >
             </div>
 
             <!-- Commit list -->
@@ -141,7 +160,9 @@ watch(
               >
                 <span class="commit-hash">{{ commit.shortId }}</span>
                 <span class="commit-summary">{{ commit.summary }}</span>
-                <span class="commit-meta">{{ commit.author }} · {{ formatTimestamp(commit.authorTime) }}</span>
+                <span class="commit-meta"
+                  >{{ commit.author }} · {{ formatTimestamp(commit.authorTime) }}</span
+                >
               </div>
             </div>
           </div>
@@ -160,15 +181,18 @@ watch(
             </div>
             <div class="files-area">
               <div v-if="filesLoading" class="list-empty">加载中...</div>
-              <div
-                v-for="file in commitFiles"
-                :key="file.path"
-                class="file-row"
-              >
-                <span class="file-status" :class="'status-' + file.status">{{ fileStatusLabel(file.status) }}</span>
+              <div v-for="file in commitFiles" :key="file.path" class="file-row">
+                <span class="file-status" :class="'status-' + file.status">{{
+                  fileStatusLabel(file.status)
+                }}</span>
                 <span class="file-path">{{ file.path }}</span>
               </div>
-              <div v-if="!filesLoading && selectedCommit && commitFiles.length === 0" class="list-empty">无变更文件</div>
+              <div
+                v-if="!filesLoading && selectedCommit && commitFiles.length === 0"
+                class="list-empty"
+              >
+                无变更文件
+              </div>
             </div>
           </div>
         </div>
@@ -423,11 +447,21 @@ watch(
   text-align: center;
 }
 
-.file-status.status-added { color: #4caf50; }
-.file-status.status-modified { color: #2196f3; }
-.file-status.status-deleted { color: #f44336; }
-.file-status.status-renamed { color: #ff9800; }
-.file-status.status-copied { color: #9c27b0; }
+.file-status.status-added {
+  color: #4caf50;
+}
+.file-status.status-modified {
+  color: #2196f3;
+}
+.file-status.status-deleted {
+  color: #f44336;
+}
+.file-status.status-renamed {
+  color: #ff9800;
+}
+.file-status.status-copied {
+  color: #9c27b0;
+}
 
 .file-path {
   font-size: 12px;

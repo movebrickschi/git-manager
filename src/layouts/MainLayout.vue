@@ -12,9 +12,7 @@ function handleGlobalKey(e: KeyboardEvent) {
   const target = e.target as HTMLElement | null;
   const isEditable =
     target &&
-    (target.tagName === "INPUT" ||
-      target.tagName === "TEXTAREA" ||
-      target.isContentEditable);
+    (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
   if (isEditable) return;
   if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
     e.preventDefault();
@@ -130,8 +128,16 @@ onUnmounted(() => {
           <span class="repo-color" :style="{ background: repo.color }" />
           <span class="repo-name">{{ repo.name }}</span>
           <button class="repo-close" @click.stop="repoStore.closeRepo(i)">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
         </div>
@@ -140,20 +146,51 @@ onUnmounted(() => {
       <!-- 加号按钮 + 下拉菜单 -->
       <div class="add-repo-wrapper" ref="addMenuRef">
         <button class="add-repo-btn" @click.stop="showAddMenu = !showAddMenu" title="添加仓库">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+          >
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
         </button>
         <div v-if="showAddMenu" class="add-repo-menu">
           <button class="add-menu-item" @click="openFolder">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+              />
             </svg>
             打开仓库
           </button>
-          <button class="add-menu-item" @click="showCloneDialog = true; showAddMenu = false">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="16 16 12 12 8 16" /><line x1="12" y1="12" x2="12" y2="21" />
+          <button
+            class="add-menu-item"
+            @click="
+              showCloneDialog = true;
+              showAddMenu = false;
+            "
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <polyline points="16 16 12 12 8 16" />
+              <line x1="12" y1="12" x2="12" y2="21" />
               <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3" />
             </svg>
             克隆仓库
@@ -189,7 +226,7 @@ onUnmounted(() => {
         <div class="dialog-actions">
           <button class="btn" @click="showManualInput = false" :disabled="loading">取消</button>
           <button class="btn primary" @click="openManualPath" :disabled="loading">
-            {{ loading ? '打开中...' : '打开' }}
+            {{ loading ? "打开中..." : "打开" }}
           </button>
         </div>
       </div>
@@ -201,17 +238,28 @@ onUnmounted(() => {
         <h3>克隆仓库</h3>
         <div class="dialog-field">
           <label>仓库 URL</label>
-          <input v-model="cloneUrl" placeholder="https://github.com/user/repo.git" :disabled="cloneLoading" />
+          <input
+            v-model="cloneUrl"
+            placeholder="https://github.com/user/repo.git"
+            :disabled="cloneLoading"
+          />
         </div>
         <div class="dialog-field">
           <label>本地路径</label>
-          <input v-model="clonePath" placeholder="C:\projects\repo" :disabled="cloneLoading" @keyup.enter="cloneRepo" />
+          <input
+            v-model="clonePath"
+            placeholder="C:\projects\repo"
+            :disabled="cloneLoading"
+            @keyup.enter="cloneRepo"
+          />
         </div>
         <div v-if="cloneError" class="error-msg">{{ cloneError }}</div>
         <div class="dialog-actions">
-          <button class="btn" @click="showCloneDialog = false" :disabled="cloneLoading">取消</button>
+          <button class="btn" @click="showCloneDialog = false" :disabled="cloneLoading">
+            取消
+          </button>
           <button class="btn primary" @click="cloneRepo" :disabled="cloneLoading">
-            {{ cloneLoading ? '克隆中...' : '克隆' }}
+            {{ cloneLoading ? "克隆中..." : "克隆" }}
           </button>
         </div>
       </div>

@@ -97,7 +97,12 @@ function isNewGroup(lines: BlameLine[], index: number): boolean {
       <template #default="{ item: line, index: i }">
         <div
           class="blame-line"
-          :style="{ background: hoveredCommit === line.commitId ? 'var(--color-surface-active)' : commitColorMap[line.commitId] }"
+          :style="{
+            background:
+              hoveredCommit === line.commitId
+                ? 'var(--color-surface-active)'
+                : commitColorMap[line.commitId],
+          }"
         >
           <!-- Blame gutter -->
           <div
@@ -148,7 +153,8 @@ function isNewGroup(lines: BlameLine[], index: number): boolean {
   overflow: hidden;
 }
 
-.loading, .empty {
+.loading,
+.empty {
   padding: 24px;
   text-align: center;
   color: var(--color-foreground-muted);

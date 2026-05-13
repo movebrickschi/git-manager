@@ -33,9 +33,7 @@ export interface UseVirtualScrollReturn {
  *  2. 监听容器 resize 把 viewportHeight 同步进来
  *  3. 根据 visibleStart/visibleEnd 切片 items 并把 offsetY 应用为 translateY
  */
-export function useVirtualScroll(
-  opts: UseVirtualScrollOptions,
-): UseVirtualScrollReturn {
+export function useVirtualScroll(opts: UseVirtualScrollOptions): UseVirtualScrollReturn {
   const { scrollTop, viewportHeight, totalItems, itemHeight } = opts;
   const overscan = opts.overscan ?? 10;
   const safeHeight = itemHeight > 0 ? itemHeight : 1; // 防 itemHeight=0 除零
@@ -48,9 +46,7 @@ export function useVirtualScroll(
 
   const visibleEnd = computed(() => {
     if (totalItems.value === 0) return 0;
-    const raw =
-      Math.ceil((scrollTop.value + viewportHeight.value) / safeHeight) +
-      overscan;
+    const raw = Math.ceil((scrollTop.value + viewportHeight.value) / safeHeight) + overscan;
     return Math.min(totalItems.value, raw);
   });
 

@@ -41,7 +41,9 @@ function showToast(msg: string) {
   toastMessage.value = msg;
   toastVisible.value = true;
   if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toastVisible.value = false; }, 2500);
+  toastTimer = setTimeout(() => {
+    toastVisible.value = false;
+  }, 2500);
 }
 
 async function loadStashes() {
@@ -159,25 +161,39 @@ function showContextMenuForStash(event: MouseEvent, stash: StashEntry) {
 
 function getStatusLetter(status: FileStatus["status"]): string {
   switch (status) {
-    case "added": return "A";
-    case "modified": return "M";
-    case "deleted": return "D";
-    case "renamed": return "R";
-    case "copied": return "C";
-    case "untracked": return "?";
-    default: return "?";
+    case "added":
+      return "A";
+    case "modified":
+      return "M";
+    case "deleted":
+      return "D";
+    case "renamed":
+      return "R";
+    case "copied":
+      return "C";
+    case "untracked":
+      return "?";
+    default:
+      return "?";
   }
 }
 
 function getStatusClass(status: FileStatus["status"]): string {
   switch (status) {
-    case "added": return "status-added";
-    case "modified": return "status-modified";
-    case "deleted": return "status-deleted";
-    case "renamed": return "status-renamed";
-    case "copied": return "status-renamed";
-    case "untracked": return "status-untracked";
-    default: return "";
+    case "added":
+      return "status-added";
+    case "modified":
+      return "status-modified";
+    case "deleted":
+      return "status-deleted";
+    case "renamed":
+      return "status-renamed";
+    case "copied":
+      return "status-renamed";
+    case "untracked":
+      return "status-untracked";
+    default:
+      return "";
   }
 }
 </script>
@@ -185,7 +201,6 @@ function getStatusClass(status: FileStatus["status"]): string {
 <template>
   <div class="stash-layout">
     <Splitpanes class="default-theme" style="height: 100%">
-
       <!-- 左栏：Stash 列表 -->
       <Pane :size="28" :min-size="18" :max-size="45">
         <div class="stash-panel">
@@ -194,13 +209,29 @@ function getStatusClass(status: FileStatus["status"]): string {
             <span v-if="stashes.length > 0" class="panel-count">{{ stashes.length }}</span>
             <div class="header-actions">
               <button class="action-btn" title="新建 Stash" @click="showSaveDialog = true">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
               </button>
               <button class="action-btn" title="刷新" @click="loadStashes">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <polyline points="23 4 23 10 17 10" />
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
                 </svg>
               </button>
             </div>
@@ -218,7 +249,7 @@ function getStatusClass(status: FileStatus["status"]): string {
               @contextmenu.prevent="showContextMenuForStash($event, stash)"
             >
               <div class="stash-top">
-                <span class="stash-ref">stash@{{ '{' }}{{ stash.index }}{{ '}' }}</span>
+                <span class="stash-ref">stash@{{ "{" }}{{ stash.index }}{{ "}" }}</span>
                 <span class="stash-time">{{ formatTimestamp(stash.time) }}</span>
               </div>
               <div class="stash-message">{{ stash.message }}</div>
@@ -237,7 +268,7 @@ function getStatusClass(status: FileStatus["status"]): string {
         <div class="files-panel">
           <div class="panel-header">
             <span class="panel-title">
-                {{ selectedStash ? 'stash@{' + selectedStash.index + '} 文件' : '文件' }}
+              {{ selectedStash ? "stash@{" + selectedStash.index + "} 文件" : "文件" }}
             </span>
             <span v-if="stashFiles.length > 0" class="panel-count">{{ stashFiles.length }}</span>
           </div>
@@ -265,7 +296,7 @@ function getStatusClass(status: FileStatus["status"]): string {
       <Pane :size="47" :min-size="25">
         <div class="diff-panel">
           <div class="panel-header">
-            <span class="panel-title">{{ selectedFile ? selectedFile.path : 'Diff' }}</span>
+            <span class="panel-title">{{ selectedFile ? selectedFile.path : "Diff" }}</span>
           </div>
           <div class="diff-content">
             <div v-if="!selectedFile" class="state-hint">选择一个文件查看变更</div>
@@ -275,7 +306,6 @@ function getStatusClass(status: FileStatus["status"]): string {
           </div>
         </div>
       </Pane>
-
     </Splitpanes>
 
     <!-- 新建 Stash 对话框 -->
@@ -502,11 +532,21 @@ function getStatusClass(status: FileStatus["status"]): string {
   flex-shrink: 0;
 }
 
-.status-added    { color: var(--color-git-added); }
-.status-modified { color: var(--color-git-modified); }
-.status-deleted  { color: var(--color-git-deleted); }
-.status-renamed  { color: var(--color-git-renamed); }
-.status-untracked{ color: var(--color-git-untracked); }
+.status-added {
+  color: var(--color-git-added);
+}
+.status-modified {
+  color: var(--color-git-modified);
+}
+.status-deleted {
+  color: var(--color-git-deleted);
+}
+.status-renamed {
+  color: var(--color-git-renamed);
+}
+.status-untracked {
+  color: var(--color-git-untracked);
+}
 
 .file-path {
   flex: 1;
@@ -658,7 +698,9 @@ function getStatusClass(status: FileStatus["status"]): string {
 
 .toast-enter-active,
 .toast-leave-active {
-  transition: opacity 0.2s, transform 0.2s;
+  transition:
+    opacity 0.2s,
+    transform 0.2s;
 }
 
 .toast-enter-from,

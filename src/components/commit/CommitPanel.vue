@@ -75,8 +75,16 @@ function onPushCancelled() {
         <span class="file-count">{{ commitStore.stagedFiles.length }}</span>
         <div style="flex: 1" />
         <ToolbarButton title="Unstage All" @click="commitStore.unstageAll">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="17 11 12 6 7 11" /><line x1="12" y1="18" x2="12" y2="6" />
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <polyline points="17 11 12 6 7 11" />
+            <line x1="12" y1="18" x2="12" y2="6" />
           </svg>
         </ToolbarButton>
       </Toolbar>
@@ -91,7 +99,17 @@ function onPushCancelled() {
         >
           <span class="file-name">{{ file.path }}</span>
           <span class="file-status" :class="'status-' + file.status">
-            {{ file.status === 'added' ? 'A' : file.status === 'modified' ? 'M' : file.status === 'deleted' ? 'D' : file.status === 'renamed' ? 'R' : '?' }}
+            {{
+              file.status === "added"
+                ? "A"
+                : file.status === "modified"
+                  ? "M"
+                  : file.status === "deleted"
+                    ? "D"
+                    : file.status === "renamed"
+                      ? "R"
+                      : "?"
+            }}
           </span>
         </div>
         <div v-if="commitStore.stagedFiles.length === 0" class="empty-hint">
@@ -104,11 +122,21 @@ function onPushCancelled() {
     <div class="file-section">
       <Toolbar compact>
         <span class="section-title">Changes</span>
-        <span class="file-count">{{ commitStore.unstagedFiles.length + commitStore.untrackedFiles.length }}</span>
+        <span class="file-count">{{
+          commitStore.unstagedFiles.length + commitStore.untrackedFiles.length
+        }}</span>
         <div style="flex: 1" />
         <ToolbarButton title="Stage All" @click="commitStore.stageAll">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="7 13 12 18 17 13" /><line x1="12" y1="6" x2="12" y2="18" />
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <polyline points="7 13 12 18 17 13" />
+            <line x1="12" y1="6" x2="12" y2="18" />
           </svg>
         </ToolbarButton>
       </Toolbar>
@@ -123,10 +151,25 @@ function onPushCancelled() {
         >
           <span class="file-name">{{ file.path }}</span>
           <span class="file-status" :class="'status-' + file.status">
-            {{ file.status === 'added' ? 'A' : file.status === 'modified' ? 'M' : file.status === 'deleted' ? 'D' : file.status === 'untracked' ? 'U' : file.status === 'conflicted' ? '!' : '?' }}
+            {{
+              file.status === "added"
+                ? "A"
+                : file.status === "modified"
+                  ? "M"
+                  : file.status === "deleted"
+                    ? "D"
+                    : file.status === "untracked"
+                      ? "U"
+                      : file.status === "conflicted"
+                        ? "!"
+                        : "?"
+            }}
           </span>
         </div>
-        <div v-if="commitStore.unstagedFiles.length === 0 && commitStore.untrackedFiles.length === 0" class="empty-hint">
+        <div
+          v-if="commitStore.unstagedFiles.length === 0 && commitStore.untrackedFiles.length === 0"
+          class="empty-hint"
+        >
           工作区无变更
         </div>
       </div>
@@ -242,12 +285,24 @@ function onPushCancelled() {
   text-align: center;
 }
 
-.status-added { color: var(--color-git-added); }
-.status-modified { color: var(--color-git-modified); }
-.status-deleted { color: var(--color-git-deleted); }
-.status-renamed { color: var(--color-git-renamed); }
-.status-untracked { color: var(--color-git-untracked); }
-.status-conflicted { color: var(--color-error); }
+.status-added {
+  color: var(--color-git-added);
+}
+.status-modified {
+  color: var(--color-git-modified);
+}
+.status-deleted {
+  color: var(--color-git-deleted);
+}
+.status-renamed {
+  color: var(--color-git-renamed);
+}
+.status-untracked {
+  color: var(--color-git-untracked);
+}
+.status-conflicted {
+  color: var(--color-error);
+}
 
 .empty-hint {
   padding: 12px;

@@ -38,9 +38,7 @@ describe("server routes — wrap() happy path", () => {
       currentBranch: "main",
     });
 
-    const res = await request(makeApp())
-      .post("/api/repo/open")
-      .send({ path: "/r" });
+    const res = await request(makeApp()).post("/api/repo/open").send({ path: "/r" });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -48,16 +46,14 @@ describe("server routes — wrap() happy path", () => {
       data: { path: "/r", name: "r", currentBranch: "main" },
     });
     expect(res.headers["x-trace-id"]).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     );
   });
 
   it("成功响应即便 service 返回 undefined 也应正常 200 + success:true", async () => {
     vi.mocked(gitService.push).mockResolvedValue(undefined);
 
-    const res = await request(makeApp())
-      .post("/api/push")
-      .send({ repoPath: "/r" });
+    const res = await request(makeApp()).post("/api/push").send({ repoPath: "/r" });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -140,13 +136,9 @@ describe("server routes — classifyError() 错误码映射", () => {
 
   for (const c of cases) {
     it(c.name, async () => {
-      vi.mocked(gitService.getStatus).mockRejectedValue(
-        new Error(c.errorMessage),
-      );
+      vi.mocked(gitService.getStatus).mockRejectedValue(new Error(c.errorMessage));
 
-      const res = await request(makeApp())
-        .post("/api/status")
-        .send({ repoPath: "/r" });
+      const res = await request(makeApp()).post("/api/status").send({ repoPath: "/r" });
 
       expect(res.status).toBe(c.expectedStatus);
       expect(res.body.success).toBe(false);
@@ -158,13 +150,9 @@ describe("server routes — classifyError() 错误码映射", () => {
   it("非生产环境 error 字段应回显原始 message", async () => {
     process.env.NODE_ENV = "development";
     // 注意：routes.ts 顶层就读了 IS_PROD，改 env 后需要重新 import；这里依赖 IS_PROD=false 默认行为
-    vi.mocked(gitService.getStatus).mockRejectedValue(
-      new Error("verbose internal stack"),
-    );
+    vi.mocked(gitService.getStatus).mockRejectedValue(new Error("verbose internal stack"));
 
-    const res = await request(makeApp())
-      .post("/api/status")
-      .send({ repoPath: "/r" });
+    const res = await request(makeApp()).post("/api/status").send({ repoPath: "/r" });
 
     expect(res.body.error).toBe("verbose internal stack");
   });
@@ -195,9 +183,7 @@ describe("server routes — 参数透传契约", () => {
       matchCase: false,
     };
 
-    await request(makeApp())
-      .post("/api/log")
-      .send({ repoPath: "/r", filter });
+    await request(makeApp()).post("/api/log").send({ repoPath: "/r", filter });
 
     expect(gitService.getLog).toHaveBeenCalledTimes(1);
     expect(gitService.getLog).toHaveBeenCalledWith("/r", filter);
@@ -206,15 +192,9 @@ describe("server routes — 参数透传契约", () => {
   it("POST /api/branch/create 应透传 repoPath, name, startPoint（可选参数 undefined 不丢失语义）", async () => {
     vi.mocked(gitService.createBranch).mockResolvedValue(undefined);
 
-    await request(makeApp())
-      .post("/api/branch/create")
-      .send({ repoPath: "/r", name: "feat/x" });
+    await request(makeApp()).post("/api/branch/create").send({ repoPath: "/r", name: "feat/x" });
 
-    expect(gitService.createBranch).toHaveBeenCalledWith(
-      "/r",
-      "feat/x",
-      undefined,
-    );
+    expect(gitService.createBranch).toHaveBeenCalledWith("/r", "feat/x", undefined);
   });
 
   it("POST /api/commit 应把 message 与 amend 透传", async () => {
@@ -224,10 +204,6 @@ describe("server routes — 参数透传契约", () => {
       .post("/api/commit")
       .send({ repoPath: "/r", message: "feat: x", amend: false });
 
-    expect(gitService.commit).toHaveBeenCalledWith(
-      "/r",
-      "feat: x",
-      false,
-    );
+    expect(gitService.commit).toHaveBeenCalledWith("/r", "feat: x", false);
   });
 });

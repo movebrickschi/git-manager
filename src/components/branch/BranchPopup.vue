@@ -77,7 +77,10 @@ async function createBranch() {
   gap: 12px;
 }
 
-.popup h4 { font-size: 14px; font-weight: 500; }
+.popup h4 {
+  font-size: 14px;
+  font-weight: 500;
+}
 
 .field {
   display: flex;
@@ -109,7 +112,14 @@ async function createBranch() {
   font-size: 12px;
 }
 
-.btn:hover { background: var(--color-surface-active); }
-.btn.primary { background: var(--color-primary); color: white; }
-.btn.primary:hover { background: var(--color-primary-hover); }
+.btn:hover {
+  background: var(--color-surface-active);
+}
+.btn.primary {
+  background: var(--color-primary);
+  color: white;
+}
+.btn.primary:hover {
+  background: var(--color-primary-hover);
+}
 </style>

@@ -9,9 +9,7 @@ import ContextMenu from "@/components/common/ContextMenu.vue";
 import type { MenuItem } from "@/components/common/ContextMenu.vue";
 import type { BranchInfo } from "@/utils/commands";
 import { commands } from "@/utils/commands";
-const ThreeWayMerge = defineAsyncComponent(
-  () => import("@/components/merge/ThreeWayMerge.vue")
-);
+const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/ThreeWayMerge.vue"));
 import PushDialog from "@/components/common/PushDialog.vue";
 
 const branchStore = useBranchStore();
@@ -68,9 +66,7 @@ onMounted(() => {
   // branches already loaded by parent
 });
 
-const headBranch = computed(() =>
-  branchStore.localBranches.find((b) => b.isHead) ?? null
-);
+const headBranch = computed(() => branchStore.localBranches.find((b) => b.isHead) ?? null);
 
 function parseRemoteRef(fullName: string): { remote: string; branch: string } | null {
   const i = fullName.indexOf("/");
@@ -300,13 +296,13 @@ const filteredTags = computed(() => {
 
 // ---- Branch tree types ----
 interface BranchLeafNode {
-  type: 'branch';
+  type: "branch";
   branch: BranchInfo;
-  kind: 'local' | 'remote';
+  kind: "local" | "remote";
   displayName: string;
 }
 interface BranchFolderNode {
-  type: 'folder';
+  type: "folder";
   name: string;
   fullKey: string;
   children: TreeNode[];
@@ -314,15 +310,15 @@ interface BranchFolderNode {
 type TreeNode = BranchLeafNode | BranchFolderNode;
 
 interface FlatBranchNode {
-  type: 'branch';
+  type: "branch";
   depth: number;
   key: string;
   branch: BranchInfo;
-  kind: 'local' | 'remote';
+  kind: "local" | "remote";
   displayName: string;
 }
 interface FlatFolderNode {
-  type: 'folder';
+  type: "folder";
   depth: number;
   key: string;
   folderName: string;
@@ -351,21 +347,19 @@ function insertIntoTree(
   nodes: TreeNode[],
   displayParts: string[],
   branch: BranchInfo,
-  kind: 'local' | 'remote',
-  keyPrefix: string,
+  kind: "local" | "remote",
+  keyPrefix: string
 ) {
   if (displayParts.length === 1) {
-    nodes.push({ type: 'branch', branch, kind, displayName: displayParts[0]! });
+    nodes.push({ type: "branch", branch, kind, displayName: displayParts[0]! });
     return;
   }
   const head = displayParts[0]!;
   const rest = displayParts.slice(1);
   const folderKey = keyPrefix ? `${keyPrefix}/${head}` : head;
-  let folder = nodes.find(
-    (n): n is BranchFolderNode => n.type === 'folder' && n.name === head,
-  );
+  let folder = nodes.find((n): n is BranchFolderNode => n.type === "folder" && n.name === head);
   if (!folder) {
-    folder = { type: 'folder', name: head, fullKey: folderKey, children: [] };
+    folder = { type: "folder", name: head, fullKey: folderKey, children: [] };
     nodes.push(folder);
   }
   insertIntoTree(folder.children, rest, branch, kind, folderKey);
@@ -374,9 +368,9 @@ function insertIntoTree(
 function flattenTreeNodes(nodes: TreeNode[], depth: number, keyPrefix: string): FlatNode[] {
   const result: FlatNode[] = [];
   for (const node of nodes) {
-    if (node.type === 'branch') {
+    if (node.type === "branch") {
       result.push({
-        type: 'branch',
+        type: "branch",
         depth,
         key: `${keyPrefix}:b:${node.branch.name}`,
         branch: node.branch,
@@ -386,7 +380,7 @@ function flattenTreeNodes(nodes: TreeNode[], depth: number, keyPrefix: string): 
     } else {
       const expanded = isFolderExpanded(node.fullKey);
       result.push({
-        type: 'folder',
+        type: "folder",
         depth,
         key: `${keyPrefix}:f:${node.fullKey}`,
         folderName: node.name,
@@ -405,17 +399,17 @@ function flattenTreeNodes(nodes: TreeNode[], depth: number, keyPrefix: string): 
 const localFlatNodes = computed<FlatNode[]>(() => {
   const roots: TreeNode[] = [];
   for (const branch of filteredLocal.value) {
-    insertIntoTree(roots, branch.name.split('/'), branch, 'local', 'local');
+    insertIntoTree(roots, branch.name.split("/"), branch, "local", "local");
   }
-  return flattenTreeNodes(roots, 0, 'local');
+  return flattenTreeNodes(roots, 0, "local");
 });
 
 const remoteFlatNodes = computed<FlatNode[]>(() => {
   const remoteGroups = new Map<string, BranchInfo[]>();
   const remoteOrder: string[] = [];
   for (const branch of filteredRemote.value) {
-    const slashIdx = branch.name.indexOf('/');
-    const remoteName = slashIdx > 0 ? branch.name.slice(0, slashIdx) : '__bare__';
+    const slashIdx = branch.name.indexOf("/");
+    const remoteName = slashIdx > 0 ? branch.name.slice(0, slashIdx) : "__bare__";
     if (!remoteGroups.has(remoteName)) {
       remoteGroups.set(remoteName, []);
       remoteOrder.push(remoteName);
@@ -425,14 +419,14 @@ const remoteFlatNodes = computed<FlatNode[]>(() => {
   const result: FlatNode[] = [];
   for (const remoteName of remoteOrder) {
     const branches = remoteGroups.get(remoteName)!;
-    if (remoteName === '__bare__') {
+    if (remoteName === "__bare__") {
       for (const branch of branches) {
         result.push({
-          type: 'branch',
+          type: "branch",
           depth: 0,
           key: `remote:b:${branch.name}`,
           branch,
-          kind: 'remote',
+          kind: "remote",
           displayName: branch.name,
         } as FlatBranchNode);
       }
@@ -440,7 +434,7 @@ const remoteFlatNodes = computed<FlatNode[]>(() => {
     }
     const folderKey = `remote_root/${remoteName}`;
     result.push({
-      type: 'folder',
+      type: "folder",
       depth: 0,
       key: `remote:f:${remoteName}`,
       folderName: remoteName,
@@ -453,7 +447,13 @@ const remoteFlatNodes = computed<FlatNode[]>(() => {
         const withoutRemote = branch.name.startsWith(`${remoteName}/`)
           ? branch.name.slice(remoteName.length + 1)
           : branch.name;
-        insertIntoTree(subRoots, withoutRemote.split('/'), branch, 'remote', `remote/${remoteName}`);
+        insertIntoTree(
+          subRoots,
+          withoutRemote.split("/"),
+          branch,
+          "remote",
+          `remote/${remoteName}`
+        );
       }
       result.push(...flattenTreeNodes(subRoots, 1, `remote/${remoteName}`));
     }
@@ -484,11 +484,7 @@ function filterByBranch(name: string | null) {
   logStore.loadCommits(true);
 }
 
-function showContextMenu(
-  event: MouseEvent,
-  branch: BranchInfo,
-  kind: "local" | "remote"
-) {
+function showContextMenu(event: MouseEvent, branch: BranchInfo, kind: "local" | "remote") {
   // Keep right-click behavior aligned with selection-sensitive actions.
   selectedSidebarBranch.value = { kind, name: branch.name };
   contextBranch.value = branch;
@@ -605,11 +601,16 @@ function handleNewBranchFrom(fromBranch: string) {
   const name = window.prompt(`基于 '${fromBranch}' 新建分支，请输入分支名：`);
   if (!name) return;
   actionLoading.value = true;
-  branchStore.createBranch(name, fromBranch)
+  branchStore
+    .createBranch(name, fromBranch)
     .then(() => branchStore.checkoutBranch(name))
     .then(() => refreshAfterGitOp())
-    .catch((e: unknown) => { actionError.value = e instanceof Error ? e.message : String(e); })
-    .finally(() => { actionLoading.value = false; });
+    .catch((e: unknown) => {
+      actionError.value = e instanceof Error ? e.message : String(e);
+    })
+    .finally(() => {
+      actionLoading.value = false;
+    });
 }
 
 async function handleCheckoutAndRebase(branchToCheckout: string, rebaseOnto: string) {
@@ -713,17 +714,23 @@ async function handleRenameBranch(oldName: string) {
         class="tab-btn"
         :class="{ active: props.activeTab === 'commit' }"
         @click="emit('update:activeTab', 'commit')"
-      >本地更改</button>
+      >
+        本地更改
+      </button>
       <button
         class="tab-btn"
         :class="{ active: props.activeTab === 'stash' }"
         @click="emit('update:activeTab', 'stash')"
-      >搁置</button>
+      >
+        搁置
+      </button>
       <button
         class="tab-btn"
         :class="{ active: props.activeTab === 'log' }"
         @click="emit('update:activeTab', 'log')"
-      >{{ logTabLabel }}</button>
+      >
+        {{ logTabLabel }}
+      </button>
     </div>
 
     <div class="git-actions" v-if="props.activeTab === 'log'">
@@ -733,7 +740,14 @@ async function handleRenameBranch(oldName: string) {
           :disabled="!repoReady || actionLoading"
           @click="handleFetch"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
             <polyline points="1 4 1 10 7 10" />
             <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
           </svg>
@@ -744,7 +758,14 @@ async function handleRenameBranch(oldName: string) {
           :disabled="!repoReady || actionLoading"
           @click="handlePull"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
             <polyline points="7 13 12 18 17 13" />
             <line x1="12" y1="6" x2="12" y2="18" />
           </svg>
@@ -755,7 +776,14 @@ async function handleRenameBranch(oldName: string) {
           :disabled="!repoReady || actionLoading"
           @click="handlePush"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
             <polyline points="17 11 12 6 7 11" />
             <line x1="12" y1="18" x2="12" y2="6" />
           </svg>
@@ -773,7 +801,14 @@ async function handleRenameBranch(oldName: string) {
       <!-- Filter indicator -->
       <div v-if="logStore.filter.branch" class="filter-indicator" @click="filterByBranch(null)">
         <span>筛选: {{ logStore.filter.branch }}</span>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
           <line x1="18" y1="6" x2="6" y2="18" />
           <line x1="6" y1="6" x2="18" y2="18" />
         </svg>
@@ -796,13 +831,26 @@ async function handleRenameBranch(oldName: string) {
             <svg
               class="chevron"
               :class="{ 'chevron-open': node.isExpanded }"
-              width="10" height="10" viewBox="0 0 24 24"
-              fill="none" stroke="currentColor" stroke-width="2.5"
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
             >
               <polyline points="9 18 15 12 9 6" />
             </svg>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+              />
             </svg>
             <span class="branch-name">{{ node.folderName }}</span>
           </div>
@@ -818,16 +866,35 @@ async function handleRenameBranch(oldName: string) {
             @click="selectLocalBranch(node.branch)"
             @contextmenu.prevent="showContextMenu($event, node.branch, 'local')"
           >
-            <svg v-if="node.branch.isHead" width="12" height="12" viewBox="0 0 24 24" fill="var(--color-branch-head)" stroke="none">
-              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            <svg
+              v-if="node.branch.isHead"
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="var(--color-branch-head)"
+              stroke="none"
+            >
+              <polygon
+                points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+              />
             </svg>
-            <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-branch-local)" stroke-width="2">
+            <svg
+              v-else
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--color-branch-local)"
+              stroke-width="2"
+            >
               <line x1="6" y1="3" x2="6" y2="15" />
               <circle cx="18" cy="6" r="3" />
               <circle cx="6" cy="18" r="3" />
               <path d="M18 9a9 9 0 0 1-9 9" />
             </svg>
-            <span class="branch-name" :class="{ current: node.branch.isHead }">{{ node.displayName }}</span>
+            <span class="branch-name" :class="{ current: node.branch.isHead }">{{
+              node.displayName
+            }}</span>
             <span v-if="branchStore.favorites.includes(node.branch.name)" class="fav-star">★</span>
             <span v-if="node.branch.aheadBehind" class="ahead-behind">
               <button
@@ -836,13 +903,22 @@ async function handleRenameBranch(oldName: string) {
                 title="点击推送此分支"
                 @click.stop="pushForLocalBranch(node.branch)"
               >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                >
                   <polyline points="17 11 12 6 7 11" />
                   <line x1="12" y1="18" x2="12" y2="6" />
                 </svg>
                 {{ node.branch.aheadBehind[0] }}
               </button>
-              <template v-if="node.branch.aheadBehind[1] > 0">↓{{ node.branch.aheadBehind[1] }}</template>
+              <template v-if="node.branch.aheadBehind[1] > 0"
+                >↓{{ node.branch.aheadBehind[1] }}</template
+              >
             </span>
           </div>
         </template>
@@ -865,19 +941,43 @@ async function handleRenameBranch(oldName: string) {
             <svg
               class="chevron"
               :class="{ 'chevron-open': node.isExpanded }"
-              width="10" height="10" viewBox="0 0 24 24"
-              fill="none" stroke="currentColor" stroke-width="2.5"
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
             >
               <polyline points="9 18 15 12 9 6" />
             </svg>
             <!-- Remote root: globe icon; sub-folder: folder icon -->
-            <svg v-if="node.depth === 0" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-branch-remote)" stroke-width="2">
+            <svg
+              v-if="node.depth === 0"
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--color-branch-remote)"
+              stroke-width="2"
+            >
               <circle cx="12" cy="12" r="10" />
               <line x1="2" y1="12" x2="22" y2="12" />
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+              <path
+                d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
+              />
             </svg>
-            <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            <svg
+              v-else
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+              />
             </svg>
             <span class="branch-name folder-name">{{ node.folderName }}</span>
           </div>
@@ -890,13 +990,32 @@ async function handleRenameBranch(oldName: string) {
             @click="selectRemoteBranch(node.branch)"
             @contextmenu.prevent="showContextMenu($event, node.branch, 'remote')"
           >
-            <svg v-if="node.branch.isHead" width="12" height="12" viewBox="0 0 24 24" fill="var(--color-branch-head)" stroke="none">
-              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            <svg
+              v-if="node.branch.isHead"
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="var(--color-branch-head)"
+              stroke="none"
+            >
+              <polygon
+                points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+              />
             </svg>
-            <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-branch-remote)" stroke-width="2">
+            <svg
+              v-else
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--color-branch-remote)"
+              stroke-width="2"
+            >
               <circle cx="12" cy="12" r="10" />
               <line x1="2" y1="12" x2="22" y2="12" />
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+              <path
+                d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
+              />
             </svg>
             <span class="branch-name">{{ node.displayName }}</span>
           </div>
@@ -910,8 +1029,17 @@ async function handleRenameBranch(oldName: string) {
           <span class="count">{{ filteredTags.length }}</span>
         </div>
         <div v-for="tag in filteredTags" :key="tag" class="branch-item">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-branch-tag)" stroke-width="2">
-            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--color-branch-tag)"
+            stroke-width="2"
+          >
+            <path
+              d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"
+            />
             <line x1="7" y1="7" x2="7.01" y2="7" />
           </svg>
           <span class="branch-name">{{ tag }}</span>
@@ -939,8 +1067,16 @@ async function handleRenameBranch(oldName: string) {
           <div class="conflict-modal-header">
             <span>解决合并冲突</span>
             <button class="conflict-close-btn" @click="showConflictDialog = false">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
           </div>
