@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, defineAsyncComponent } from "vue";
+import { ref, computed, onMounted, watch, defineAsyncComponent } from "vue";
 import { Splitpanes, Pane } from "splitpanes";
 import { useCommitStore } from "@/stores/commitStore";
 import { useRepoStore } from "@/stores/repoStore";
@@ -11,6 +11,10 @@ import ContextMenu from "@/components/common/ContextMenu.vue";
 import type { MenuItem } from "@/components/common/ContextMenu.vue";
 import PushDialog from "@/components/common/PushDialog.vue";
 import { errMsg } from "@/utils/error";
+import { useToast } from "@/composables/useToast";
+import { useMergeState } from "@/composables/useMergeState";
+import { useMultiSelect } from "@/composables/useMultiSelect";
+import { useStatusPolling } from "@/composables/useStatusPolling";
 
 const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/ThreeWayMerge.vue"));
 
@@ -24,59 +28,20 @@ const diffResult = ref<DiffResult | null>(null);
 const loading = ref(false);
 const errorMessage = ref<string | null>(null);
 
-type MergeOp = "merge" | "rebase" | "cherry-pick" | "revert";
-const mergeState = ref<{ state: "none" | MergeOp; hasConflicts: boolean } | null>(null);
-const mergeBusy = ref(false);
+const { toastMessage, toastVisible, show: showToast } = useToast();
 
-async function refreshMergeState() {
-  if (!repoStore.activeRepo) {
-    mergeState.value = null;
-    return;
-  }
-  try {
-    mergeState.value = await commands.getMergeState(repoStore.activeRepo.path);
-  } catch (e: unknown) {
-    console.error("getMergeState failed:", errMsg(e));
-    mergeState.value = null;
-  }
-}
+const {
+  mergeState,
+  mergeBusy,
+  refresh: refreshMergeState,
+  continueOp: onContinueMerge,
+  abortOp: onAbortMerge,
+} = useMergeState({
+  getRepoPath: () => repoStore.activeRepo?.path,
+  onAfterAction: () => commitStore.loadStatus(),
+  onMessage: showToast,
+});
 
-async function onContinueMerge() {
-  if (!repoStore.activeRepo || !mergeState.value || mergeState.value.state === "none") return;
-  mergeBusy.value = true;
-  try {
-    const result = await commands.continueOperation(
-      repoStore.activeRepo.path,
-      mergeState.value.state
-    );
-    if (!result.success) {
-      showToast(`继续失败：${result.message}`);
-    } else {
-      showToast(`${mergeState.value.state} 已继续完成`);
-    }
-    await refreshMergeState();
-    await commitStore.loadStatus();
-  } catch (e: unknown) {
-    showToast(`继续失败：${errMsg(e)}`);
-  } finally {
-    mergeBusy.value = false;
-  }
-}
-
-async function onAbortMerge() {
-  if (!repoStore.activeRepo || !mergeState.value || mergeState.value.state === "none") return;
-  mergeBusy.value = true;
-  try {
-    await commands.abortOperation(repoStore.activeRepo.path, mergeState.value.state);
-    showToast(`${mergeState.value.state} 已中止`);
-    await refreshMergeState();
-    await commitStore.loadStatus();
-  } catch (e: unknown) {
-    showToast(`中止失败：${errMsg(e)}`);
-  } finally {
-    mergeBusy.value = false;
-  }
-}
 const contextMenuRef = ref<InstanceType<typeof ContextMenu>>();
 const contextFile = ref<FileStatus | null>(null);
 const contextSection = ref<"staged" | "unstaged" | "untracked">("unstaged");
@@ -122,20 +87,6 @@ const showConfirmDialog = ref(false);
 const confirmText = ref("");
 const confirmTitle = ref("");
 const pendingConfirmAction = ref<(() => Promise<void>) | null>(null);
-
-// 通用操作反馈
-const toastMessage = ref("");
-const toastVisible = ref(false);
-let toastTimer: ReturnType<typeof setTimeout> | null = null;
-
-function showToast(msg: string) {
-  toastMessage.value = msg;
-  toastVisible.value = true;
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    toastVisible.value = false;
-  }, 2500);
-}
 
 interface SectionInfo {
   key: "staged" | "unstaged" | "untracked";
@@ -188,8 +139,6 @@ function makeKey(section: SectionInfo["key"], path: string) {
   return `${section}:${path}`;
 }
 
-const selectedKeys = ref<Set<string>>(new Set());
-const lastClickedKey = ref<string | null>(null);
 const flatFileKeys = computed<string[]>(() => {
   const keys: string[] = [];
   for (const s of sections.value) {
@@ -197,6 +146,17 @@ const flatFileKeys = computed<string[]>(() => {
   }
   return keys;
 });
+
+const {
+  selectedKeys,
+  lastClickedKey,
+  selectedCount: selectedTotal,
+  isSelected,
+  toggle,
+  selectRange: _selectRangeByKey,
+  clear: clearSelection,
+  removeKeys,
+} = useMultiSelect(flatFileKeys);
 
 const selectedFilesBySection = computed(() => {
   const result = { staged: [] as string[], unstaged: [] as string[], untracked: [] as string[] };
@@ -209,8 +169,6 @@ const selectedFilesBySection = computed(() => {
   }
   return result;
 });
-
-const selectedTotal = computed(() => selectedKeys.value.size);
 
 const stageablePaths = computed(() => [
   ...selectedFilesBySection.value.unstaged,
@@ -233,39 +191,15 @@ const copyablePaths = computed(() => [
 ]);
 
 function isRowSelected(section: SectionInfo["key"], path: string) {
-  return selectedKeys.value.has(makeKey(section, path));
+  return isSelected(makeKey(section, path));
 }
 
 function toggleRow(section: SectionInfo["key"], path: string) {
-  const key = makeKey(section, path);
-  const next = new Set(selectedKeys.value);
-  if (next.has(key)) next.delete(key);
-  else next.add(key);
-  selectedKeys.value = next;
-  lastClickedKey.value = key;
+  toggle(makeKey(section, path));
 }
 
 function selectRange(section: SectionInfo["key"], path: string) {
-  const key = makeKey(section, path);
-  const flat = flatFileKeys.value;
-  const anchor =
-    lastClickedKey.value && flat.includes(lastClickedKey.value) ? lastClickedKey.value : key;
-  const a = flat.indexOf(anchor);
-  const b = flat.indexOf(key);
-  if (a < 0 || b < 0) {
-    toggleRow(section, path);
-    return;
-  }
-  const [from, to] = a <= b ? [a, b] : [b, a];
-  const next = new Set(selectedKeys.value);
-  for (let i = from; i <= to; i += 1) next.add(flat[i]);
-  selectedKeys.value = next;
-  lastClickedKey.value = key;
-}
-
-function clearSelection() {
-  selectedKeys.value = new Set();
-  lastClickedKey.value = null;
+  _selectRangeByKey(makeKey(section, path));
 }
 
 async function bulkStage() {
@@ -312,12 +246,11 @@ function bulkDiscard() {
     } else {
       showToast(`已回滚 ${result.ok.length} / ${paths.length}，失败 ${result.failed.length}`);
       // 部分失败时只清除已成功的选中项
-      const next = new Set(selectedKeys.value);
+      const toRemove: string[] = [];
       for (const p of result.ok) {
-        next.delete(makeKey("staged", p));
-        next.delete(makeKey("unstaged", p));
+        toRemove.push(makeKey("staged", p), makeKey("unstaged", p));
       }
-      selectedKeys.value = next;
+      removeKeys(toRemove);
     }
   };
   showConfirmDialog.value = true;
@@ -359,13 +292,15 @@ function bulkDelete() {
     } else {
       showToast(`已删除 ${result.ok.length} / ${paths.length}，失败 ${result.failed.length}`);
       // 部分失败：清除已成功的选中项，保留失败项让用户可重试
-      const next = new Set(selectedKeys.value);
+      const toRemove: string[] = [];
       for (const p of result.ok) {
-        next.delete(makeKey("staged", p));
-        next.delete(makeKey("unstaged", p));
-        next.delete(makeKey("untracked", p));
+        toRemove.push(
+          makeKey("staged", p),
+          makeKey("unstaged", p),
+          makeKey("untracked", p)
+        );
       }
-      selectedKeys.value = next;
+      removeKeys(toRemove);
     }
   };
   showConfirmDialog.value = true;
@@ -445,28 +380,11 @@ function getStatusClass(status: FileStatus["status"]): string {
   }
 }
 
-let pollTimer: ReturnType<typeof setInterval> | null = null;
-
-function startPolling() {
-  stopPolling();
-  pollTimer = setInterval(async () => {
-    if (document.visibilityState === "visible" && repoStore.activeRepo && !commitStore.loading) {
-      try {
-        await commitStore.loadStatus();
-        await refreshMergeState();
-      } catch {
-        // silent poll failure
-      }
-    }
-  }, 10000);
-}
-
-function stopPolling() {
-  if (pollTimer) {
-    clearInterval(pollTimer);
-    pollTimer = null;
-  }
-}
+useStatusPolling(async () => {
+  if (!repoStore.activeRepo || commitStore.loading) return;
+  await commitStore.loadStatus();
+  await refreshMergeState();
+});
 
 onMounted(async () => {
   if (repoStore.activeRepo) {
@@ -482,49 +400,28 @@ onMounted(async () => {
       loading.value = false;
     }
   }
-  startPolling();
-});
-
-onUnmounted(() => {
-  stopPolling();
-  if (toastTimer) clearTimeout(toastTimer);
 });
 
 watch(
   () => repoStore.activeRepo?.path,
   async () => {
-    if (repoStore.activeRepo) {
-      loading.value = true;
-      errorMessage.value = null;
-      selectedFile.value = null;
-      diffResult.value = null;
-      clearSelection();
-      try {
-        await commitStore.loadStatus();
-        await refreshMergeState();
-      } catch (error: unknown) {
-        errorMessage.value = `加载状态失败: ${errMsg(error)}`;
-        console.error("Failed to load status:", error);
-      } finally {
-        loading.value = false;
-      }
-      startPolling();
+    if (!repoStore.activeRepo) return;
+    loading.value = true;
+    errorMessage.value = null;
+    selectedFile.value = null;
+    diffResult.value = null;
+    clearSelection();
+    try {
+      await commitStore.loadStatus();
+      await refreshMergeState();
+    } catch (error: unknown) {
+      errorMessage.value = `加载状态失败: ${errMsg(error)}`;
+      console.error("Failed to load status:", error);
+    } finally {
+      loading.value = false;
     }
   }
 );
-
-// 文件列表刷新后清理已不存在的选中项
-watch(flatFileKeys, (keys) => {
-  if (selectedKeys.value.size === 0) return;
-  const valid = new Set(keys);
-  let changed = false;
-  const next = new Set<string>();
-  for (const k of selectedKeys.value) {
-    if (valid.has(k)) next.add(k);
-    else changed = true;
-  }
-  if (changed) selectedKeys.value = next;
-});
 
 function onFileRowClick(event: MouseEvent, file: FileStatus, section: SectionInfo) {
   if (event.shiftKey) {
