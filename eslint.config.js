@@ -14,7 +14,6 @@ export default tseslint.config(
       "release/**",
       "release-verify/**",
       "build/**",
-      "src-tauri/target/**",
       "coverage/**",
       "*.d.ts",
     ],

@@ -1,9 +1,0 @@
-pub mod repo;
-pub mod log;
-pub mod branch;
-pub mod commit;
-pub mod diff;
-pub mod stash;
-pub mod remote;
-pub mod blame;
-pub mod merge;
