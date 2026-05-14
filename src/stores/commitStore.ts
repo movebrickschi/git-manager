@@ -5,6 +5,8 @@ import { commands } from "@/utils/commands";
 import type { FileStatus, StatusResult } from "@/utils/commands";
 import { errMsg } from "@/utils/error";
 import { useAbortable } from "@/composables/useAbortable";
+import { aiBridge } from "@/services/ai";
+import type { AiErrorCode } from "../../shared/ai/types";
 
 function isAbortError(e: unknown): boolean {
   return (
@@ -23,6 +25,8 @@ export const useCommitStore = defineStore("commit", () => {
   const isAmend = ref(false);
   const loading = ref(false);
   const messageHistory = ref<string[]>([]);
+  const isGeneratingAI = ref(false);
+  const aiError = ref<{ code: AiErrorCode; reason: string } | null>(null);
 
   const repoStore = useRepoStore();
 
@@ -155,6 +159,45 @@ export const useCommitStore = defineStore("commit", () => {
     await commands.push(repoStore.activeRepo.path);
   }
 
+  async function generateMessage(mode: "replace" | "append" = "replace"): Promise<boolean> {
+    aiError.value = null;
+    if (!repoStore.activeRepo) {
+      aiError.value = { code: "NO_STAGED", reason: "未打开仓库" };
+      return false;
+    }
+    if (stagedFiles.value.length === 0) {
+      aiError.value = { code: "NO_STAGED", reason: "请先暂存文件" };
+      return false;
+    }
+    isGeneratingAI.value = true;
+    try {
+      const result = await aiBridge.generate(repoStore.activeRepo.path);
+      if (result.ok) {
+        if (mode === "append" && commitMessage.value.trim()) {
+          commitMessage.value = commitMessage.value.trimEnd() + "\n\n" + result.message;
+        } else {
+          commitMessage.value = result.message;
+        }
+        return true;
+      }
+      aiError.value = { code: result.code, reason: result.reason };
+      return false;
+    } catch (e: unknown) {
+      aiError.value = { code: "UNKNOWN", reason: errMsg(e) };
+      return false;
+    } finally {
+      isGeneratingAI.value = false;
+    }
+  }
+
+  async function cancelGenerate(): Promise<void> {
+    try {
+      await aiBridge.abort();
+    } catch (e: unknown) {
+      console.warn("[commitStore] cancelGenerate failed:", errMsg(e));
+    }
+  }
+
   return {
     stagedFiles,
     unstagedFiles,
@@ -163,6 +206,8 @@ export const useCommitStore = defineStore("commit", () => {
     isAmend,
     loading,
     messageHistory,
+    isGeneratingAI,
+    aiError,
     loadStatus,
     cancelFetchStatus,
     stageFile,
@@ -175,5 +220,7 @@ export const useCommitStore = defineStore("commit", () => {
     deleteFiles,
     commit,
     commitAndPush,
+    generateMessage,
+    cancelGenerate,
   };
 });

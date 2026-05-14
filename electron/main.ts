@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, session, shell } from "electron";
 import * as path from "path";
 import { gitService } from "../server/git-service";
 import { COMMANDS } from "../shared/command-manifest";
+import { registerAiHandlers } from "./ai-handlers";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -132,4 +133,6 @@ for (const spec of COMMANDS) {
     }
   });
 }
+
+registerAiHandlers();
 

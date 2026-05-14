@@ -2,6 +2,8 @@ import { Router, Request, Response } from "express";
 import { randomUUID } from "crypto";
 import { gitService } from "./git-service.js";
 import { COMMANDS } from "../shared/command-manifest.js";
+import { makeAiService, createPlainFileStorage } from "./services/ai.service.js";
+import type { AiSettings } from "../shared/ai/types.js";
 
 const router = Router();
 
@@ -65,5 +67,48 @@ for (const spec of COMMANDS) {
     })
   );
 }
+
+const aiStorage = createPlainFileStorage();
+const aiService = makeAiService({
+  secretStorage: aiStorage.secret,
+  publicStorage: aiStorage.pub,
+});
+
+router.post(
+  "/ai/generate",
+  wrap(async (req) => {
+    const repoPath = (req.body as Record<string, unknown>)?.repoPath;
+    if (typeof repoPath !== "string" || !repoPath) {
+      throw new Error("invalid repoPath");
+    }
+    return await aiService.generate(repoPath);
+  })
+);
+
+router.get(
+  "/ai/settings",
+  wrap(async () => await aiService.getSettingsView())
+);
+
+router.post(
+  "/ai/settings",
+  wrap(async (req) => {
+    await aiService.saveSettings(req.body as AiSettings);
+    return { ok: true };
+  })
+);
+
+router.post(
+  "/ai/test-connection",
+  wrap(async (req) => await aiService.testConnection(req.body as AiSettings))
+);
+
+router.post(
+  "/ai/abort",
+  wrap(async () => {
+    aiService.abort();
+    return { ok: true };
+  })
+);
 
 export default router;

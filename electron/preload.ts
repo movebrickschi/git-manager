@@ -68,6 +68,11 @@ const ALLOWED_CHANNELS = new Set<string>([
   "get_file_diff_raw",
   "delete_file",
   "stash_file",
+  "ai:generate",
+  "ai:get_settings",
+  "ai:save_settings",
+  "ai:test_connection",
+  "ai:abort",
 ]);
 
 contextBridge.exposeInMainWorld("electronAPI", {
