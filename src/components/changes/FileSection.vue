@@ -10,18 +10,46 @@ export interface SectionData {
   hiddenCount: number;
 }
 
+import { computed, ref, watch } from "vue";
+
 const props = defineProps<{
   section: SectionData;
   selectedFilePath: string | null;
   selectedSection: SectionKey;
   isRowChecked: (section: SectionKey, path: string) => boolean;
+  /** 本 section 内所有 row 是否全部已勾选（用于 header checkbox 三态展示） */
+  sectionAllChecked: boolean;
+  /** 本 section 内是否存在已勾选的 row（与 sectionAllChecked 配合判定 indeterminate） */
+  sectionSomeChecked: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: "row-click", event: MouseEvent, file: FileStatus, section: SectionData): void;
   (e: "row-toggle", section: SectionKey, path: string): void;
   (e: "row-context", event: MouseEvent, file: FileStatus, section: SectionData): void;
+  (e: "section-toggle-all", section: SectionKey): void;
 }>();
+
+const headerCheckboxRef = ref<HTMLInputElement | null>(null);
+
+const headerIndeterminate = computed(
+  () => props.sectionSomeChecked && !props.sectionAllChecked
+);
+
+watch(
+  [() => props.sectionAllChecked, () => props.sectionSomeChecked],
+  () => {
+    if (headerCheckboxRef.value) {
+      headerCheckboxRef.value.indeterminate = headerIndeterminate.value;
+    }
+  },
+  { immediate: true, flush: "post" }
+);
+
+function onHeaderCheckboxClick(e: MouseEvent) {
+  e.stopPropagation();
+  emit("section-toggle-all", props.section.key);
+}
 
 function statusLetter(status: FileStatus["status"]): string {
   switch (status) {
@@ -88,6 +116,21 @@ function onCheckboxClick(path: string): void {
 <template>
   <div v-if="section.files.length > 0 || section.hiddenCount > 0">
     <div class="section-header">
+      <input
+        ref="headerCheckboxRef"
+        type="checkbox"
+        class="section-checkbox"
+        :checked="sectionAllChecked"
+        :disabled="section.files.length === 0"
+        :title="
+          section.files.length === 0
+            ? '本组无可选文件'
+            : sectionAllChecked
+              ? `取消选择本组（${section.files.length} 项）`
+              : `选择本组（${section.files.length} 项）`
+        "
+        @click="onHeaderCheckboxClick"
+      />
       <span>{{ section.title }}</span>
       <span class="section-count">{{ section.files.length }}</span>
       <span
@@ -191,6 +234,20 @@ function onCheckboxClick(path: string): void {
   flex-shrink: 0;
   cursor: pointer;
   accent-color: var(--color-primary);
+}
+
+.section-checkbox {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
+.section-checkbox:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
 }
 
 .status-letter {

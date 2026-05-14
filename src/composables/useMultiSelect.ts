@@ -55,6 +55,27 @@ export function useMultiSelect(flatKeys: Ref<readonly string[]>) {
     selectedKeys.value = next;
   }
 
+  /** 批量加入选中集合（已选中的 key 静默忽略）。常用于「全选当前 section」 */
+  function addKeys(toAdd: readonly string[]): void {
+    if (toAdd.length === 0) return;
+    const next = new Set(selectedKeys.value);
+    for (const k of toAdd) next.add(k);
+    selectedKeys.value = next;
+  }
+
+  /**
+   * 按一组 key 切换选中：
+   * - 若该组全部已选 → 全部移除（即取消整组）
+   * - 否则 → 全部加入（即全选整组，包括部分选中的情况）
+   * 常用于「点击 section header checkbox」三态切换。
+   */
+  function toggleKeys(keys: readonly string[]): void {
+    if (keys.length === 0) return;
+    const allSelected = keys.every((k) => selectedKeys.value.has(k));
+    if (allSelected) removeKeys(keys);
+    else addKeys(keys);
+  }
+
   // 文件列表刷新后，自动剔除已不存在的选中项
   watch(flatKeys, (keys) => {
     if (selectedKeys.value.size === 0) return;
@@ -77,5 +98,7 @@ export function useMultiSelect(flatKeys: Ref<readonly string[]>) {
     selectRange,
     clear,
     removeKeys,
+    addKeys,
+    toggleKeys,
   };
 }

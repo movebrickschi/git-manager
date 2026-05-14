@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref, watch } from "vue";
 import { Pane, Splitpanes } from "splitpanes";
+import { onClickOutside } from "@vueuse/core";
+import { useI18n } from "vue-i18n";
 import { useCommitStore } from "@/stores/commitStore";
 import { useFilterStore } from "@/stores/filterStore";
 import { useRepoStore } from "@/stores/repoStore";
@@ -10,6 +12,7 @@ import DiffViewer from "@/components/diff/DiffViewer.vue";
 import ContextMenu from "@/components/common/ContextMenu.vue";
 import type { MenuItem } from "@/components/common/ContextMenu.vue";
 import PushDialog from "@/components/common/PushDialog.vue";
+import AiSettingsDialog from "@/components/commit/AiSettingsDialog.vue";
 import { errMsg } from "@/utils/error";
 import { useBulkActions } from "@/composables/useBulkActions";
 import { useConfirmDialog } from "@/composables/useConfirmDialog";
@@ -18,11 +21,14 @@ import { useMergeState } from "@/composables/useMergeState";
 import { useMultiSelect } from "@/composables/useMultiSelect";
 import { useStatusPolling } from "@/composables/useStatusPolling";
 import { useToast } from "@/composables/useToast";
+import type { AiErrorCode } from "../../../shared/ai/types";
 import ChangesToolbar from "./ChangesToolbar.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import FileSection, { type SectionData, type SectionKey } from "./FileSection.vue";
 import FilterRulesDialog from "./FilterRulesDialog.vue";
 import MergeStateBar from "./MergeStateBar.vue";
+
+const { t } = useI18n();
 
 const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/ThreeWayMerge.vue"));
 
@@ -72,6 +78,149 @@ const quickCommitLoading = ref(false);
 const showMergeDialog = ref(false);
 const mergeFilePath = ref("");
 const mergeConflictFiles = ref<string[]>([]);
+
+const showAiMenu = ref(false);
+const showAiSettings = ref(false);
+const showAiOverwriteConfirm = ref(false);
+const aiGroupRef = ref<HTMLElement | null>(null);
+onClickOutside(aiGroupRef, () => {
+  showAiMenu.value = false;
+});
+
+const AI_ERROR_I18N_KEY: Record<AiErrorCode, string> = {
+  NO_API_KEY: "ai.err.no_api_key",
+  NO_STAGED: "ai.err.no_staged",
+  NETWORK: "ai.err.network",
+  AUTH: "ai.err.auth",
+  RATE_LIMIT: "ai.err.rate_limit",
+  SERVER: "ai.err.server",
+  TIMEOUT: "ai.err.timeout",
+  EMPTY: "ai.err.empty",
+  ABORT: "ai.err.abort",
+  UNKNOWN: "ai.err.unknown",
+};
+
+function formatAiError(e: { code: AiErrorCode; reason: string }): string {
+  return `${t(AI_ERROR_I18N_KEY[e.code] ?? "ai.err.unknown")}：${e.reason}`;
+}
+
+async function runAiGenerate(mode: "replace" | "append"): Promise<void> {
+  showAiOverwriteConfirm.value = false;
+  showAiMenu.value = false;
+  await commitStore.generateMessage(mode);
+  if (commitStore.aiError && commitStore.aiError.code !== "ABORT") {
+    showToast(formatAiError(commitStore.aiError));
+  }
+}
+
+async function handleAiMainAction(): Promise<void> {
+  if (commitStore.isGeneratingAI) {
+    await commitStore.cancelGenerate();
+    return;
+  }
+  showAiMenu.value = false;
+  if (commitStore.commitMessage.trim().length > 0) {
+    showAiOverwriteConfirm.value = true;
+    return;
+  }
+  await runAiGenerate("replace");
+}
+
+function handleRegenerateFromMenu(): void {
+  showAiMenu.value = false;
+  if (commitStore.commitMessage.trim().length > 0) {
+    showAiOverwriteConfirm.value = true;
+    return;
+  }
+  void runAiGenerate("replace");
+}
+
+function openAiSettings(): void {
+  showAiMenu.value = false;
+  showAiSettings.value = true;
+}
+
+function onAiSettingsSaved(): void {
+  showToast(t("ai.settings.saved_toast"));
+}
+
+function useHistoryMessage(msg: string): void {
+  showAiMenu.value = false;
+  commitStore.commitMessage = msg;
+}
+
+function onTextareaKeydown(e: KeyboardEvent): void {
+  const isPrimary = e.ctrlKey || e.metaKey;
+  if (isPrimary && e.shiftKey && e.key.toLowerCase() === "g") {
+    e.preventDefault();
+    void handleAiMainAction();
+  }
+}
+
+const COMMIT_HEIGHT_KEY = "git-manager.commit-textarea-height";
+const COMMIT_HEIGHT_MIN = 56;
+const COMMIT_HEIGHT_MAX = 480;
+
+function loadInitialCommitHeight(): number {
+  try {
+    const raw = Number(localStorage.getItem(COMMIT_HEIGHT_KEY));
+    if (Number.isFinite(raw) && raw > 0) {
+      return Math.max(COMMIT_HEIGHT_MIN, Math.min(COMMIT_HEIGHT_MAX, raw));
+    }
+  } catch {
+    // localStorage 不可用
+  }
+  return 72;
+}
+
+const commitTextareaHeight = ref<number>(loadInitialCommitHeight());
+const isResizingCommit = ref(false);
+let resizeStartY = 0;
+let resizeStartHeight = 0;
+
+function onResizeMove(e: MouseEvent): void {
+  if (!isResizingCommit.value) return;
+  const delta = resizeStartY - e.clientY;
+  const next = Math.max(
+    COMMIT_HEIGHT_MIN,
+    Math.min(COMMIT_HEIGHT_MAX, resizeStartHeight + delta)
+  );
+  commitTextareaHeight.value = next;
+}
+
+function onResizeEnd(): void {
+  if (!isResizingCommit.value) return;
+  isResizingCommit.value = false;
+  document.removeEventListener("mousemove", onResizeMove);
+  document.removeEventListener("mouseup", onResizeEnd);
+  document.body.style.userSelect = "";
+  document.body.style.cursor = "";
+  try {
+    localStorage.setItem(COMMIT_HEIGHT_KEY, String(commitTextareaHeight.value));
+  } catch {
+    // localStorage 不可用
+  }
+}
+
+function startResizeCommit(e: MouseEvent): void {
+  isResizingCommit.value = true;
+  resizeStartY = e.clientY;
+  resizeStartHeight = commitTextareaHeight.value;
+  document.addEventListener("mousemove", onResizeMove);
+  document.addEventListener("mouseup", onResizeEnd);
+  document.body.style.userSelect = "none";
+  document.body.style.cursor = "ns-resize";
+  e.preventDefault();
+}
+
+function resetCommitHeight(): void {
+  commitTextareaHeight.value = 72;
+  try {
+    localStorage.setItem(COMMIT_HEIGHT_KEY, "72");
+  } catch {
+    // localStorage 不可用
+  }
+}
 
 function repoPathOrEmpty(): string {
   return repoStore.activeRepo?.path ?? "";
@@ -129,6 +278,7 @@ const {
   selectRange: _selectRangeByKey,
   clear: clearSelection,
   removeKeys,
+  toggleKeys,
 } = useMultiSelect(flatFileKeys);
 
 const selectedFilesBySection = computed(() => {
@@ -171,6 +321,26 @@ function isRowChecked(section: SectionKey, path: string): boolean {
 
 function onRowToggle(section: SectionKey, path: string): void {
   toggle(makeKey(section, path));
+}
+
+function sectionKeysOf(section: SectionData): string[] {
+  return section.files.map((f) => makeKey(section.key, f.path));
+}
+
+function sectionAllChecked(section: SectionData): boolean {
+  if (section.files.length === 0) return false;
+  return sectionKeysOf(section).every((k) => selectedKeys.value.has(k));
+}
+
+function sectionSomeChecked(section: SectionData): boolean {
+  if (section.files.length === 0) return false;
+  return sectionKeysOf(section).some((k) => selectedKeys.value.has(k));
+}
+
+function onSectionToggleAll(key: SectionKey): void {
+  const section = sections.value.find((s) => s.key === key);
+  if (!section || section.files.length === 0) return;
+  toggleKeys(sectionKeysOf(section));
 }
 
 function onRowClick(event: MouseEvent, file: FileStatus, section: SectionData): void {
@@ -562,72 +732,120 @@ watch(
                 :selected-file-path="selectedFile?.path ?? null"
                 :selected-section="selectedSection"
                 :is-row-checked="isRowChecked"
+                :section-all-checked="sectionAllChecked(section)"
+                :section-some-checked="sectionSomeChecked(section)"
                 @row-click="onRowClick"
                 @row-toggle="onRowToggle"
                 @row-context="onContextMenu"
+                @section-toggle-all="onSectionToggleAll"
               />
             </template>
           </div>
 
-          <div v-if="selectedTotal > 0" class="bulk-bar">
-            <span class="bulk-label">已选 {{ selectedTotal }} 项</span>
-            <div class="bulk-btns">
-              <button
-                class="bulk-btn"
-                :disabled="stageablePaths.length === 0"
-                :title="`将 ${stageablePaths.length} 个文件添加到暂存区`"
-                @click="bulkStage"
-              >
-                添加到 VCS ({{ stageablePaths.length }})
-              </button>
-              <button
-                class="bulk-btn"
-                :disabled="unstageablePaths.length === 0"
-                :title="`取消暂存 ${unstageablePaths.length} 个文件`"
-                @click="bulkUnstage"
-              >
-                取消暂存 ({{ unstageablePaths.length }})
-              </button>
-              <button
-                class="bulk-btn danger"
-                :disabled="discardablePaths.length === 0"
-                :title="`回滚 ${discardablePaths.length} 个文件的本地修改（untracked 不参与）`"
-                @click="bulkDiscard"
-              >
-                回滚 ({{ discardablePaths.length }})
-              </button>
-              <button
-                class="bulk-btn ghost"
-                :disabled="copyablePaths.length === 0"
-                :title="`复制 ${copyablePaths.length} 个文件路径到剪贴板`"
-                @click="bulkCopyPath"
-              >
-                复制路径 ({{ copyablePaths.length }})
-              </button>
-              <button
-                class="bulk-btn danger"
-                :disabled="deletablePaths.length === 0"
-                :title="`从磁盘删除 ${deletablePaths.length} 个文件（不可撤销）`"
-                @click="bulkDelete"
-              >
-                删除 ({{ deletablePaths.length }})
-              </button>
-              <button class="bulk-btn ghost" title="清除选择" @click="clearSelection">清除</button>
-            </div>
+          <div
+            class="commit-resize-handle"
+            :class="{ active: isResizingCommit }"
+            role="separator"
+            aria-orientation="horizontal"
+            :aria-valuenow="commitTextareaHeight"
+            :aria-valuemin="COMMIT_HEIGHT_MIN"
+            :aria-valuemax="COMMIT_HEIGHT_MAX"
+            title="拖动调整提交框高度 · 双击重置"
+            @mousedown="startResizeCommit"
+            @dblclick="resetCommitHeight"
+          >
+            <span class="commit-resize-grip" aria-hidden="true" />
           </div>
-
           <div class="commit-area">
             <textarea
               v-model="commitStore.commitMessage"
               class="commit-textarea"
-              placeholder="提交信息..."
-              rows="3"
+              :placeholder="$t('ai.textarea_placeholder')"
+              :style="{ height: commitTextareaHeight + 'px' }"
+              @keydown="onTextareaKeydown"
             />
+            <div
+              v-if="showAiOverwriteConfirm"
+              class="ai-confirm-bar"
+              role="alertdialog"
+              aria-live="polite"
+            >
+              <span class="ai-confirm-text">{{ $t("ai.confirm.overwrite_text") }}</span>
+              <button class="ai-confirm-btn primary" @click="runAiGenerate('replace')">
+                {{ $t("ai.confirm.replace") }}
+              </button>
+              <button class="ai-confirm-btn" @click="runAiGenerate('append')">
+                {{ $t("ai.confirm.append") }}
+              </button>
+              <button class="ai-confirm-btn muted" @click="showAiOverwriteConfirm = false">
+                {{ $t("ai.confirm.cancel") }}
+              </button>
+            </div>
             <div class="commit-actions">
               <label class="amend-label">
                 <input type="checkbox" v-model="commitStore.isAmend" />
                 <span>Amend</span>
               </label>
+              <div ref="aiGroupRef" class="ai-btn-group">
+                <button
+                  class="ai-btn ai-btn-main"
+                  :class="{ 'ai-btn-cancel': commitStore.isGeneratingAI }"
+                  :disabled="
+                    !commitStore.isGeneratingAI && commitStore.stagedFiles.length === 0
+                  "
+                  :title="
+                    commitStore.isGeneratingAI
+                      ? $t('ai.tip_cancel')
+                      : commitStore.stagedFiles.length === 0
+                        ? $t('ai.tip_need_stage')
+                        : $t('ai.tip_generate')
+                  "
+                  @click="handleAiMainAction"
+                >
+                  <span v-if="commitStore.isGeneratingAI" class="ai-spinner" />
+                  <span v-else aria-hidden="true">✨</span>
+                  <span class="ai-btn-text">{{
+                    commitStore.isGeneratingAI ? $t("ai.cancel_btn") : $t("ai.generate_btn")
+                  }}</span>
+                </button>
+                <button
+                  class="ai-btn ai-btn-chevron"
+                  :disabled="commitStore.isGeneratingAI"
+                  :aria-label="$t('ai.tip_more')"
+                  :title="$t('ai.tip_more')"
+                  @click="showAiMenu = !showAiMenu"
+                >
+                  ▾
+                </button>
+                <div v-if="showAiMenu" class="ai-menu" role="menu">
+                  <button
+                    :disabled="
+                      commitStore.stagedFiles.length === 0 || commitStore.isGeneratingAI
+                    "
+                    @click="handleRegenerateFromMenu"
+                  >
+                    {{ $t("ai.menu.regenerate") }}
+                  </button>
+                  <button @click="openAiSettings">{{ $t("ai.menu.settings") }}</button>
+                  <div
+                    v-if="commitStore.messageHistory.length > 0"
+                    class="ai-menu-divider"
+                    aria-hidden="true"
+                  />
+                  <div v-if="commitStore.messageHistory.length > 0" class="ai-menu-section">
+                    {{ $t("ai.menu.history_section") }}
+                  </div>
+                  <button
+                    v-for="(m, idx) in commitStore.messageHistory.slice(0, 5)"
+                    :key="`mh-${idx}`"
+                    class="ai-menu-item-history"
+                    :title="m"
+                    @click="useHistoryMessage(m)"
+                  >
+                    {{ m.split("\n")[0] }}
+                  </button>
+                </div>
+              </div>
               <div class="commit-btns">
                 <button
                   class="commit-btn"
@@ -738,6 +956,12 @@ watch(
       @cancel="confirmDialog.cancel"
     />
 
+    <AiSettingsDialog
+      :visible="showAiSettings"
+      @close="showAiSettings = false"
+      @saved="onAiSettingsSaved"
+    />
+
     <Teleport to="body">
       <Transition name="toast">
         <div v-if="toastVisible" class="toast">{{ toastMessage }}</div>
@@ -818,7 +1042,6 @@ watch(
 .commit-area {
   flex-shrink: 0;
   padding: 8px;
-  border-top: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -826,20 +1049,56 @@ watch(
 
 .commit-textarea {
   width: 100%;
-  resize: vertical;
+  resize: none;
   padding: 6px 8px;
   font-size: 12px;
   font-family: var(--font-sans);
   border-radius: 3px;
-  min-height: 56px;
   background: var(--color-surface-active);
   border: 1px solid var(--color-border);
   color: var(--color-foreground);
+  box-sizing: border-box;
 }
 
 .commit-textarea:focus {
   outline: none;
   border-color: var(--color-primary);
+}
+
+.commit-resize-handle {
+  height: 8px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  border-top: 1px solid var(--color-border);
+  background: transparent;
+  transition: background-color 0.15s;
+  user-select: none;
+}
+
+.commit-resize-handle:hover,
+.commit-resize-handle.active {
+  background: var(--color-surface-hover);
+}
+
+.commit-resize-grip {
+  width: 40px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-foreground-muted);
+  opacity: 0.35;
+  transition:
+    background-color 0.15s,
+    opacity 0.15s;
+  pointer-events: none;
+}
+
+.commit-resize-handle:hover .commit-resize-grip,
+.commit-resize-handle.active .commit-resize-grip {
+  opacity: 0.9;
+  background: var(--color-primary);
 }
 
 .commit-actions {
@@ -1155,69 +1414,182 @@ watch(
   display: flex;
 }
 
-/* ---- 批量操作栏 ---- */
-.bulk-bar {
-  display: flex;
+/* ---- AI 按钮组 ---- */
+.ai-btn-group {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.ai-btn {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  background: var(--color-surface-active);
-  border-top: 1px solid var(--color-border);
-  flex-shrink: 0;
-  font-size: 11px;
-}
-
-.bulk-label {
-  color: var(--color-foreground-muted);
-  white-space: nowrap;
-}
-
-.bulk-btns {
-  display: flex;
   gap: 4px;
-  flex: 1;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-}
-
-.bulk-btn {
-  padding: 3px 8px;
-  font-size: 11px;
-  background: var(--color-primary);
-  color: white;
+  padding: 5px 8px;
+  background: var(--color-surface-active);
+  color: var(--color-foreground);
+  border: 1px solid var(--color-border);
   border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  border: none;
 }
 
-.bulk-btn:hover:not(:disabled) {
-  background: var(--color-primary-hover);
+.ai-btn:hover:not(:disabled) {
+  background: var(--color-surface-hover);
 }
 
-.bulk-btn:disabled {
-  opacity: 0.4;
+.ai-btn:disabled {
+  opacity: 0.5;
   cursor: default;
 }
 
-.bulk-btn.ghost {
-  background: transparent;
-  color: var(--color-foreground-muted);
-  border: 1px solid var(--color-border);
+.ai-btn-main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
 }
 
-.bulk-btn.ghost:hover:not(:disabled) {
+.ai-btn-chevron {
+  padding: 5px 5px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  min-width: 20px;
+  font-size: 10px;
+  line-height: 1;
+  justify-content: center;
+}
+
+.ai-btn-cancel {
+  background: var(--color-error, #c0392b);
+  color: white;
+  border-color: var(--color-error, #c0392b);
+}
+
+.ai-btn-cancel:hover {
+  opacity: 0.85;
+}
+
+.ai-btn-text {
+  font-size: 11px;
+}
+
+.ai-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: ai-spin 0.8s linear infinite;
+}
+
+@keyframes ai-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ai-menu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  min-width: 200px;
+  max-width: 320px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  padding: 4px 0;
+  z-index: 50;
+}
+
+.ai-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  color: var(--color-foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ai-menu button:hover:not(:disabled) {
   background: var(--color-surface-hover);
+}
+
+.ai-menu button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ai-menu-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 0;
+}
+
+.ai-menu-section {
+  padding: 4px 12px;
+  font-size: 10px;
+  color: var(--color-foreground-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ai-menu-item-history {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-confirm-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--color-surface-active);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-primary);
+  border-radius: 3px;
+}
+
+.ai-confirm-text {
+  flex: 1;
+  font-size: 11px;
   color: var(--color-foreground);
 }
 
-.bulk-btn.danger {
-  background: var(--color-error, #e05252);
-  color: white;
-  border: none;
+.ai-confirm-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-foreground);
 }
 
-.bulk-btn.danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-error, #e05252) 85%, black);
+.ai-confirm-btn:hover {
+  background: var(--color-surface-hover);
+}
+
+.ai-confirm-btn.primary {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+.ai-confirm-btn.primary:hover {
+  background: var(--color-primary-hover);
+}
+
+.ai-confirm-btn.muted {
+  color: var(--color-foreground-muted);
 }
 </style>
