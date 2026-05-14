@@ -1,4 +1,4 @@
-import type { Commands } from "../src/utils/types.js";
+import type { Commands } from "./types.js";
 
 export interface CommandSpec<K extends keyof Commands = keyof Commands> {
   method: K;

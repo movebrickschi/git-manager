@@ -12,5 +12,5 @@
     "declaration": false,
     "sourceMap": true
   },
-  "include": ["electron/**/*.ts", "server/git-service.ts", "shared/**/*.ts", "src/utils/types.ts"]
+  "include": ["electron/**/*.ts", "server/git-service.ts", "shared/**/*.ts"]
 }
