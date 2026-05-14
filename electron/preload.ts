@@ -1,20 +1,73 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { COMMANDS } from "../shared/command-manifest";
 
 /**
- * IPC channel allowlist —— 直接从 shared/command-manifest 派生。
+ * IPC channel allowlist —— 必须与 shared/command-manifest.ts 中的 `ipc` 字段
+ * **逐字一致**。
  *
- * 历史 bug：preload 手写 allowlist 与 manifest 漂移过（push/pull/fetch 改名为
- * push_remote/pull_remote/fetch_remote 时漏改 preload，导致这三条命令在
- * packaged 模式下被 preload 拒绝）。改为从 manifest 自动派生后，新增 / 改名 IPC
- * 只需改 manifest 一处。
+ * 为什么不直接 `import { COMMANDS } from "../shared/command-manifest"`？
+ *   electron/main.ts `webPreferences.sandbox = true`，sandboxed preload 只能
+ *   require electron 内置模块与极少数 Node 内置模块（events / timers / url），
+ *   require 外部 .js / .ts 模块会让整个 preload 静默失败，导致 renderer 端
+ *   `window.electronAPI` 为 undefined（症状：UI 退回 web 模式）。
+ *
+ * 改名 IPC 时**必须**同步本文件，CI 可加一个比对脚本守护。
  *
  * 安全意义：杜绝渲染进程（包括 XSS / 第三方资源）通过 invoke(arbitrary)
  * 触发任意主进程逻辑，例如 delete_file / reset_to_commit hard。
  */
 const ALLOWED_CHANNELS = new Set<string>([
   "dialog:openDirectory",
-  ...COMMANDS.map((c) => c.ipc),
+  "open_repo",
+  "get_log",
+  "get_commit_detail",
+  "get_commit_files",
+  "get_commit_diff",
+  "get_file_diff",
+  "compare_commits",
+  "get_branches",
+  "create_branch",
+  "checkout_branch",
+  "delete_branch",
+  "rename_branch",
+  "merge_branch",
+  "rebase_branch",
+  "cherry_pick",
+  "revert_commit",
+  "reset_to_commit",
+  "get_status",
+  "stage_file",
+  "unstage_file",
+  "stage_all",
+  "unstage_all",
+  "commit",
+  "push_remote",
+  "get_unpushed_commits",
+  "pull_remote",
+  "fetch_remote",
+  "fetch_all",
+  "fetch_branch",
+  "get_remotes",
+  "get_stash_list",
+  "stash_save",
+  "stash_apply",
+  "stash_pop",
+  "stash_drop",
+  "get_stash_files",
+  "get_stash_file_diff",
+  "get_blame",
+  "get_conflict_files",
+  "get_conflict_content",
+  "resolve_conflict",
+  "get_working_file_content",
+  "get_merge_state",
+  "continue_operation",
+  "abort_operation",
+  "clone_repo",
+  "get_file_content",
+  "discard_file_changes",
+  "get_file_diff_raw",
+  "delete_file",
+  "stash_file",
 ]);
 
 contextBridge.exposeInMainWorld("electronAPI", {
