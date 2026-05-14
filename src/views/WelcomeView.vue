@@ -106,8 +106,19 @@ async function cloneRepo() {
         <p class="welcome-subtitle">IDEA-Style Git 管理工具</p>
       </div>
 
+      <div v-if="errorMsg" class="welcome-error">
+        <span class="welcome-error__icon">⚠</span>
+        <span class="welcome-error__text">{{ errorMsg }}</span>
+        <button class="welcome-error__close" @click="errorMsg = ''">✕</button>
+      </div>
+
+      <div v-if="loading" class="welcome-loading">
+        <span class="welcome-loading__spinner"></span>
+        <span>打开仓库中…</span>
+      </div>
+
       <div class="welcome-actions">
-        <button class="action-btn primary" @click="openFolder">
+        <button class="action-btn primary" :disabled="loading" @click="openFolder">
           <svg
             width="20"
             height="20"
@@ -386,6 +397,71 @@ async function cloneRepo() {
   color: #e06c75;
   font-size: 12px;
   padding: 4px 0;
+}
+
+.welcome-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--color-surface-error, rgba(224, 82, 82, 0.12));
+  border: 1px solid var(--color-error, #e05252);
+  color: var(--color-error, #e05252);
+  border-radius: 4px;
+  font-size: 13px;
+  width: 100%;
+  max-width: 480px;
+  box-sizing: border-box;
+}
+
+.welcome-error__icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.welcome-error__text {
+  flex: 1;
+  word-break: break-word;
+}
+
+.welcome-error__close {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  opacity: 0.7;
+}
+
+.welcome-error__close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  opacity: 1;
+}
+
+.welcome-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  color: var(--color-foreground-muted);
+  font-size: 13px;
+}
+
+.welcome-loading__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: welcome-spin 0.8s linear infinite;
+}
+
+@keyframes welcome-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .btn:disabled,

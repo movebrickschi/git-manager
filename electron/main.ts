@@ -118,6 +118,18 @@ for (const spec of COMMANDS) {
   const handler = (gitService as unknown as Record<string, (...args: unknown[]) => unknown>)[
     spec.method
   ];
-  ipcMain.handle(spec.ipc, (_e, ...args: unknown[]) => handler.call(gitService, ...args));
+  if (typeof handler !== "function") {
+    console.error(`[ipc-bind] gitService.${spec.method} is not a function; skip ${spec.ipc}`);
+    continue;
+  }
+  ipcMain.handle(spec.ipc, async (_e, ...args: unknown[]) => {
+    try {
+      return await handler.call(gitService, ...args);
+    } catch (err) {
+      // packaged app 没有 stderr 直接可见，但 console.error 会写入 OS 事件日志 + dev tools
+      console.error(`[ipc:${spec.ipc}]`, err);
+      throw err;
+    }
+  });
 }
 
