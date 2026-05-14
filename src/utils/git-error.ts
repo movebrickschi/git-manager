@@ -15,6 +15,8 @@ const CODE_MAP: Record<string, string> = {
   AUTH_FAILED: "认证失败，请检查账号 / 密钥",
   GIT_TIMEOUT: "git 操作超时",
   GIT_ERR: "git 内部错误",
+  LOCAL_CHANGES_OVERWRITTEN: "本地未提交的改动会被 pull 覆盖，请先 commit 或 stash",
+  STASH_POP_CONFLICT: "恢复本地暂存改动时产生冲突，请逐个解决后再丢弃 stash",
 };
 
 const PATTERN_MAP: Array<[RegExp, string]> = [
@@ -31,6 +33,19 @@ const PATTERN_MAP: Array<[RegExp, string]> = [
   ],
   [/your local changes.*would be overwritten/i, "本地未提交的改动会被覆盖，请先 commit / stash"],
   [/please commit your changes or stash them/i, "请先提交或搁置本地改动"],
+  [/auto stash failed/i, "自动暂存失败，请手动 commit / stash 后再重试"],
+  [
+    /pull completed.*restoring stashed local changes caused conflicts/i,
+    "拉取成功，但恢复本地暂存改动时产生冲突，请逐个解决冲突后再 drop stash@{0}",
+  ],
+  [
+    /pull completed.*stash pop failed/i,
+    "拉取成功，但恢复 stash 失败；你的改动仍保存在 stash@{0}",
+  ],
+  [
+    /pull completed.*local changes auto-stashed and restored/i,
+    "拉取完成（本地改动已自动暂存并还原）",
+  ],
   [/cannot lock ref|unable to create.*lock/i, "git 索引被锁定，请关闭其他 git 进程后重试"],
   [/cannot remove untracked file/i, "无法移除未跟踪文件"],
   [/untracked working tree files.*would be overwritten/i, "未跟踪文件会被覆盖，请先备份或删除"],

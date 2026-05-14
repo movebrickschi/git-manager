@@ -9,8 +9,17 @@ import ContextMenu from "@/components/common/ContextMenu.vue";
 import type { MenuItem } from "@/components/common/ContextMenu.vue";
 import type { BranchInfo } from "@/utils/commands";
 import { commands } from "@/utils/commands";
+import { translateGitError } from "@/utils/git-error";
+import { SHORTCUTS, useKeyboardShortcuts } from "@/utils/keyboard";
 const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/ThreeWayMerge.vue"));
 import PushDialog from "@/components/common/PushDialog.vue";
+
+function friendlyErr(input: unknown): string {
+  if (input == null) return translateGitError("");
+  if (typeof input === "string") return translateGitError(input);
+  if (input instanceof Error) return translateGitError(input.message);
+  return translateGitError(String(input));
+}
 
 const branchStore = useBranchStore();
 const logStore = useLogStore();
@@ -61,6 +70,16 @@ function onConflictResolved() {
   showConflictDialog.value = false;
   void refreshAfterGitOp();
 }
+
+useKeyboardShortcuts([
+  {
+    ...SHORTCUTS.PULL,
+    action: () => {
+      if (!repoStore.activeRepo || actionLoading.value) return;
+      void handlePull();
+    },
+  },
+]);
 
 onMounted(() => {
   // branches already loaded by parent
@@ -129,7 +148,7 @@ async function handleFetch() {
     }
     await refreshAfterGitOp();
   } catch (e: unknown) {
-    actionError.value = e instanceof Error ? e.message : String(e);
+    actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
   }
@@ -153,9 +172,11 @@ async function handlePull() {
     await refreshAfterGitOp();
     if (result.conflicts && result.conflicts.length > 0) {
       openConflictDialog(result.conflicts);
+    } else if (!result.success) {
+      actionError.value = friendlyErr(result.message);
     }
   } catch (e: unknown) {
-    actionError.value = e instanceof Error ? e.message : String(e);
+    actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
   }
@@ -196,7 +217,7 @@ async function fetchForRemoteBranch(fullName: string) {
     await commands.fetch(path, parsed.remote);
     await refreshAfterGitOp();
   } catch (e: unknown) {
-    actionError.value = e instanceof Error ? e.message : String(e);
+    actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
   }
@@ -223,9 +244,11 @@ async function pullForLocalBranch(branch: BranchInfo) {
     await refreshAfterGitOp();
     if (result.conflicts && result.conflicts.length > 0) {
       openConflictDialog(result.conflicts);
+    } else if (!result.success) {
+      actionError.value = friendlyErr(result.message);
     }
   } catch (e: unknown) {
-    actionError.value = e instanceof Error ? e.message : String(e);
+    actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
   }
@@ -249,7 +272,12 @@ async function updateBranchWithoutCheckout(branch: BranchInfo) {
   try {
     if (branch.isHead) {
       const remote = await resolveDefaultRemote();
-      await commands.pull(path, remote, false);
+      const result = await commands.pull(path, remote, false);
+      if (result.conflicts && result.conflicts.length > 0) {
+        openConflictDialog(result.conflicts);
+      } else if (!result.success) {
+        actionError.value = friendlyErr(result.message);
+      }
     } else {
       let remote: string | undefined;
       if (branch.upstream) {
@@ -261,7 +289,7 @@ async function updateBranchWithoutCheckout(branch: BranchInfo) {
     }
     await refreshAfterGitOp();
   } catch (e: unknown) {
-    actionError.value = e instanceof Error ? e.message : String(e);
+    actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
   }
@@ -656,7 +684,7 @@ async function handleMergeBranchIntoHead(sourceBranch: string) {
       openConflictDialog(result.conflicts);
     }
   } catch (e: unknown) {
-    actionError.value = e instanceof Error ? e.message : String(e);
+    actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
   }

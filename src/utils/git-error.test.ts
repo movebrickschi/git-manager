@@ -37,6 +37,42 @@ describe("translateGitError", () => {
       ).toMatch(/已存在/);
     });
   });
+  describe("Smart Pull 新增模式", () => {
+    it("LOCAL_CHANGES_OVERWRITTEN code", () => {
+      expect(translateGitError({ code: "LOCAL_CHANGES_OVERWRITTEN" })).toMatch(/未提交/);
+    });
+    it("STASH_POP_CONFLICT code", () => {
+      expect(translateGitError({ code: "STASH_POP_CONFLICT" })).toMatch(/暂存/);
+    });
+    it("auto stash failed 原文", () => {
+      expect(translateGitError("Auto stash failed: lock issue")).toMatch(/自动暂存失败/);
+    });
+    it("pull completed + stash pop conflict 原文", () => {
+      expect(
+        translateGitError(
+          "Pull completed, but restoring stashed local changes caused conflicts. Resolve them and then drop stash@{0} manually."
+        )
+      ).toMatch(/拉取成功/);
+    });
+    it("pull completed + stash pop failed 原文", () => {
+      expect(
+        translateGitError("Pull completed, but stash pop failed: io error. Your local changes are still saved in stash@{0}.")
+      ).toMatch(/拉取成功.*stash/);
+    });
+    it("pull completed auto-stashed restored 原文", () => {
+      expect(
+        translateGitError("Pull completed (local changes auto-stashed and restored)")
+      ).toMatch(/拉取完成/);
+    });
+    it("your local changes overwritten 仍走旧 pattern", () => {
+      expect(
+        translateGitError(
+          "Your local changes to the following files would be overwritten by merge"
+        )
+      ).toMatch(/本地未提交.*覆盖/);
+    });
+  });
+
   describe("边界", () => {
     it('空字符串返回 "未知错误"', () => {
       expect(translateGitError("")).toBe("未知错误");

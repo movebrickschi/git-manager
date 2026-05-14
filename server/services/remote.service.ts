@@ -17,22 +17,120 @@ export const remoteService = {
     await withRetry(() => git.raw(args), { label: `push ${remote ?? ""} ${branch ?? ""}` });
   },
 
+  /**
+   * Smart Pull —— 仿 IntelliJ IDEA「Update Project (Stash)」默认行为。
+   *
+   * 流程：
+   *   1. 检测工作区是否 dirty（含未暂存修改 / 未跟踪文件）
+   *   2. 若 dirty：`git stash push --include-untracked -m '...'`
+   *   3. `git pull [--rebase] [remote]`
+   *   4. 若步骤 2 stash 过：`git stash pop`
+   *
+   * 异常处理（按 git 状态机的真实分支返回不同 MergeResult）：
+   *   - stash 阶段失败 → 早返回，仓库状态保持原样
+   *   - pull 阶段失败 + 产生 conflict（remote vs HEAD 的真实 merge 冲突）
+   *       → 不 pop stash，返回 conflicts 让前端弹 ThreeWayMerge；
+   *         用户解决 merge conflict 并 commit 后，自行 `stash pop` 恢复改动
+   *   - pull 阶段失败 + 无 conflict（网络 / auth / non-fast-forward 等）
+   *       → 回滚 stash pop 把仓库状态还原；返回原始错误
+   *   - pull 成功 + stash pop 失败且产生 conflict
+   *       → 返回 conflicts 让前端弹 ThreeWayMerge；stash 仍保留在 list 上
+   *   - pull 成功 + stash pop 其它失败
+   *       → 返回错误提示 stash 仍可恢复
+   */
   async pull(repoPath: string, remote?: string, rebase?: boolean): Promise<MergeResult> {
     const git = getGit(repoPath);
+
+    let isDirty: boolean;
+    try {
+      const status = await git.status();
+      isDirty = status.files.length > 0;
+    } catch (e: unknown) {
+      return {
+        success: false,
+        conflicts: [],
+        message: errStr(e) || "Failed to read working tree status",
+      };
+    }
+
+    let autoStashed = false;
+    if (isDirty) {
+      try {
+        const stashMsg = `git-manager: auto-stash before pull @ ${new Date().toISOString()}`;
+        await git.raw(["stash", "push", "--include-untracked", "-m", stashMsg]);
+        autoStashed = true;
+      } catch (e: unknown) {
+        return {
+          success: false,
+          conflicts: [],
+          message: `Auto stash failed: ${errStr(e)}`,
+        };
+      }
+    }
+
+    let pullErr: unknown = null;
     try {
       const args: string[] = ["pull"];
       if (rebase) args.push("--rebase");
       if (remote) args.push(remote);
       await git.raw(args);
-      return { success: true, conflicts: [], message: "Pull completed" };
     } catch (e: unknown) {
+      pullErr = e;
+    }
+
+    if (pullErr) {
       const conflicts = await getConflictFiles(repoPath);
+      if (conflicts.length > 0) {
+        return {
+          success: false,
+          conflicts,
+          message: errStr(pullErr) || "Pull produced merge conflicts",
+        };
+      }
+      if (autoStashed) {
+        try {
+          await git.raw(["stash", "pop"]);
+        } catch {
+          // pop 失败也无所谓，stash 还在 list 中，下方提示用户
+        }
+      }
       return {
         success: false,
-        conflicts,
-        message: errStr(e) || "Pull failed",
+        conflicts: [],
+        message: errStr(pullErr) || "Pull failed",
       };
     }
+
+    if (autoStashed) {
+      try {
+        await git.raw(["stash", "pop"]);
+        return {
+          success: true,
+          conflicts: [],
+          message: "Pull completed (local changes auto-stashed and restored)",
+        };
+      } catch (e: unknown) {
+        const conflicts = await getConflictFiles(repoPath);
+        if (conflicts.length > 0) {
+          return {
+            success: false,
+            conflicts,
+            message:
+              "Pull completed, but restoring stashed local changes caused conflicts. " +
+              "Resolve them and then drop stash@{0} manually.",
+          };
+        }
+        return {
+          success: false,
+          conflicts: [],
+          message:
+            `Pull completed, but stash pop failed: ${errStr(e)}. ` +
+            "Your local changes are still saved in stash@{0}.",
+        };
+      }
+    }
+
+    return { success: true, conflicts: [], message: "Pull completed" };
   },
 
   async fetch(repoPath: string, remote?: string): Promise<void> {
