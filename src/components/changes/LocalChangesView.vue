@@ -1,20 +1,28 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, defineAsyncComponent } from "vue";
-import { Splitpanes, Pane } from "splitpanes";
+import { computed, defineAsyncComponent, onMounted, ref, watch } from "vue";
+import { Pane, Splitpanes } from "splitpanes";
 import { useCommitStore } from "@/stores/commitStore";
-import { useRepoStore } from "@/stores/repoStore";
 import { useFilterStore } from "@/stores/filterStore";
+import { useRepoStore } from "@/stores/repoStore";
 import { commands } from "@/utils/commands";
-import type { FileStatus, DiffResult } from "@/utils/commands";
+import type { DiffResult, FileStatus } from "@/utils/commands";
 import DiffViewer from "@/components/diff/DiffViewer.vue";
 import ContextMenu from "@/components/common/ContextMenu.vue";
 import type { MenuItem } from "@/components/common/ContextMenu.vue";
 import PushDialog from "@/components/common/PushDialog.vue";
 import { errMsg } from "@/utils/error";
-import { useToast } from "@/composables/useToast";
+import { useBulkActions } from "@/composables/useBulkActions";
+import { useConfirmDialog } from "@/composables/useConfirmDialog";
+import { useFilterRules } from "@/composables/useFilterRules";
 import { useMergeState } from "@/composables/useMergeState";
 import { useMultiSelect } from "@/composables/useMultiSelect";
 import { useStatusPolling } from "@/composables/useStatusPolling";
+import { useToast } from "@/composables/useToast";
+import ChangesToolbar from "./ChangesToolbar.vue";
+import ConfirmDialog from "./ConfirmDialog.vue";
+import FileSection, { type SectionData, type SectionKey } from "./FileSection.vue";
+import FilterRulesDialog from "./FilterRulesDialog.vue";
+import MergeStateBar from "./MergeStateBar.vue";
 
 const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/ThreeWayMerge.vue"));
 
@@ -23,12 +31,17 @@ const repoStore = useRepoStore();
 const filterStore = useFilterStore();
 
 const selectedFile = ref<FileStatus | null>(null);
-const selectedSection = ref<"staged" | "unstaged" | "untracked">("unstaged");
+const selectedSection = ref<SectionKey>("unstaged");
 const diffResult = ref<DiffResult | null>(null);
 const loading = ref(false);
 const errorMessage = ref<string | null>(null);
 
 const { toastMessage, toastVisible, show: showToast } = useToast();
+const confirmDialog = useConfirmDialog();
+const filterRules = useFilterRules({
+  getRepoPath: () => repoPathOrEmpty(),
+  onMessage: showToast,
+});
 
 const {
   mergeState,
@@ -44,56 +57,21 @@ const {
 
 const contextMenuRef = ref<InstanceType<typeof ContextMenu>>();
 const contextFile = ref<FileStatus | null>(null);
-const contextSection = ref<"staged" | "unstaged" | "untracked">("unstaged");
+const contextSection = ref<SectionKey>("unstaged");
 
-// 差异弹窗
 const showDiffDialog = ref(false);
 const diffDialogResult = ref<DiffResult | null>(null);
 const diffDialogFilePath = ref("");
 const diffDialogLoading = ref(false);
 
-// 推送确认弹框
 const showPushDialog = ref(false);
-
-async function handleCommitAndPush() {
-  try {
-    await commitStore.commit();
-    showPushDialog.value = true;
-  } catch (e: unknown) {
-    console.error("Commit failed:", e);
-  }
-}
-
-function onPushConfirmed() {
-  showPushDialog.value = false;
-}
-
-function onPushCancelled() {
-  showPushDialog.value = false;
-}
-
-// 快速提交弹窗
 const showCommitDialog = ref(false);
 const quickCommitMessage = ref("");
 const quickCommitLoading = ref(false);
 
-// 冲突解决弹窗
 const showMergeDialog = ref(false);
 const mergeFilePath = ref("");
 const mergeConflictFiles = ref<string[]>([]);
-
-// 二次确认弹窗
-const showConfirmDialog = ref(false);
-const confirmText = ref("");
-const confirmTitle = ref("");
-const pendingConfirmAction = ref<(() => Promise<void>) | null>(null);
-
-interface SectionInfo {
-  key: "staged" | "unstaged" | "untracked";
-  title: string;
-  files: FileStatus[];
-  hiddenCount: number;
-}
 
 function repoPathOrEmpty(): string {
   return repoStore.activeRepo?.path ?? "";
@@ -107,16 +85,13 @@ function filterFiles(files: FileStatus[]): { visible: FileStatus[]; hidden: numb
   const visible: FileStatus[] = [];
   let hidden = 0;
   for (const f of files) {
-    if (filterStore.isFiltered(repoPath, f.path)) {
-      hidden += 1;
-    } else {
-      visible.push(f);
-    }
+    if (filterStore.isFiltered(repoPath, f.path)) hidden += 1;
+    else visible.push(f);
   }
   return { visible, hidden };
 }
 
-const sections = computed<SectionInfo[]>(() => {
+const sections = computed<SectionData[]>(() => {
   const raw = [
     { key: "staged" as const, title: "已暂存", files: commitStore.stagedFiles },
     { key: "unstaged" as const, title: "未暂存", files: commitStore.unstagedFiles },
@@ -129,13 +104,11 @@ const sections = computed<SectionInfo[]>(() => {
 });
 
 const totalCount = computed(() => sections.value.reduce((sum, s) => sum + s.files.length, 0));
+const totalHiddenCount = computed(() =>
+  sections.value.reduce((sum, s) => sum + s.hiddenCount, 0)
+);
 
-const totalHiddenCount = computed(() => sections.value.reduce((sum, s) => sum + s.hiddenCount, 0));
-
-const hasFilterRules = computed(() => filterStore.hasRules(repoPathOrEmpty()));
-
-// ---- 多选 ----
-function makeKey(section: SectionInfo["key"], path: string) {
+function makeKey(section: SectionKey, path: string): string {
   return `${section}:${path}`;
 }
 
@@ -163,287 +136,62 @@ const selectedFilesBySection = computed(() => {
   for (const key of selectedKeys.value) {
     const idx = key.indexOf(":");
     if (idx < 0) continue;
-    const sec = key.slice(0, idx) as SectionInfo["key"];
+    const sec = key.slice(0, idx) as SectionKey;
     const path = key.slice(idx + 1);
     if (sec in result) result[sec].push(path);
   }
   return result;
 });
 
-const stageablePaths = computed(() => [
-  ...selectedFilesBySection.value.unstaged,
-  ...selectedFilesBySection.value.untracked,
-]);
+const {
+  stageablePaths,
+  unstageablePaths,
+  discardablePaths,
+  copyablePaths,
+  deletablePaths,
+  bulkStage,
+  bulkUnstage,
+  bulkDiscard,
+  bulkCopyPath,
+  bulkDelete,
+} = useBulkActions({
+  selectedFilesBySection,
+  selectedFile,
+  diffResult,
+  clearSelection,
+  removeKeys,
+  makeKey,
+  onMessage: showToast,
+  openConfirm: confirmDialog.open,
+});
 
-const unstageablePaths = computed(() => selectedFilesBySection.value.staged);
-
-// 回滚仅适用 staged + unstaged，与单文件菜单一致（untracked 应使用「删除文件」）
-const discardablePaths = computed(() => [
-  ...selectedFilesBySection.value.staged,
-  ...selectedFilesBySection.value.unstaged,
-]);
-
-// 复制路径：所有选中项（包含 untracked）
-const copyablePaths = computed(() => [
-  ...selectedFilesBySection.value.staged,
-  ...selectedFilesBySection.value.unstaged,
-  ...selectedFilesBySection.value.untracked,
-]);
-
-function isRowSelected(section: SectionInfo["key"], path: string) {
+function isRowChecked(section: SectionKey, path: string): boolean {
   return isSelected(makeKey(section, path));
 }
 
-function toggleRow(section: SectionInfo["key"], path: string) {
+function onRowToggle(section: SectionKey, path: string): void {
   toggle(makeKey(section, path));
 }
 
-function selectRange(section: SectionInfo["key"], path: string) {
-  _selectRangeByKey(makeKey(section, path));
-}
-
-async function bulkStage() {
-  const paths = stageablePaths.value;
-  if (paths.length === 0) return;
-  try {
-    await commitStore.stageFiles(paths);
-    showToast(`已暂存 ${paths.length} 个文件`);
-    clearSelection();
-  } catch (e: unknown) {
-    showToast(`暂存失败: ${errMsg(e)}`);
-  }
-}
-
-async function bulkUnstage() {
-  const paths = unstageablePaths.value;
-  if (paths.length === 0) return;
-  try {
-    await commitStore.unstageFiles(paths);
-    showToast(`已取消暂存 ${paths.length} 个文件`);
-    clearSelection();
-  } catch (e: unknown) {
-    showToast(`取消暂存失败: ${errMsg(e)}`);
-  }
-}
-
-function bulkDiscard() {
-  const paths = discardablePaths.value;
-  if (paths.length === 0) return;
-  confirmTitle.value = "回滚选中更改";
-  confirmText.value = `确定要丢弃 ${paths.length} 个文件的本地修改吗？此操作不可撤销。`;
-  pendingConfirmAction.value = async () => {
-    const result = await commitStore.discardFiles(paths);
-    // 已被回滚的文件如果是当前预览，清空预览
-    if (selectedFile.value && result.ok.includes(selectedFile.value.path)) {
-      selectedFile.value = null;
-      diffResult.value = null;
-    }
-    if (result.failed.length === 0) {
-      showToast(`已回滚 ${result.ok.length} 个文件`);
-      clearSelection();
-    } else if (result.ok.length === 0) {
-      showToast(`回滚全部失败：${result.failed[0].error}`);
-    } else {
-      showToast(`已回滚 ${result.ok.length} / ${paths.length}，失败 ${result.failed.length}`);
-      // 部分失败时只清除已成功的选中项
-      const toRemove: string[] = [];
-      for (const p of result.ok) {
-        toRemove.push(makeKey("staged", p), makeKey("unstaged", p));
-      }
-      removeKeys(toRemove);
-    }
-  };
-  showConfirmDialog.value = true;
-}
-
-async function bulkCopyPath() {
-  const paths = copyablePaths.value;
-  if (paths.length === 0) return;
-  const text = paths.join("\n");
-  try {
-    await navigator.clipboard.writeText(text);
-    showToast(`已复制 ${paths.length} 个路径`);
-  } catch (e: unknown) {
-    showToast(`复制失败: ${errMsg(e) || "剪贴板不可用"}`);
-  }
-}
-
-// 删除：所有选中（与单文件菜单同口径，danger 二次确认 + 文件名预览）
-const deletablePaths = computed(() => copyablePaths.value);
-
-function bulkDelete() {
-  const paths = deletablePaths.value;
-  if (paths.length === 0) return;
-  const preview = paths.slice(0, 5).join("\n");
-  const more = paths.length > 5 ? `\n…等共 ${paths.length} 个文件` : "";
-  confirmTitle.value = "删除选中文件";
-  confirmText.value = `确定要从磁盘删除以下 ${paths.length} 个文件吗？此操作不可撤销。\n\n${preview}${more}`;
-  pendingConfirmAction.value = async () => {
-    const result = await commitStore.deleteFiles(paths);
-    if (selectedFile.value && result.ok.includes(selectedFile.value.path)) {
-      selectedFile.value = null;
-      diffResult.value = null;
-    }
-    if (result.failed.length === 0) {
-      showToast(`已删除 ${result.ok.length} 个文件`);
-      clearSelection();
-    } else if (result.ok.length === 0) {
-      showToast(`删除全部失败：${result.failed[0].error}`);
-    } else {
-      showToast(`已删除 ${result.ok.length} / ${paths.length}，失败 ${result.failed.length}`);
-      // 部分失败：清除已成功的选中项，保留失败项让用户可重试
-      const toRemove: string[] = [];
-      for (const p of result.ok) {
-        toRemove.push(
-          makeKey("staged", p),
-          makeKey("unstaged", p),
-          makeKey("untracked", p)
-        );
-      }
-      removeKeys(toRemove);
-    }
-  };
-  showConfirmDialog.value = true;
-}
-
-// ---- 过滤规则弹窗 ----
-const showFilterDialog = ref(false);
-const filterRulesDraft = ref("");
-
-function openFilterDialog() {
-  filterRulesDraft.value = filterStore.getRules(repoPathOrEmpty());
-  showFilterDialog.value = true;
-}
-
-function saveFilterRules() {
-  filterStore.setRules(repoPathOrEmpty(), filterRulesDraft.value);
-  showFilterDialog.value = false;
-  showToast("过滤规则已更新");
-}
-
-function insertFilterExample() {
-  const example = [
-    "# 每行一条规则，类似 .gitignore",
-    ".idea/",
-    "node_modules/",
-    "**/*.log",
-    "dist/",
-  ].join("\n");
-  filterRulesDraft.value = filterRulesDraft.value
-    ? `${filterRulesDraft.value.replace(/\s+$/, "")}\n${example}`
-    : example;
-}
-
-function getStatusLetter(status: FileStatus["status"]): string {
-  switch (status) {
-    case "added":
-      return "A";
-    case "modified":
-      return "M";
-    case "deleted":
-      return "D";
-    case "renamed":
-      return "R";
-    case "copied":
-      return "C";
-    case "untracked":
-      return "?";
-    case "conflicted":
-      return "!";
-    case "ignored":
-      return "I";
-    default:
-      return "?";
-  }
-}
-
-function getStatusClass(status: FileStatus["status"]): string {
-  switch (status) {
-    case "added":
-      return "status-added";
-    case "modified":
-      return "status-modified";
-    case "deleted":
-      return "status-deleted";
-    case "renamed":
-      return "status-renamed";
-    case "copied":
-      return "status-renamed";
-    case "untracked":
-      return "status-untracked";
-    case "conflicted":
-      return "status-conflicted";
-    case "ignored":
-      return "status-ignored";
-    default:
-      return "";
-  }
-}
-
-useStatusPolling(async () => {
-  if (!repoStore.activeRepo || commitStore.loading) return;
-  await commitStore.loadStatus();
-  await refreshMergeState();
-});
-
-onMounted(async () => {
-  if (repoStore.activeRepo) {
-    loading.value = true;
-    errorMessage.value = null;
-    try {
-      await commitStore.loadStatus();
-      await refreshMergeState();
-    } catch (error: unknown) {
-      errorMessage.value = `加载状态失败: ${errMsg(error)}`;
-      console.error("Failed to load status:", error);
-    } finally {
-      loading.value = false;
-    }
-  }
-});
-
-watch(
-  () => repoStore.activeRepo?.path,
-  async () => {
-    if (!repoStore.activeRepo) return;
-    loading.value = true;
-    errorMessage.value = null;
-    selectedFile.value = null;
-    diffResult.value = null;
-    clearSelection();
-    try {
-      await commitStore.loadStatus();
-      await refreshMergeState();
-    } catch (error: unknown) {
-      errorMessage.value = `加载状态失败: ${errMsg(error)}`;
-      console.error("Failed to load status:", error);
-    } finally {
-      loading.value = false;
-    }
-  }
-);
-
-function onFileRowClick(event: MouseEvent, file: FileStatus, section: SectionInfo) {
+function onRowClick(event: MouseEvent, file: FileStatus, section: SectionData): void {
   if (event.shiftKey) {
     event.preventDefault();
-    selectRange(section.key, file.path);
+    _selectRangeByKey(makeKey(section.key, file.path));
     return;
   }
   if (event.ctrlKey || event.metaKey) {
     event.preventDefault();
-    toggleRow(section.key, file.path);
+    onRowToggle(section.key, file.path);
     return;
   }
-  // 普通点击：仅预览 diff，不影响多选；只有当当前没有多选时才清空
-  onSelectFile(file, section);
+  void onSelectFile(file, section);
   lastClickedKey.value = makeKey(section.key, file.path);
 }
 
-async function onSelectFile(file: FileStatus, section: SectionInfo) {
+async function onSelectFile(file: FileStatus, section: SectionData): Promise<void> {
   selectedFile.value = file;
   selectedSection.value = section.key;
   diffResult.value = null;
-
   if (!repoStore.activeRepo) return;
   try {
     diffResult.value = await commands.getFileDiff(
@@ -456,7 +204,7 @@ async function onSelectFile(file: FileStatus, section: SectionInfo) {
   }
 }
 
-function onContextMenu(event: MouseEvent, file: FileStatus, section: SectionInfo) {
+function onContextMenu(event: MouseEvent, file: FileStatus, section: SectionData): void {
   event.preventDefault();
   event.stopPropagation();
   contextFile.value = file;
@@ -464,26 +212,32 @@ function onContextMenu(event: MouseEvent, file: FileStatus, section: SectionInfo
   contextMenuRef.value?.show(event);
 }
 
-// ---- 暂存 / 取消暂存 ----
-async function handleStageFile() {
+async function handleCommitAndPush(): Promise<void> {
+  try {
+    await commitStore.commit();
+    showPushDialog.value = true;
+  } catch (e: unknown) {
+    console.error("Commit failed:", e);
+  }
+}
+
+async function handleStageFile(): Promise<void> {
   if (!contextFile.value) return;
   await commitStore.stageFile(contextFile.value.path);
 }
 
-async function handleUnstageFile() {
+async function handleUnstageFile(): Promise<void> {
   if (!contextFile.value) return;
   await commitStore.unstageFile(contextFile.value.path);
 }
 
-// ---- 显示差异（主面板） ----
-function handleShowDiff() {
+function handleShowDiff(): void {
   if (!contextFile.value) return;
   const section = sections.value.find((s) => s.key === contextSection.value)!;
-  onSelectFile(contextFile.value, section);
+  void onSelectFile(contextFile.value, section);
 }
 
-// ---- 在弹窗中显示差异 ----
-async function handleShowDiffInDialog() {
+async function handleShowDiffInDialog(): Promise<void> {
   if (!contextFile.value || !repoStore.activeRepo) return;
   diffDialogFilePath.value = contextFile.value.path;
   diffDialogLoading.value = true;
@@ -502,18 +256,16 @@ async function handleShowDiffInDialog() {
   }
 }
 
-// ---- 提交文件（快速提交） ----
-function handleOpenQuickCommit() {
+function handleOpenQuickCommit(): void {
   if (!contextFile.value) return;
   quickCommitMessage.value = "";
   showCommitDialog.value = true;
 }
 
-async function doQuickCommit() {
+async function doQuickCommit(): Promise<void> {
   if (!contextFile.value || !repoStore.activeRepo || !quickCommitMessage.value.trim()) return;
   quickCommitLoading.value = true;
   try {
-    // 先暂存此文件（如果未暂存），再提交
     if (contextSection.value !== "staged") {
       await commands.stageFile(repoStore.activeRepo.path, contextFile.value.path);
     }
@@ -529,31 +281,31 @@ async function doQuickCommit() {
   }
 }
 
-// ---- 回滚（丢弃工作区修改） ----
-function handleDiscardChanges() {
+function handleDiscardChanges(): void {
   if (!contextFile.value) return;
   const filePath = contextFile.value.path;
-  confirmTitle.value = "回滚更改";
-  confirmText.value = `确定要丢弃 "${filePath}" 的本地修改吗？此操作不可撤销。`;
-  pendingConfirmAction.value = async () => {
-    if (!repoStore.activeRepo || !contextFile.value) return;
-    try {
-      await commands.discardFileChanges(repoStore.activeRepo.path, contextFile.value.path);
-      await commitStore.loadStatus();
-      if (selectedFile.value?.path === contextFile.value.path) {
-        selectedFile.value = null;
-        diffResult.value = null;
+  const ctxFile = contextFile.value;
+  confirmDialog.open({
+    title: "回滚更改",
+    text: `确定要丢弃 "${filePath}" 的本地修改吗？此操作不可撤销。`,
+    action: async () => {
+      if (!repoStore.activeRepo) return;
+      try {
+        await commands.discardFileChanges(repoStore.activeRepo.path, ctxFile.path);
+        await commitStore.loadStatus();
+        if (selectedFile.value?.path === ctxFile.path) {
+          selectedFile.value = null;
+          diffResult.value = null;
+        }
+        showToast("已回滚更改");
+      } catch (e: unknown) {
+        showToast(`回滚失败: ${errMsg(e)}`);
       }
-      showToast("已回滚更改");
-    } catch (e: unknown) {
-      showToast(`回滚失败: ${errMsg(e)}`);
-    }
-  };
-  showConfirmDialog.value = true;
+    },
+  });
 }
 
-// ---- 搁置当前文件更改 ----
-async function handleStashFile() {
+async function handleStashFile(): Promise<void> {
   if (!contextFile.value || !repoStore.activeRepo) return;
   try {
     const msg = `搁置 ${contextFile.value.path}`;
@@ -569,8 +321,7 @@ async function handleStashFile() {
   }
 }
 
-// ---- 作为补丁复制到剪贴板 ----
-async function handleCopyAsPatch() {
+async function handleCopyAsPatch(): Promise<void> {
   if (!contextFile.value || !repoStore.activeRepo) return;
   try {
     const raw = await commands.getFileDiffRaw(
@@ -589,8 +340,7 @@ async function handleCopyAsPatch() {
   }
 }
 
-// ---- 从本地更改创建补丁文件 ----
-async function handleCreatePatch() {
+async function handleCreatePatch(): Promise<void> {
   if (!contextFile.value || !repoStore.activeRepo) return;
   try {
     const raw = await commands.getFileDiffRaw(
@@ -617,74 +367,55 @@ async function handleCreatePatch() {
   }
 }
 
-// ---- 删除文件 ----
-function handleDeleteFile() {
+function handleDeleteFile(): void {
   if (!contextFile.value) return;
   const filePath = contextFile.value.path;
-  confirmTitle.value = "删除文件";
-  confirmText.value = `确定要从磁盘删除 "${filePath}" 吗？此操作不可撤销。`;
-  pendingConfirmAction.value = async () => {
-    if (!repoStore.activeRepo || !contextFile.value) return;
-    try {
-      await commands.deleteFile(repoStore.activeRepo.path, contextFile.value.path);
-      await commitStore.loadStatus();
-      if (selectedFile.value?.path === contextFile.value.path) {
-        selectedFile.value = null;
-        diffResult.value = null;
+  const ctxFile = contextFile.value;
+  confirmDialog.open({
+    title: "删除文件",
+    text: `确定要从磁盘删除 "${filePath}" 吗？此操作不可撤销。`,
+    action: async () => {
+      if (!repoStore.activeRepo) return;
+      try {
+        await commands.deleteFile(repoStore.activeRepo.path, ctxFile.path);
+        await commitStore.loadStatus();
+        if (selectedFile.value?.path === ctxFile.path) {
+          selectedFile.value = null;
+          diffResult.value = null;
+        }
+        showToast("文件已删除");
+      } catch (e: unknown) {
+        showToast(`删除失败: ${errMsg(e)}`);
       }
-      showToast("文件已删除");
-    } catch (e: unknown) {
-      showToast(`删除失败: ${errMsg(e)}`);
-    }
-  };
-  showConfirmDialog.value = true;
+    },
+  });
 }
 
-// ---- 复制路径 ----
-function handleCopyPath() {
+function handleCopyPath(): void {
   if (!contextFile.value) return;
   navigator.clipboard.writeText(contextFile.value.path);
   showToast("路径已复制");
 }
 
-// ---- 二次确认执行 ----
-async function doConfirmAction() {
-  showConfirmDialog.value = false;
-  if (pendingConfirmAction.value) {
-    await pendingConfirmAction.value();
-    pendingConfirmAction.value = null;
-  }
-}
-
-function cancelConfirm() {
-  showConfirmDialog.value = false;
-  pendingConfirmAction.value = null;
-}
-
-// ---- 冲突解决 ----
-function openMergeDialog(filePath: string) {
+function openMergeDialog(filePath: string): void {
   const allConflicted = [...commitStore.stagedFiles, ...commitStore.unstagedFiles]
     .filter((f) => f.status === "conflicted")
     .map((f) => f.path);
-
   mergeConflictFiles.value = allConflicted.length > 0 ? allConflicted : [filePath];
   mergeFilePath.value = filePath;
   showMergeDialog.value = true;
 }
 
-async function onMergeResolved() {
+async function onMergeResolved(): Promise<void> {
   showMergeDialog.value = false;
   await commitStore.loadStatus();
 }
 
-// ---- 右键菜单项 ----
 const contextMenuItems = computed<MenuItem[]>(() => {
   if (!contextFile.value) return [];
   const section = contextSection.value;
   const items: MenuItem[] = [];
 
-  // 多选 > 1 时，顶部展示 4 个最重要的批量操作（添加/取消/回滚/复制路径）
-  // 仅当当前右键的文件本身也在多选集合里时显示，避免误以为对单文件生效
   const ctxKey = makeKey(section, contextFile.value.path);
   if (selectedTotal.value > 1 && selectedKeys.value.has(ctxKey)) {
     const n = selectedTotal.value;
@@ -716,18 +447,15 @@ const contextMenuItems = computed<MenuItem[]>(() => {
     items.push({ separator: true, label: "" });
   }
 
-  // 冲突文件：优先显示「解决冲突」
   if (contextFile.value.status === "conflicted") {
     items.push({ label: "解决冲突...", action: () => openMergeDialog(contextFile.value!.path) });
     items.push({ separator: true, label: "" });
   }
 
-  // 差异查看
   items.push({ label: "显示差异", action: handleShowDiff });
   items.push({ label: "在新窗口中显示差异", action: handleShowDiffInDialog });
   items.push({ separator: true, label: "" });
 
-  // 暂存操作
   if (section === "unstaged" || section === "untracked") {
     items.push({ label: "添加到 VCS（暂存）", action: handleStageFile });
   }
@@ -737,160 +465,88 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   items.push({ label: "提交文件…", action: handleOpenQuickCommit });
   items.push({ separator: true, label: "" });
 
-  // 撤销/搁置
   if (section !== "untracked") {
     items.push({ label: "回滚…", action: handleDiscardChanges });
   }
   items.push({ label: "搁置当前文件更改…", action: handleStashFile });
   items.push({ separator: true, label: "" });
 
-  // 补丁
   items.push({ label: "作为补丁复制到剪贴板", action: handleCopyAsPatch });
   items.push({ label: "从本地更改创建补丁…", action: handleCreatePatch });
   items.push({ separator: true, label: "" });
 
-  // 文件操作
   items.push({ label: "删除文件…", action: handleDeleteFile });
   items.push({ label: "复制路径", action: handleCopyPath });
 
   return items;
 });
+
+useStatusPolling(async () => {
+  if (!repoStore.activeRepo || commitStore.loading) return;
+  await commitStore.loadStatus();
+  await refreshMergeState();
+});
+
+onMounted(async () => {
+  if (!repoStore.activeRepo) return;
+  loading.value = true;
+  errorMessage.value = null;
+  try {
+    await commitStore.loadStatus();
+    await refreshMergeState();
+  } catch (error: unknown) {
+    errorMessage.value = `加载状态失败: ${errMsg(error)}`;
+    console.error("Failed to load status:", error);
+  } finally {
+    loading.value = false;
+  }
+});
+
+watch(
+  () => repoStore.activeRepo?.path,
+  async () => {
+    if (!repoStore.activeRepo) return;
+    loading.value = true;
+    errorMessage.value = null;
+    selectedFile.value = null;
+    diffResult.value = null;
+    clearSelection();
+    try {
+      await commitStore.loadStatus();
+      await refreshMergeState();
+    } catch (error: unknown) {
+      errorMessage.value = `加载状态失败: ${errMsg(error)}`;
+      console.error("Failed to load status:", error);
+    } finally {
+      loading.value = false;
+    }
+  }
+);
 </script>
 
 <template>
   <div class="local-changes-view">
-    <div
-      v-if="mergeState && mergeState.state !== 'none'"
-      class="merge-banner"
-      :class="`merge-banner--${mergeState.state}`"
-    >
-      <span class="merge-banner__icon">⚠</span>
-      <span class="merge-banner__text">
-        当前处于 <strong>{{ mergeState.state }}</strong> 进行中
-        <template v-if="mergeState.hasConflicts">，存在未解决的冲突</template>
-      </span>
-      <button
-        class="merge-banner__btn merge-banner__btn--primary"
-        :disabled="mergeState.hasConflicts || mergeBusy"
-        @click="onContinueMerge"
-      >
-        继续
-      </button>
-      <button
-        class="merge-banner__btn merge-banner__btn--danger"
-        :disabled="mergeBusy"
-        @click="onAbortMerge"
-      >
-        中止
-      </button>
-    </div>
+    <MergeStateBar
+      :state="mergeState"
+      :busy="mergeBusy"
+      @continue="onContinueMerge"
+      @abort="onAbortMerge"
+    />
     <Splitpanes class="default-theme" style="height: 100%">
-      <!-- Left: file list -->
       <Pane :size="35" :min-size="20" :max-size="60">
         <div class="file-panel">
-          <div class="panel-header">
-            <span class="panel-title">本地变更</span>
-            <span class="panel-count">{{ totalCount }}</span>
-            <span
-              v-if="totalHiddenCount > 0"
-              class="panel-hidden-count"
-              :title="`${totalHiddenCount} 个文件被过滤规则隐藏`"
-            >
-              -{{ totalHiddenCount }}
-            </span>
-            <div class="header-actions">
-              <button
-                class="action-btn"
-                :class="{ 'has-rules': hasFilterRules }"
-                title="过滤规则"
-                @click="openFilterDialog"
-              >
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-                </svg>
-              </button>
-              <button
-                class="action-btn"
-                :class="{ active: filterStore.showFiltered }"
-                :disabled="!hasFilterRules"
-                :title="filterStore.showFiltered ? '隐藏被过滤项' : '显示被过滤项'"
-                @click="filterStore.toggleShowFiltered()"
-              >
-                <svg
-                  v-if="filterStore.showFiltered"
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-                <svg
-                  v-else
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path
-                    d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
-                  />
-                  <line x1="1" y1="1" x2="23" y2="23" />
-                </svg>
-              </button>
-              <button class="action-btn" title="暂存所有" @click="commitStore.stageAll()">
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <polyline points="7 13 12 18 17 13" />
-                  <line x1="12" y1="6" x2="12" y2="18" />
-                </svg>
-              </button>
-              <button class="action-btn" title="取消暂存所有" @click="commitStore.unstageAll()">
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <polyline points="17 11 12 6 7 11" />
-                  <line x1="12" y1="18" x2="12" y2="6" />
-                </svg>
-              </button>
-              <button class="action-btn" title="刷新" @click="commitStore.loadStatus()">
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <polyline points="1 4 1 10 7 10" />
-                  <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-                </svg>
-              </button>
-            </div>
-          </div>
+          <ChangesToolbar
+            title="本地变更"
+            :total-count="totalCount"
+            :hidden-count="totalHiddenCount"
+            :has-filter-rules="filterRules.hasRules.value"
+            :show-filtered="filterStore.showFiltered"
+            @open-filter="filterRules.open"
+            @toggle-show-filtered="filterStore.toggleShowFiltered()"
+            @stage-all="commitStore.stageAll()"
+            @unstage-all="commitStore.unstageAll()"
+            @refresh="commitStore.loadStatus()"
+          />
 
           <div class="file-list">
             <div v-if="errorMessage" class="error-message">
@@ -899,48 +555,20 @@ const contextMenuItems = computed<MenuItem[]>(() => {
             <div v-else-if="loading" class="state-hint">加载中...</div>
             <div v-else-if="totalCount === 0" class="state-hint">工作区无变更</div>
             <template v-else>
-              <div v-for="section in sections" :key="section.key">
-                <div
-                  v-if="section.files.length > 0 || section.hiddenCount > 0"
-                  class="section-header"
-                >
-                  <span>{{ section.title }}</span>
-                  <span class="section-count">{{ section.files.length }}</span>
-                  <span
-                    v-if="section.hiddenCount > 0"
-                    class="section-hidden"
-                    :title="`${section.hiddenCount} 个文件被过滤规则隐藏`"
-                  >
-                    （隐藏 {{ section.hiddenCount }}）
-                  </span>
-                </div>
-                <div
-                  v-for="file in section.files"
-                  :key="section.key + ':' + file.path"
-                  class="file-item"
-                  :class="{
-                    selected: selectedFile?.path === file.path && selectedSection === section.key,
-                    checked: isRowSelected(section.key, file.path),
-                  }"
-                  @click="(e) => onFileRowClick(e, file, section)"
-                  @contextmenu="onContextMenu($event, file, section)"
-                >
-                  <input
-                    type="checkbox"
-                    class="row-checkbox"
-                    :checked="isRowSelected(section.key, file.path)"
-                    @click.stop="toggleRow(section.key, file.path)"
-                  />
-                  <span class="status-letter" :class="getStatusClass(file.status)">
-                    {{ getStatusLetter(file.status) }}
-                  </span>
-                  <span class="file-path">{{ file.path }}</span>
-                </div>
-              </div>
+              <FileSection
+                v-for="section in sections"
+                :key="section.key"
+                :section="section"
+                :selected-file-path="selectedFile?.path ?? null"
+                :selected-section="selectedSection"
+                :is-row-checked="isRowChecked"
+                @row-click="onRowClick"
+                @row-toggle="onRowToggle"
+                @row-context="onContextMenu"
+              />
             </template>
           </div>
 
-          <!-- Bulk action bar -->
           <div v-if="selectedTotal > 0" class="bulk-bar">
             <span class="bulk-label">已选 {{ selectedTotal }} 项</span>
             <div class="bulk-btns">
@@ -988,7 +616,6 @@ const contextMenuItems = computed<MenuItem[]>(() => {
             </div>
           </div>
 
-          <!-- Commit area -->
           <div class="commit-area">
             <textarea
               v-model="commitStore.commitMessage"
@@ -1026,7 +653,6 @@ const contextMenuItems = computed<MenuItem[]>(() => {
         </div>
       </Pane>
 
-      <!-- Right: diff viewer -->
       <Pane :size="65" :min-size="40">
         <div class="diff-area">
           <template v-if="selectedFile">
@@ -1045,7 +671,6 @@ const contextMenuItems = computed<MenuItem[]>(() => {
 
     <ContextMenu ref="contextMenuRef" :items="contextMenuItems" />
 
-    <!-- 差异弹窗 -->
     <Teleport to="body">
       <div v-if="showDiffDialog" class="modal-overlay" @click.self="showDiffDialog = false">
         <div class="modal-dialog diff-modal">
@@ -1064,7 +689,6 @@ const contextMenuItems = computed<MenuItem[]>(() => {
       </div>
     </Teleport>
 
-    <!-- 快速提交弹窗 -->
     <Teleport to="body">
       <div v-if="showCommitDialog" class="modal-overlay" @click.self="showCommitDialog = false">
         <div class="modal-dialog commit-modal">
@@ -1097,66 +721,29 @@ const contextMenuItems = computed<MenuItem[]>(() => {
       </div>
     </Teleport>
 
-    <!-- 过滤规则弹窗 -->
-    <Teleport to="body">
-      <div v-if="showFilterDialog" class="modal-overlay" @click.self="showFilterDialog = false">
-        <div class="modal-dialog filter-modal">
-          <div class="modal-header">
-            <span class="modal-title">过滤规则（类似 .gitignore）</span>
-            <button class="modal-close" @click="showFilterDialog = false">✕</button>
-          </div>
-          <div class="modal-body">
-            <p class="modal-hint filter-hint">
-              每行一条规则，支持目录后缀 <code>/</code>、<code>**</code>、<code>*</code>、<code
-                >!</code
-              >
-              取反与 <code>#</code> 注释。<br />
-              示例：<code>.idea/</code> 隐藏 .idea 目录下所有文件；<code>**/*.log</code> 隐藏所有
-              .log 文件。
-            </p>
-            <textarea
-              v-model="filterRulesDraft"
-              class="filter-textarea"
-              placeholder=".idea/&#10;node_modules/&#10;**/*.log"
-              spellcheck="false"
-            />
-          </div>
-          <div class="modal-footer">
-            <button class="modal-btn ghost" @click="insertFilterExample">插入示例</button>
-            <div style="flex: 1"></div>
-            <button class="modal-btn" @click="showFilterDialog = false">取消</button>
-            <button class="modal-btn primary" @click="saveFilterRules">保存</button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <FilterRulesDialog
+      :visible="filterRules.visible.value"
+      :draft="filterRules.draft.value"
+      @update:draft="filterRules.draft.value = $event"
+      @save="filterRules.save"
+      @cancel="filterRules.close"
+      @insert-example="filterRules.insertExample"
+    />
 
-    <!-- 二次确认弹窗 -->
-    <Teleport to="body">
-      <div v-if="showConfirmDialog" class="modal-overlay" @click.self="cancelConfirm">
-        <div class="modal-dialog confirm-modal">
-          <div class="modal-header">
-            <span class="modal-title">{{ confirmTitle }}</span>
-          </div>
-          <div class="modal-body">
-            <p class="confirm-text">{{ confirmText }}</p>
-          </div>
-          <div class="modal-footer">
-            <button class="modal-btn" @click="cancelConfirm">取消</button>
-            <button class="modal-btn danger" @click="doConfirmAction">确定</button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <ConfirmDialog
+      :visible="confirmDialog.visible.value"
+      :title="confirmDialog.title.value"
+      :text="confirmDialog.text.value"
+      @confirm="confirmDialog.confirm"
+      @cancel="confirmDialog.cancel"
+    />
 
-    <!-- Toast 通知 -->
     <Teleport to="body">
       <Transition name="toast">
         <div v-if="toastVisible" class="toast">{{ toastMessage }}</div>
       </Transition>
     </Teleport>
 
-    <!-- 冲突解决弹窗 -->
     <Teleport to="body">
       <div v-if="showMergeDialog" class="modal-overlay merge-overlay">
         <div class="merge-dialog-panel">
@@ -1180,8 +767,8 @@ const contextMenuItems = computed<MenuItem[]>(() => {
     :visible="showPushDialog"
     :repo-path="repoStore.activeRepo?.path ?? ''"
     :repo-name="repoStore.activeRepo?.name"
-    @confirm="onPushConfirmed"
-    @close="onPushCancelled"
+    @confirm="showPushDialog = false"
+    @close="showPushDialog = false"
   />
 </template>
 
@@ -1193,110 +780,12 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   background: var(--color-surface);
 }
 
-.merge-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--color-warning-bg, #3b2f00);
-  color: var(--color-warning-fg, #ffd54f);
-  border-bottom: 1px solid var(--color-warning-border, #6b5a00);
-  font-size: 13px;
-}
-.merge-banner--cherry-pick {
-  background: var(--color-info-bg, #1e2f3b);
-  color: var(--color-info-fg, #4fc3f7);
-  border-bottom-color: var(--color-info-border, #00567b);
-}
-.merge-banner__icon {
-  font-size: 16px;
-  line-height: 1;
-}
-.merge-banner__text {
-  flex: 1;
-  min-width: 0;
-}
-.merge-banner__text strong {
-  text-transform: capitalize;
-}
-.merge-banner__btn {
-  padding: 4px 10px;
-  border-radius: 3px;
-  border: 1px solid currentColor;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font-size: 12px;
-}
-.merge-banner__btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-}
-.merge-banner__btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.merge-banner__btn--primary {
-  background: var(--color-primary, #2196f3);
-  color: white;
-  border-color: var(--color-primary, #2196f3);
-}
-.merge-banner__btn--danger {
-  border-color: var(--color-danger, #e57373);
-  color: var(--color-danger, #e57373);
-}
-
 .file-panel {
   height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--color-surface);
   border-right: 1px solid var(--color-border);
-}
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--color-border);
-  flex-shrink: 0;
-}
-
-.panel-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-foreground);
-}
-
-.panel-count {
-  font-size: 10px;
-  color: var(--color-foreground-muted);
-  background: var(--color-surface-active);
-  padding: 0 6px;
-  border-radius: 8px;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: auto;
-}
-
-.action-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  color: var(--color-foreground-muted);
-  padding: 3px;
-  border-radius: 3px;
-  cursor: pointer;
-}
-
-.action-btn:hover {
-  background: var(--color-surface-hover);
-  color: var(--color-foreground);
 }
 
 .file-list {
@@ -1323,85 +812,6 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   padding: 16px;
   text-align: center;
   color: var(--color-foreground-muted);
-  font-size: 12px;
-}
-
-.section-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-foreground-muted);
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
-  position: sticky;
-  top: 0;
-  z-index: 1;
-}
-
-.section-count {
-  font-size: 10px;
-  color: var(--color-foreground-muted);
-  background: var(--color-surface-active);
-  padding: 0 5px;
-  border-radius: 8px;
-  font-weight: 400;
-}
-
-.file-item {
-  display: flex;
-  align-items: center;
-  padding: 3px 8px;
-  cursor: pointer;
-  gap: 6px;
-  font-size: 12px;
-}
-
-.file-item:hover {
-  background: var(--color-surface-hover);
-}
-
-.file-item.selected {
-  background: var(--color-surface-active);
-}
-
-.status-letter {
-  font-size: 10px;
-  font-weight: 700;
-  width: 14px;
-  text-align: center;
-  flex-shrink: 0;
-}
-
-.status-added {
-  color: var(--color-git-added);
-}
-.status-modified {
-  color: var(--color-git-modified);
-}
-.status-deleted {
-  color: var(--color-git-deleted);
-}
-.status-renamed {
-  color: var(--color-git-renamed);
-}
-.status-untracked {
-  color: var(--color-git-untracked);
-}
-.status-conflicted {
-  color: var(--color-error);
-}
-.status-ignored {
-  color: var(--color-foreground-muted);
-}
-
-.file-path {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: 12px;
 }
 
@@ -1531,7 +941,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   min-width: 3px !important;
 }
 
-/* ---- 模态弹窗 ---- */
+/* ---- 模态弹窗（diff / 快速提交 共用） ---- */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -1559,10 +969,6 @@ const contextMenuItems = computed<MenuItem[]>(() => {
 
 .commit-modal {
   width: 480px;
-}
-
-.confirm-modal {
-  width: 400px;
 }
 
 .modal-header {
@@ -1622,11 +1028,9 @@ const contextMenuItems = computed<MenuItem[]>(() => {
 }
 
 .modal-textarea {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 10px 12px;
-  margin: 12px;
   width: calc(100% - 24px);
+  margin: 12px;
+  padding: 10px 12px;
   font-size: 12px;
   font-family: var(--font-sans);
   border-radius: 4px;
@@ -1634,6 +1038,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   border: 1px solid var(--color-border);
   color: var(--color-foreground);
   resize: vertical;
+  box-sizing: border-box;
 }
 
 .modal-textarea:focus {
@@ -1645,18 +1050,6 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   margin: 0 12px 8px;
   font-size: 11px;
   color: var(--color-foreground-muted);
-}
-
-.confirm-text {
-  padding: 16px;
-  font-size: 13px;
-  color: var(--color-foreground);
-  line-height: 1.5;
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 50vh;
-  overflow-y: auto;
 }
 
 .modal-footer {
@@ -1695,16 +1088,6 @@ const contextMenuItems = computed<MenuItem[]>(() => {
 .modal-btn.primary:disabled {
   opacity: 0.4;
   cursor: default;
-}
-
-.modal-btn.danger {
-  background: var(--color-error, #e05252);
-  color: white;
-  border-color: transparent;
-}
-
-.modal-btn.danger:hover {
-  opacity: 0.85;
 }
 
 /* ---- Toast ---- */
@@ -1772,58 +1155,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   display: flex;
 }
 
-/* ---- 过滤规则 / 多选 ---- */
-.panel-hidden-count {
-  font-size: 10px;
-  color: var(--color-foreground-muted);
-  background: var(--color-surface-active);
-  padding: 0 5px;
-  border-radius: 8px;
-  font-style: italic;
-}
-
-.action-btn.has-rules {
-  color: var(--color-primary);
-}
-
-.action-btn.active {
-  background: var(--color-surface-active);
-  color: var(--color-primary);
-}
-
-.action-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.section-hidden {
-  font-size: 10px;
-  color: var(--color-foreground-muted);
-  font-weight: 400;
-  font-style: italic;
-}
-
-.row-checkbox {
-  width: 12px;
-  height: 12px;
-  margin: 0;
-  flex-shrink: 0;
-  cursor: pointer;
-  accent-color: var(--color-primary);
-}
-
-.file-item.checked {
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-}
-
-.file-item.checked:hover {
-  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
-}
-
-.file-item.checked.selected {
-  background: color-mix(in srgb, var(--color-primary) 22%, transparent);
-}
-
+/* ---- 批量操作栏 ---- */
 .bulk-bar {
   display: flex;
   align-items: center;
@@ -1887,54 +1219,5 @@ const contextMenuItems = computed<MenuItem[]>(() => {
 
 .bulk-btn.danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--color-error, #e05252) 85%, black);
-}
-
-/* ---- 过滤规则弹窗 ---- */
-.filter-modal {
-  width: 560px;
-  max-width: 90vw;
-}
-
-.filter-hint {
-  margin: 12px 12px 8px;
-}
-
-.filter-hint code {
-  background: var(--color-surface-active);
-  padding: 0 4px;
-  border-radius: 3px;
-  font-family: var(--font-mono, monospace);
-  font-size: 11px;
-}
-
-.filter-textarea {
-  width: calc(100% - 24px);
-  margin: 0 12px 12px;
-  min-height: 220px;
-  padding: 10px 12px;
-  font-size: 12px;
-  font-family: var(--font-mono, monospace);
-  border-radius: 4px;
-  background: var(--color-surface-active);
-  border: 1px solid var(--color-border);
-  color: var(--color-foreground);
-  resize: vertical;
-  box-sizing: border-box;
-}
-
-.filter-textarea:focus {
-  outline: none;
-  border-color: var(--color-primary);
-}
-
-.modal-btn.ghost {
-  background: transparent;
-  border: 1px solid var(--color-border);
-  color: var(--color-foreground-muted);
-}
-
-.modal-btn.ghost:hover {
-  background: var(--color-surface-hover);
-  color: var(--color-foreground);
 }
 </style>
