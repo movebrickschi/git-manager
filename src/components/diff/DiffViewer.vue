@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
 import { useSettingsStore } from "@/stores/settingsStore";
-import type { DiffResult, DiffHunk, DiffLine } from "@/utils/commands";
+import type { DiffResult, DiffLine } from "@/utils/commands";
 
 const props = defineProps<{
   diff: DiffResult;
@@ -11,6 +11,11 @@ const props = defineProps<{
 const settings = useSettingsStore();
 const viewMode = ref<"side-by-side" | "unified">(settings.diffMode);
 
+const unifiedContentRef = ref<HTMLElement | null>(null);
+const sideLeftContentRef = ref<HTMLElement | null>(null);
+const sideRightContentRef = ref<HTMLElement | null>(null);
+const currentHunkIdx = ref(0);
+
 const allLines = computed(() => {
   const lines: DiffLine[] = [];
   for (const hunk of props.diff.hunks) {
@@ -18,6 +23,23 @@ const allLines = computed(() => {
   }
   return lines;
 });
+
+/**
+ * 计算每个 hunk 在 unified 视图里"第一条 line 的全局 index"，用于 scrollTo。
+ * 同时反向：每行属于哪个 hunk。
+ */
+const hunkLineStarts = computed<number[]>(() => {
+  const starts: number[] = [];
+  let cum = 0;
+  for (const hunk of props.diff.hunks) {
+    starts.push(cum);
+    cum += hunk.lines.length;
+  }
+  return starts;
+});
+
+const totalLineCount = computed(() => allLines.value.length);
+const hunkCount = computed(() => props.diff.hunks.length);
 
 interface SideBySidePair {
   left: DiffLine | null;
@@ -69,6 +91,135 @@ function getLineClass(lineType: string): string {
   if (lineType === "deletion") return "line-removed";
   return "line-context";
 }
+
+const LINE_HEIGHT_PX = 20;
+
+function getScrollEl(): HTMLElement | null {
+  if (viewMode.value === "unified" || props.inline) return unifiedContentRef.value;
+  return sideRightContentRef.value;
+}
+
+function jumpToHunk(idx: number) {
+  if (hunkCount.value === 0) return;
+  const wrapped = ((idx % hunkCount.value) + hunkCount.value) % hunkCount.value;
+  currentHunkIdx.value = wrapped;
+  const lineIdx = hunkLineStarts.value[wrapped] ?? 0;
+  const el = getScrollEl();
+  if (!el) return;
+  el.scrollTo({ top: Math.max(0, lineIdx * LINE_HEIGHT_PX - 40), behavior: "smooth" });
+  // side-by-side：左右滚动同步
+  if (viewMode.value === "side-by-side" && !props.inline && sideLeftContentRef.value) {
+    sideLeftContentRef.value.scrollTo({
+      top: Math.max(0, lineIdx * LINE_HEIGHT_PX - 40),
+      behavior: "smooth",
+    });
+  }
+}
+
+function nextHunk() {
+  jumpToHunk(currentHunkIdx.value + 1);
+}
+function prevHunk() {
+  jumpToHunk(currentHunkIdx.value - 1);
+}
+
+watch(
+  () => props.diff,
+  () => {
+    currentHunkIdx.value = 0;
+    void nextTick(() => {
+      const el = getScrollEl();
+      if (el) el.scrollTop = 0;
+    });
+  }
+);
+
+interface MinimapSegment {
+  topPct: number;
+  heightPct: number;
+  kind: "added" | "removed";
+}
+
+/**
+ * minimap 段：根据 hunk 在 allLines 中占比，生成 added / removed 的色条。
+ * 多个连续同类型 line 合并为一段。
+ */
+const minimapSegments = computed<MinimapSegment[]>(() => {
+  const total = totalLineCount.value;
+  if (total === 0) return [];
+  const segs: MinimapSegment[] = [];
+  let runKind: "added" | "removed" | null = null;
+  let runStart = 0;
+  const lines = allLines.value;
+  for (let i = 0; i <= lines.length; i++) {
+    const k =
+      i < lines.length
+        ? lines[i].lineType === "addition"
+          ? "added"
+          : lines[i].lineType === "deletion"
+            ? "removed"
+            : null
+        : null;
+    if (k !== runKind) {
+      if (runKind && i > runStart) {
+        segs.push({
+          topPct: (runStart / total) * 100,
+          heightPct: Math.max(0.5, ((i - runStart) / total) * 100),
+          kind: runKind,
+        });
+      }
+      runKind = k as "added" | "removed" | null;
+      runStart = i;
+    }
+  }
+  return segs;
+});
+
+function onMinimapClick(e: MouseEvent) {
+  const el = e.currentTarget as HTMLElement;
+  const rect = el.getBoundingClientRect();
+  const ratio = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
+  const targetLine = Math.floor(ratio * totalLineCount.value);
+  const scroll = getScrollEl();
+  if (!scroll) return;
+  scroll.scrollTo({ top: targetLine * LINE_HEIGHT_PX, behavior: "smooth" });
+  // 找到落点所在 hunk index，更新 currentHunkIdx
+  const starts = hunkLineStarts.value;
+  let idx = 0;
+  for (let i = 0; i < starts.length; i++) {
+    if (starts[i] <= targetLine) idx = i;
+    else break;
+  }
+  currentHunkIdx.value = idx;
+}
+
+function onKey(e: KeyboardEvent) {
+  if (!props.diff || hunkCount.value <= 1) return;
+  if (props.inline) return;
+  const target = e.target as HTMLElement | null;
+  const editable =
+    target &&
+    (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+  if (editable) return;
+  if (e.key === "F7" || (e.altKey && (e.key === "ArrowDown" || e.key === "j"))) {
+    e.preventDefault();
+    nextHunk();
+  } else if (e.shiftKey && e.key === "F7") {
+    e.preventDefault();
+    prevHunk();
+  } else if (e.altKey && (e.key === "ArrowUp" || e.key === "k")) {
+    e.preventDefault();
+    prevHunk();
+  }
+}
+
+onMounted(() => {
+  document.addEventListener("keydown", onKey);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("keydown", onKey);
+});
 </script>
 
 <template>
@@ -76,7 +227,7 @@ function getLineClass(lineType: string): string {
     <div v-if="diff.binary" class="binary-notice">Binary file - cannot display diff</div>
 
     <template v-else>
-      <!-- Mode toggle -->
+      <!-- Mode toggle + Hunk nav -->
       <div v-if="!inline" class="diff-toolbar">
         <button
           class="mode-btn"
@@ -92,13 +243,34 @@ function getLineClass(lineType: string): string {
         >
           Unified
         </button>
+        <div v-if="hunkCount > 0" class="hunk-nav">
+          <button
+            class="hunk-nav-btn"
+            :disabled="hunkCount <= 1"
+            title="上一个 hunk (Shift+F7 / Alt+↑)"
+            @click="prevHunk"
+          >
+            ↑
+          </button>
+          <span class="hunk-nav-label">
+            hunk {{ currentHunkIdx + 1 }} / {{ hunkCount }}
+          </span>
+          <button
+            class="hunk-nav-btn"
+            :disabled="hunkCount <= 1"
+            title="下一个 hunk (F7 / Alt+↓)"
+            @click="nextHunk"
+          >
+            ↓
+          </button>
+        </div>
       </div>
 
       <!-- Side by side view -->
       <div v-if="viewMode === 'side-by-side' && !inline" class="side-by-side">
         <div class="side left-side">
           <div class="side-header">{{ diff.oldPath || "(new file)" }}</div>
-          <div class="side-content">
+          <div ref="sideLeftContentRef" class="side-content">
             <div
               v-for="(pair, i) in sideBySideLines"
               :key="'l' + i"
@@ -112,7 +284,7 @@ function getLineClass(lineType: string): string {
         </div>
         <div class="side right-side">
           <div class="side-header">{{ diff.newPath || "(deleted)" }}</div>
-          <div class="side-content">
+          <div ref="sideRightContentRef" class="side-content">
             <div
               v-for="(pair, i) in sideBySideLines"
               :key="'r' + i"
@@ -124,22 +296,52 @@ function getLineClass(lineType: string): string {
             </div>
           </div>
         </div>
+        <div
+          v-if="minimapSegments.length > 0"
+          class="diff-minimap"
+          title="Diff minimap · 点击跳到对应位置"
+          @click="onMinimapClick"
+        >
+          <div
+            v-for="(seg, idx) in minimapSegments"
+            :key="idx"
+            class="minimap-seg"
+            :class="seg.kind"
+            :style="{ top: seg.topPct + '%', height: seg.heightPct + '%' }"
+          />
+        </div>
       </div>
 
       <!-- Unified view -->
-      <div v-else class="unified-view">
+      <div v-else class="unified-view-wrap">
+        <div ref="unifiedContentRef" class="unified-view">
+          <div
+            v-for="(line, i) in allLines"
+            :key="i"
+            class="diff-line"
+            :class="getLineClass(line.lineType)"
+          >
+            <span class="line-no old-no">{{ line.oldLineNo ?? "" }}</span>
+            <span class="line-no new-no">{{ line.newLineNo ?? "" }}</span>
+            <span class="line-prefix">{{
+              line.lineType === "addition" ? "+" : line.lineType === "deletion" ? "-" : " "
+            }}</span>
+            <span class="line-content mono">{{ line.content }}</span>
+          </div>
+        </div>
         <div
-          v-for="(line, i) in allLines"
-          :key="i"
-          class="diff-line"
-          :class="getLineClass(line.lineType)"
+          v-if="!inline && minimapSegments.length > 0"
+          class="diff-minimap"
+          title="Diff minimap · 点击跳到对应位置"
+          @click="onMinimapClick"
         >
-          <span class="line-no old-no">{{ line.oldLineNo ?? "" }}</span>
-          <span class="line-no new-no">{{ line.newLineNo ?? "" }}</span>
-          <span class="line-prefix">{{
-            line.lineType === "addition" ? "+" : line.lineType === "deletion" ? "-" : " "
-          }}</span>
-          <span class="line-content mono">{{ line.content }}</span>
+          <div
+            v-for="(seg, idx) in minimapSegments"
+            :key="idx"
+            class="minimap-seg"
+            :class="seg.kind"
+            :style="{ top: seg.topPct + '%', height: seg.heightPct + '%' }"
+          />
         </div>
       </div>
     </template>
@@ -283,5 +485,85 @@ function getLineClass(lineType: string): string {
   overflow-x: auto;
   padding-right: 8px;
   tab-size: 4;
+}
+
+.hunk-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--color-border);
+}
+
+.hunk-nav-btn {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--color-foreground-muted);
+  border-radius: 3px;
+  font-size: 14px;
+}
+
+.hunk-nav-btn:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+  color: var(--color-foreground);
+}
+
+.hunk-nav-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.hunk-nav-label {
+  font-size: 11px;
+  color: var(--color-foreground-muted);
+  font-feature-settings: "tnum";
+  min-width: 80px;
+  text-align: center;
+}
+
+.unified-view-wrap {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.unified-view-wrap .unified-view {
+  flex: 1;
+}
+
+.diff-minimap {
+  position: relative;
+  width: 10px;
+  flex-shrink: 0;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.diff-minimap:hover {
+  width: 14px;
+}
+
+.minimap-seg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+}
+
+.minimap-seg.added {
+  background: var(--color-git-added, #4ec9b0);
+  opacity: 0.7;
+}
+
+.minimap-seg.removed {
+  background: var(--color-git-deleted, #e06c75);
+  opacity: 0.7;
 }
 </style>
