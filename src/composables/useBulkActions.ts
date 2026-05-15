@@ -53,6 +53,13 @@ export function useBulkActions(opts: BulkActionsOptions) {
 
   const deletablePaths = computed(() => copyablePaths.value);
 
+  /** stash 可作用于 staged + unstaged + untracked 全部 dirty 文件。 */
+  const stashablePaths = computed(() => copyablePaths.value);
+
+  /** commit 选中文件：只允许 staged + unstaged（untracked 需先 add，pathspec 也行）。
+   * 这里也允许 untracked：commitFiles 后端会先 `git add -- <paths>` 把它们入索引再 commit。 */
+  const committablePaths = computed(() => copyablePaths.value);
+
   function clearPreviewIfMatch(paths: readonly string[]): void {
     if (selectedFile.value && paths.includes(selectedFile.value.path)) {
       selectedFile.value = null;
@@ -157,16 +164,47 @@ export function useBulkActions(opts: BulkActionsOptions) {
     });
   }
 
+  async function bulkStash(): Promise<void> {
+    const paths = stashablePaths.value;
+    if (paths.length === 0) return;
+    try {
+      const tag = `搁置 ${paths.length} 个文件 @ ${new Date().toLocaleString()}`;
+      await commitStore.stashFiles(paths, tag);
+      opts.onMessage(`已搁置 ${paths.length} 个文件`);
+      clearPreviewIfMatch(paths);
+      opts.clearSelection();
+    } catch (e: unknown) {
+      opts.onMessage(`搁置失败: ${errMsg(e)}`);
+    }
+  }
+
+  /**
+   * 批量提交选中文件：调用方负责提供 message（通常走 quickCommit dialog）。
+   * 成功返回新 commit 短 id；失败抛错由调用方 catch。
+   */
+  async function bulkCommit(message: string): Promise<string> {
+    const paths = committablePaths.value;
+    if (paths.length === 0) return "";
+    const head = await commitStore.commitFiles(paths, message);
+    clearPreviewIfMatch(paths);
+    opts.clearSelection();
+    return head;
+  }
+
   return {
     stageablePaths,
     unstageablePaths,
     discardablePaths,
     copyablePaths,
     deletablePaths,
+    stashablePaths,
+    committablePaths,
     bulkStage,
     bulkUnstage,
     bulkDiscard,
     bulkCopyPath,
     bulkDelete,
+    bulkStash,
+    bulkCommit,
   };
 }

@@ -75,4 +75,23 @@ export const stashService = {
     args.push("--", filePath);
     await git.raw(args);
   },
+
+  /**
+   * 批量搁置 N 个指定文件（pathspec 限定）：
+   *   `git stash push --include-untracked -m <msg> -- <p1> <p2> ...`
+   *
+   * 与全量 `stashSave` 的差别：本方法只搁置 `filePaths` 列表里的文件，
+   * 其余 dirty 文件不动；与单文件 `stashFile` 的差别：一次产生一个 stash entry，
+   * 而不是 N 个，方便后续 pop / drop 整批。
+   *
+   * 空数组直接返回 noop。
+   */
+  async stashFiles(repoPath: string, filePaths: string[], message?: string): Promise<void> {
+    if (!Array.isArray(filePaths) || filePaths.length === 0) return;
+    const git = getGit(repoPath);
+    const args = ["stash", "push", "--include-untracked"];
+    if (message) args.push("-m", message);
+    args.push("--", ...filePaths);
+    await git.raw(args);
+  },
 };

@@ -153,6 +153,27 @@ export const useCommitStore = defineStore("commit", () => {
     await loadStatus();
   }
 
+  /** 仅提交指定 N 个文件（pathspec），不影响其它 staged 内容；返回新 commit 短 id。 */
+  async function commitFiles(paths: string[], message: string): Promise<string> {
+    if (!repoStore.activeRepo || paths.length === 0 || !message.trim()) return "";
+    const head = await commands.commitFiles(
+      repoStore.activeRepo.path,
+      paths,
+      message.trim()
+    );
+    messageHistory.value.unshift(message.trim());
+    if (messageHistory.value.length > 20) messageHistory.value.pop();
+    await loadStatus();
+    return head;
+  }
+
+  /** 仅 stash 指定 N 个文件，其余 dirty 不动；产生 1 个 stash entry。 */
+  async function stashFiles(paths: string[], message?: string): Promise<void> {
+    if (!repoStore.activeRepo || paths.length === 0) return;
+    await commands.stashFiles(repoStore.activeRepo.path, paths, message);
+    await loadStatus();
+  }
+
   async function commitAndPush() {
     await commit();
     if (!repoStore.activeRepo) return;
@@ -219,6 +240,8 @@ export const useCommitStore = defineStore("commit", () => {
     discardFiles,
     deleteFiles,
     commit,
+    commitFiles,
+    stashFiles,
     commitAndPush,
     generateMessage,
     cancelGenerate,

@@ -269,6 +269,7 @@ export interface Commands {
   stageAll(repoPath: string): Promise<void>;
   unstageAll(repoPath: string): Promise<void>;
   commit(repoPath: string, message: string, amend: boolean): Promise<string>;
+  commitFiles(repoPath: string, filePaths: string[], message: string): Promise<string>;
   push(
     repoPath: string,
     remote?: string,
@@ -319,6 +320,7 @@ export interface Commands {
   getFileDiffRaw(repoPath: string, filePath: string, staged: boolean): Promise<string>;
   deleteFile(repoPath: string, filePath: string): Promise<void>;
   stashFile(repoPath: string, filePath: string, message?: string): Promise<void>;
+  stashFiles(repoPath: string, filePaths: string[], message?: string): Promise<void>;
   createTag(
     repoPath: string,
     name: string,

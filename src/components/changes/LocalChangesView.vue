@@ -299,11 +299,15 @@ const {
   discardablePaths,
   copyablePaths,
   deletablePaths,
+  stashablePaths,
+  committablePaths,
   bulkStage,
   bulkUnstage,
   bulkDiscard,
   bulkCopyPath,
   bulkDelete,
+  bulkStash,
+  bulkCommit,
 } = useBulkActions({
   selectedFilesBySection,
   selectedFile,
@@ -426,24 +430,45 @@ async function handleShowDiffInDialog(): Promise<void> {
   }
 }
 
+/**
+ * 多选模式下记录"提交时该用哪一组 paths"。
+ * - 单选：null，沿用 contextFile 单文件路径
+ * - 多选：committablePaths 的快照（防止 dialog 打开后 selection 变了）
+ */
+const quickCommitPaths = ref<string[] | null>(null);
+
 function handleOpenQuickCommit(): void {
   if (!contextFile.value) return;
   quickCommitMessage.value = "";
+  const ctxKey = makeKey(contextSection.value, contextFile.value.path);
+  if (selectedTotal.value > 1 && selectedKeys.value.has(ctxKey)) {
+    quickCommitPaths.value = [...committablePaths.value];
+  } else {
+    quickCommitPaths.value = null;
+  }
   showCommitDialog.value = true;
 }
 
 async function doQuickCommit(): Promise<void> {
-  if (!contextFile.value || !repoStore.activeRepo || !quickCommitMessage.value.trim()) return;
+  if (!repoStore.activeRepo || !quickCommitMessage.value.trim()) return;
   quickCommitLoading.value = true;
   try {
-    if (contextSection.value !== "staged") {
-      await commands.stageFile(repoStore.activeRepo.path, contextFile.value.path);
+    const msg = quickCommitMessage.value.trim();
+    if (quickCommitPaths.value && quickCommitPaths.value.length > 0) {
+      await bulkCommit(msg);
+      showToast(`已提交 ${quickCommitPaths.value.length} 个文件`);
+    } else {
+      if (!contextFile.value) return;
+      if (contextSection.value !== "staged") {
+        await commands.stageFile(repoStore.activeRepo.path, contextFile.value.path);
+      }
+      await commands.commit(repoStore.activeRepo.path, msg, false);
+      await commitStore.loadStatus();
+      showToast("提交成功");
     }
-    await commands.commit(repoStore.activeRepo.path, quickCommitMessage.value.trim(), false);
     showCommitDialog.value = false;
     quickCommitMessage.value = "";
-    await commitStore.loadStatus();
-    showToast("提交成功");
+    quickCommitPaths.value = null;
   } catch (e: unknown) {
     showToast(`提交失败: ${errMsg(e)}`);
   } finally {
@@ -634,7 +659,15 @@ const contextMenuItems = computed<MenuItem[]>(() => {
       items.push({ label: "取消暂存", action: handleUnstageFile });
     }
   }
-  items.push({ label: "提交文件…", disabled: isMulti, action: handleOpenQuickCommit });
+  if (isMulti) {
+    items.push({
+      label: `提交文件…${countTag(committablePaths.value.length)}`,
+      disabled: committablePaths.value.length === 0,
+      action: handleOpenQuickCommit,
+    });
+  } else {
+    items.push({ label: "提交文件…", action: handleOpenQuickCommit });
+  }
   items.push({ separator: true, label: "" });
 
   if (isMulti) {
@@ -646,7 +679,15 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   } else if (section !== "untracked") {
     items.push({ label: "回滚…", action: handleDiscardChanges });
   }
-  items.push({ label: "搁置当前文件更改…", disabled: isMulti, action: handleStashFile });
+  if (isMulti) {
+    items.push({
+      label: `搁置选中文件更改…${countTag(stashablePaths.value.length)}`,
+      disabled: stashablePaths.value.length === 0,
+      action: bulkStash,
+    });
+  } else {
+    items.push({ label: "搁置当前文件更改…", action: handleStashFile });
+  }
   items.push({ separator: true, label: "" });
 
   items.push({ label: "作为补丁复制到剪贴板", disabled: isMulti, action: handleCopyAsPatch });
@@ -932,7 +973,13 @@ watch(
       <div v-if="showCommitDialog" class="modal-overlay" @click.self="showCommitDialog = false">
         <div class="modal-dialog commit-modal">
           <div class="modal-header">
-            <span class="modal-title">提交文件：{{ contextFile?.path }}</span>
+            <span class="modal-title">
+              {{
+                quickCommitPaths && quickCommitPaths.length > 0
+                  ? `提交 ${quickCommitPaths.length} 个选中文件`
+                  : `提交文件：${contextFile?.path}`
+              }}
+            </span>
             <button class="modal-close" @click="showCommitDialog = false">✕</button>
           </div>
           <div class="modal-body">
