@@ -581,72 +581,93 @@ async function onMergeResolved(): Promise<void> {
   await commitStore.loadStatus();
 }
 
+/**
+ * 右键菜单（IDEA 风格统一版）：
+ *
+ * - 单选 = 右键文件不在多选集合中、或多选只有 1 项 → 操作仅针对该单文件
+ * - 多选 = 多选集合 ≥ 2 项且右键文件在集合中 → 操作针对全部选中
+ * - 单文件专属功能（显示差异/提交/补丁/解决冲突/搁置）多选时一律置灰
+ * - 可批量功能（暂存/取消暂存/回滚/删除/复制路径）多选时显示数量徽标 (N)，
+ *   数量为 0 时置灰
+ *
+ * 统一一组菜单，不再上下两段重复。
+ */
 const contextMenuItems = computed<MenuItem[]>(() => {
   if (!contextFile.value) return [];
   const section = contextSection.value;
+  const file = contextFile.value;
   const items: MenuItem[] = [];
 
-  const ctxKey = makeKey(section, contextFile.value.path);
-  if (selectedTotal.value > 1 && selectedKeys.value.has(ctxKey)) {
-    const n = selectedTotal.value;
+  const ctxKey = makeKey(section, file.path);
+  const isMulti = selectedTotal.value > 1 && selectedKeys.value.has(ctxKey);
+  const countTag = (n: number) => (isMulti ? ` (${n})` : "");
+
+  if (file.status === "conflicted") {
     items.push({
-      label: `对选中 ${n} 项 · 添加到 VCS (${stageablePaths.value.length})`,
+      label: "解决冲突…",
+      disabled: isMulti,
+      action: () => openMergeDialog(file.path),
+    });
+    items.push({ separator: true, label: "" });
+  }
+
+  items.push({ label: "显示差异", disabled: isMulti, action: handleShowDiff });
+  items.push({ label: "在新窗口中显示差异", disabled: isMulti, action: handleShowDiffInDialog });
+  items.push({ separator: true, label: "" });
+
+  if (isMulti) {
+    items.push({
+      label: `添加到 VCS（暂存）${countTag(stageablePaths.value.length)}`,
       disabled: stageablePaths.value.length === 0,
       action: bulkStage,
     });
     items.push({
-      label: `对选中 ${n} 项 · 取消暂存 (${unstageablePaths.value.length})`,
+      label: `取消暂存${countTag(unstageablePaths.value.length)}`,
       disabled: unstageablePaths.value.length === 0,
       action: bulkUnstage,
     });
+  } else {
+    if (section === "unstaged" || section === "untracked") {
+      items.push({ label: "添加到 VCS（暂存）", action: handleStageFile });
+    }
+    if (section === "staged") {
+      items.push({ label: "取消暂存", action: handleUnstageFile });
+    }
+  }
+  items.push({ label: "提交文件…", disabled: isMulti, action: handleOpenQuickCommit });
+  items.push({ separator: true, label: "" });
+
+  if (isMulti) {
     items.push({
-      label: `对选中 ${n} 项 · 回滚 (${discardablePaths.value.length})`,
+      label: `回滚…${countTag(discardablePaths.value.length)}`,
       disabled: discardablePaths.value.length === 0,
       action: bulkDiscard,
     });
+  } else if (section !== "untracked") {
+    items.push({ label: "回滚…", action: handleDiscardChanges });
+  }
+  items.push({ label: "搁置当前文件更改…", disabled: isMulti, action: handleStashFile });
+  items.push({ separator: true, label: "" });
+
+  items.push({ label: "作为补丁复制到剪贴板", disabled: isMulti, action: handleCopyAsPatch });
+  items.push({ label: "从本地更改创建补丁…", disabled: isMulti, action: handleCreatePatch });
+  items.push({ separator: true, label: "" });
+
+  if (isMulti) {
     items.push({
-      label: `对选中 ${n} 项 · 复制路径 (${copyablePaths.value.length})`,
-      disabled: copyablePaths.value.length === 0,
-      action: bulkCopyPath,
-    });
-    items.push({
-      label: `对选中 ${n} 项 · 删除文件… (${deletablePaths.value.length})`,
+      label: `删除文件…${countTag(deletablePaths.value.length)}`,
       disabled: deletablePaths.value.length === 0,
       action: bulkDelete,
     });
-    items.push({ separator: true, label: "" });
+    items.push({
+      label: `复制路径${countTag(copyablePaths.value.length)}`,
+      disabled: copyablePaths.value.length === 0,
+      action: bulkCopyPath,
+    });
+  } else {
+    items.push({ label: "删除文件…", action: handleDeleteFile });
+    items.push({ label: "复制路径", action: handleCopyPath });
   }
-
-  if (contextFile.value.status === "conflicted") {
-    items.push({ label: "解决冲突...", action: () => openMergeDialog(contextFile.value!.path) });
-    items.push({ separator: true, label: "" });
-  }
-
-  items.push({ label: "显示差异", action: handleShowDiff });
-  items.push({ label: "在新窗口中显示差异", action: handleShowDiffInDialog });
-  items.push({ separator: true, label: "" });
-
-  if (section === "unstaged" || section === "untracked") {
-    items.push({ label: "添加到 VCS（暂存）", action: handleStageFile });
-  }
-  if (section === "staged") {
-    items.push({ label: "取消暂存", action: handleUnstageFile });
-  }
-  items.push({ label: "提交文件…", action: handleOpenQuickCommit });
-  items.push({ separator: true, label: "" });
-
-  if (section !== "untracked") {
-    items.push({ label: "回滚…", action: handleDiscardChanges });
-  }
-  items.push({ label: "搁置当前文件更改…", action: handleStashFile });
-  items.push({ separator: true, label: "" });
-
-  items.push({ label: "作为补丁复制到剪贴板", action: handleCopyAsPatch });
-  items.push({ label: "从本地更改创建补丁…", action: handleCreatePatch });
-  items.push({ separator: true, label: "" });
-
-  items.push({ label: "删除文件…", action: handleDeleteFile });
-  items.push({ label: "复制路径", action: handleCopyPath });
 
   return items;
 });
