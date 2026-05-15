@@ -244,6 +244,8 @@ export interface Commands {
   getBranches(repoPath: string): Promise<BranchesResult>;
   createBranch(repoPath: string, name: string, startPoint?: string): Promise<void>;
   checkoutBranch(repoPath: string, name: string): Promise<void>;
+  forceCheckoutBranch(repoPath: string, name: string): Promise<void>;
+  smartCheckoutBranch(repoPath: string, name: string): Promise<MergeResult>;
   deleteBranch(repoPath: string, name: string, force: boolean): Promise<void>;
   renameBranch(repoPath: string, oldName: string, newName: string): Promise<void>;
   mergeBranch(repoPath: string, name: string): Promise<MergeResult>;

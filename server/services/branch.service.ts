@@ -52,6 +52,62 @@ export const branchService = {
     await git.checkout(name);
   },
 
+  /**
+   * 强制切换分支（`git checkout -f <name>`）。
+   * 工作区 dirty 时调用方应已明确警告用户：本地未提交修改会丢失。
+   */
+  async forceCheckoutBranch(repoPath: string, name: string): Promise<void> {
+    const git = getGit(repoPath);
+    await git.raw(["checkout", "-f", name]);
+  },
+
+  /**
+   * Smart checkout（仿 IntelliJ IDEA）：
+   *   1. `git stash push --include-untracked -m <auto-tag>` 暂存全部 dirty
+   *   2. `git checkout <name>` 切到目标分支
+   *   3. `git stash pop` 把暂存还原到新分支工作区
+   * 任一步失败均回滚（pop 冲突时 stash 仍在栈顶，由调用方/用户后续处理）。
+   *
+   * 返回 MergeResult：
+   * - ok=true · message="..."：三步全部成功
+   * - ok=false · conflicts=[paths]：stash pop 时遇到冲突（已切到新分支）
+   * - ok=false · message=err：stash 或 checkout 阶段失败，仍在原分支
+   */
+  async smartCheckoutBranch(repoPath: string, name: string): Promise<MergeResult> {
+    const git = getGit(repoPath);
+    const tag = `gitmanager-auto-stash-before-checkout-${name}-${Date.now()}`;
+    try {
+      await git.raw(["stash", "push", "--include-untracked", "-m", tag]);
+    } catch (e: unknown) {
+      return {
+        success: false,
+        conflicts: [],
+        message: `stash 失败：${errStr(e) || "未知错误"}`,
+      };
+    }
+    try {
+      await git.checkout(name);
+    } catch (e: unknown) {
+      await git.raw(["stash", "pop"]).catch(() => {});
+      return {
+        success: false,
+        conflicts: [],
+        message: `checkout 失败（已恢复 stash）：${errStr(e) || "未知错误"}`,
+      };
+    }
+    try {
+      await git.raw(["stash", "pop"]);
+      return { success: true, conflicts: [], message: `已切换到 '${name}' 并恢复本地修改` };
+    } catch (e: unknown) {
+      const conflicts = await getConflictFiles(repoPath);
+      return {
+        success: false,
+        conflicts,
+        message: `已切到 '${name}'，但 stash pop 冲突，stash 保留在栈顶：${errStr(e) || "请手动处理"}`,
+      };
+    }
+  },
+
   async deleteBranch(repoPath: string, name: string, force: boolean): Promise<void> {
     const git = getGit(repoPath);
     await git.branch([force ? "-D" : "-d", name]);

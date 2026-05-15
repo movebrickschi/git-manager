@@ -27,6 +27,8 @@ const ALLOWED_CHANNELS = new Set<string>([
   "get_branches",
   "create_branch",
   "checkout_branch",
+  "force_checkout_branch",
+  "smart_checkout_branch",
   "delete_branch",
   "rename_branch",
   "merge_branch",

@@ -4,9 +4,13 @@ import { useRouter } from "vue-router";
 import StatusBar from "@/components/common/StatusBar.vue";
 import Toolbar from "@/components/common/Toolbar.vue";
 import KeyboardShortcutsDialog from "@/components/common/KeyboardShortcutsDialog.vue";
+import CheckoutChoiceDialog from "@/components/common/CheckoutChoiceDialog.vue";
 import { useRepoStore } from "@/stores/repoStore";
+import { useBranchStore } from "@/stores/branchStore";
 import { commands, platform } from "@/utils/commands";
 import { useAutoFetch } from "@/composables/useAutoFetch";
+
+const branchStore = useBranchStore();
 
 useAutoFetch();
 
@@ -345,6 +349,15 @@ onUnmounted(() => {
       </div>
     </div>
     <KeyboardShortcutsDialog v-if="showShortcutsDialog" @close="showShortcutsDialog = false" />
+    <CheckoutChoiceDialog
+      :visible="branchStore.checkoutDialog.visible"
+      :branch-name="branchStore.checkoutDialog.branchName"
+      :dirty-files="branchStore.checkoutDialog.dirtyFiles"
+      :pending="branchStore.checkoutDialog.pending"
+      :result-message="branchStore.checkoutDialog.resultMessage"
+      :result-kind="branchStore.checkoutDialog.resultKind"
+      @choose="branchStore.resolveCheckoutChoice($event)"
+    />
   </div>
 </template>
 
