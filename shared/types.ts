@@ -160,6 +160,39 @@ export interface MergeResult {
 }
 
 /**
+ * Interactive Rebase 的 todo 行。UI 上每行 commit 选择 6 种 action 之一。
+ *
+ * - `pick`：保留（默认）
+ * - `drop`：丢弃
+ * - `reword`：保留 commit 但用 `newMessage` 改写消息
+ * - `squash`：合并到上一个 commit（保留所有 message）
+ * - `fixup`：合并到上一个 commit（丢弃本 commit 自己的 message）
+ * - `edit`：rebase 到该 commit 时**暂停**，等用户改完文件再 continue
+ *
+ * UI 拖拽 reorder 通过数组元素顺序体现，后端无需另读 sortKey。
+ */
+export type RebaseAction = "pick" | "drop" | "reword" | "squash" | "fixup" | "edit";
+
+export interface RebaseTodoEntry {
+  action: RebaseAction;
+  commitId: string;
+  shortId: string;
+  subject: string;
+  /** 当 action === "reword" 时，作为新 commit message；其它 action 忽略 */
+  newMessage?: string;
+}
+
+/** Interactive Rebase 的实时状态，供 UI 在状态栏显示进度。 */
+export interface RebaseStatus {
+  inProgress: boolean;
+  total: number;
+  done: number;
+  currentCommitId: string | null;
+  currentAction: string | null;
+  conflictFiles: string[];
+}
+
+/**
  * `git submodule status` 解析出的子模块状态。
  *
  * `state` 取自前缀字符：` ` initialized / `-` uninitialized / `+` modified /
@@ -263,6 +296,13 @@ export interface Commands {
     mode: "soft" | "mixed" | "hard"
   ): Promise<void>;
   squashCommits(repoPath: string, count: number, message: string): Promise<string>;
+  getRebaseTodoPreview(repoPath: string, baseRef: string): Promise<CommitInfo[]>;
+  startInteractiveRebase(
+    repoPath: string,
+    baseRef: string,
+    todos: RebaseTodoEntry[]
+  ): Promise<MergeResult>;
+  getRebaseStatus(repoPath: string): Promise<RebaseStatus>;
   getStatus(repoPath: string): Promise<StatusResult>;
   stageFile(repoPath: string, filePath: string): Promise<void>;
   unstageFile(repoPath: string, filePath: string): Promise<void>;

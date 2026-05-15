@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { useLogStore } from "@/stores/logStore";
 import { useRepoStore } from "@/stores/repoStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useRebaseStore } from "@/stores/rebaseStore";
 import Toolbar from "@/components/common/Toolbar.vue";
 import ToolbarButton from "@/components/common/ToolbarButton.vue";
 import SearchBar from "@/components/common/SearchBar.vue";
@@ -15,6 +16,7 @@ import { formatTimestamp } from "@/utils/format";
 const logStore = useLogStore();
 const repoStore = useRepoStore();
 const settings = useSettingsStore();
+const rebaseStore = useRebaseStore();
 
 const listRef = ref<HTMLElement>();
 const contextMenuRef = ref<InstanceType<typeof ContextMenu>>();
@@ -222,6 +224,17 @@ async function handleSquashCommits() {
   }
 }
 
+// ---- Interactive Rebase from here ----
+/**
+ * 以右键的 commit 为 base（不含），rebase 其后所有 commit (baseRef..HEAD]。
+ * 当前 commit 必须在 HEAD 之前（HEAD 自身或更晚则没有可编排的 commit）。
+ */
+async function handleInteractiveRebase() {
+  if (!contextCommit.value) return;
+  const commit = contextCommit.value;
+  await rebaseStore.openSequencer(commit.id, `${commit.shortId} ${commit.summary}`);
+}
+
 // ---- Save as Patch ----
 async function handleSaveAsPatch() {
   if (!contextCommit.value || !repoStore.activeRepo) return;
@@ -285,6 +298,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
           },
         ]
       : []),
+    { label: "Interactive Rebase from here...", action: handleInteractiveRebase },
     { separator: true, label: "" },
     { label: "Reset Current Branch to Here...", action: handleResetToHere },
     { label: "Revert Commit", action: handleRevertCommit },

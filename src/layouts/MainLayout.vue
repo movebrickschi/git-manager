@@ -5,6 +5,8 @@ import StatusBar from "@/components/common/StatusBar.vue";
 import Toolbar from "@/components/common/Toolbar.vue";
 import KeyboardShortcutsDialog from "@/components/common/KeyboardShortcutsDialog.vue";
 import CheckoutChoiceDialog from "@/components/common/CheckoutChoiceDialog.vue";
+import RebaseSequencerDialog from "@/components/rebase/RebaseSequencerDialog.vue";
+import RebaseStatusBar from "@/components/rebase/RebaseStatusBar.vue";
 import { useRepoStore } from "@/stores/repoStore";
 import { useBranchStore } from "@/stores/branchStore";
 import { commands, platform } from "@/utils/commands";
@@ -374,6 +376,8 @@ onUnmounted(() => {
       :result-kind="branchStore.checkoutDialog.resultKind"
       @choose="branchStore.resolveCheckoutChoice($event)"
     />
+    <RebaseSequencerDialog />
+    <RebaseStatusBar />
     <Teleport to="body">
       <div v-if="toastVisible" class="global-toast" :class="`global-toast--${toastKind}`">
         {{ toastMessage }}

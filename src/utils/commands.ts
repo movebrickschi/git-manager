@@ -27,6 +27,9 @@ export type {
   ReflogEntry,
   Submodule,
   ProgressEvent,
+  RebaseAction,
+  RebaseTodoEntry,
+  RebaseStatus,
 } from "./types";
 
 const isElectron = typeof window !== "undefined" && !!window.electronAPI;
