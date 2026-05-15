@@ -201,12 +201,12 @@ function onKey(e: KeyboardEvent) {
     target &&
     (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
   if (editable) return;
-  if (e.key === "F7" || (e.altKey && (e.key === "ArrowDown" || e.key === "j"))) {
-    e.preventDefault();
-    nextHunk();
-  } else if (e.shiftKey && e.key === "F7") {
+  if (e.key === "F7" && e.shiftKey) {
     e.preventDefault();
     prevHunk();
+  } else if (e.key === "F7" || (e.altKey && (e.key === "ArrowDown" || e.key === "j"))) {
+    e.preventDefault();
+    nextHunk();
   } else if (e.altKey && (e.key === "ArrowUp" || e.key === "k")) {
     e.preventDefault();
     prevHunk();
