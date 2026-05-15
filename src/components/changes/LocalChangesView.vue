@@ -476,6 +476,30 @@ async function doQuickCommit(): Promise<void> {
   }
 }
 
+function handleDiscardUntracked(): void {
+  if (!contextFile.value) return;
+  const filePath = contextFile.value.path;
+  const ctxFile = contextFile.value;
+  confirmDialog.open({
+    title: "回滚 untracked 文件",
+    text: `"${filePath}" 是未跟踪的新文件，git 没有历史可恢复。\n回滚 = 从磁盘永久删除该文件，确认继续？`,
+    action: async () => {
+      if (!repoStore.activeRepo) return;
+      try {
+        await commands.deleteFile(repoStore.activeRepo.path, ctxFile.path);
+        await commitStore.loadStatus();
+        if (selectedFile.value?.path === ctxFile.path) {
+          selectedFile.value = null;
+          diffResult.value = null;
+        }
+        showToast("已删除 untracked 文件");
+      } catch (e: unknown) {
+        showToast(`删除失败: ${errMsg(e)}`);
+      }
+    },
+  });
+}
+
 function handleDiscardChanges(): void {
   if (!contextFile.value) return;
   const filePath = contextFile.value.path;
@@ -676,7 +700,9 @@ const contextMenuItems = computed<MenuItem[]>(() => {
       disabled: discardablePaths.value.length === 0,
       action: bulkDiscard,
     });
-  } else if (section !== "untracked") {
+  } else if (section === "untracked") {
+    items.push({ label: "回滚…（删除未跟踪文件）", action: handleDiscardUntracked });
+  } else {
     items.push({ label: "回滚…", action: handleDiscardChanges });
   }
   if (isMulti) {

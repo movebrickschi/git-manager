@@ -40,9 +40,16 @@ export function useBulkActions(opts: BulkActionsOptions) {
 
   const unstageablePaths = computed(() => selectedFilesBySection.value.staged);
 
+  /**
+   * 「回滚」（IDEA 风格 Rollback）覆盖三类：
+   * - staged / unstaged：`git checkout --` 恢复到 HEAD
+   * - untracked：从磁盘删除（git 没版本可恢复）
+   * 调用方 `bulkDiscard` 会拆成两批分别走 discard / delete，并在 confirm 中清楚提示。
+   */
   const discardablePaths = computed(() => [
     ...selectedFilesBySection.value.staged,
     ...selectedFilesBySection.value.unstaged,
+    ...selectedFilesBySection.value.untracked,
   ]);
 
   const copyablePaths = computed(() => [
@@ -92,27 +99,58 @@ export function useBulkActions(opts: BulkActionsOptions) {
   }
 
   function bulkDiscard(): void {
-    const paths = discardablePaths.value;
-    if (paths.length === 0) return;
+    const tracked = [
+      ...selectedFilesBySection.value.staged,
+      ...selectedFilesBySection.value.unstaged,
+    ];
+    const untracked = [...selectedFilesBySection.value.untracked];
+    const total = tracked.length + untracked.length;
+    if (total === 0) return;
+
+    const parts: string[] = [];
+    if (tracked.length > 0) {
+      parts.push(`${tracked.length} 个 staged/unstaged 文件将恢复到 HEAD`);
+    }
+    if (untracked.length > 0) {
+      parts.push(`${untracked.length} 个未跟踪文件将从磁盘永久删除`);
+    }
     opts.openConfirm({
       title: "回滚选中更改",
-      text: `确定要丢弃 ${paths.length} 个文件的本地修改吗？此操作不可撤销。`,
+      text: `${parts.join("；")}。\n此操作不可撤销，确认继续？`,
       action: async () => {
-        const result = await commitStore.discardFiles(paths);
-        clearPreviewIfMatch(result.ok);
-        if (result.failed.length === 0) {
-          opts.onMessage(`已回滚 ${result.ok.length} 个文件`);
+        const allOk: string[] = [];
+        const allFailed: { path: string; error: string }[] = [];
+
+        if (tracked.length > 0) {
+          const r = await commitStore.discardFiles(tracked);
+          allOk.push(...r.ok);
+          allFailed.push(...r.failed);
+        }
+        if (untracked.length > 0) {
+          const r = await commitStore.deleteFiles(untracked);
+          allOk.push(...r.ok);
+          allFailed.push(...r.failed);
+        }
+
+        clearPreviewIfMatch(allOk);
+
+        if (allFailed.length === 0) {
+          opts.onMessage(`已回滚 ${allOk.length} 个文件`);
           opts.clearSelection();
           return;
         }
-        if (result.ok.length === 0) {
-          opts.onMessage(`回滚全部失败：${result.failed[0]?.error ?? "未知错误"}`);
+        if (allOk.length === 0) {
+          opts.onMessage(`回滚全部失败：${allFailed[0]?.error ?? "未知错误"}`);
           return;
         }
-        opts.onMessage(`已回滚 ${result.ok.length} / ${paths.length}，失败 ${result.failed.length}`);
+        opts.onMessage(`已回滚 ${allOk.length} / ${total}，失败 ${allFailed.length}`);
         const toRemove: string[] = [];
-        for (const p of result.ok) {
-          toRemove.push(opts.makeKey("staged", p), opts.makeKey("unstaged", p));
+        for (const p of allOk) {
+          toRemove.push(
+            opts.makeKey("staged", p),
+            opts.makeKey("unstaged", p),
+            opts.makeKey("untracked", p)
+          );
         }
         opts.removeKeys(toRemove);
       },
