@@ -159,6 +159,25 @@ export interface MergeResult {
   message: string;
 }
 
+/**
+ * `git reflog show HEAD --format=...` 解析出的一条记录。
+ * 用于「迷路（reflog）」面板恢复误操作丢失的 commit。
+ */
+export interface ReflogEntry {
+  /** 0 = HEAD@{0}（最新），向下递增 */
+  index: number;
+  /** 形如 `HEAD@{0}` 的 reflog ref，可直接 `git reset --hard` 它 */
+  ref: string;
+  commitId: string;
+  shortId: string;
+  /** reflog subject，例如 `reset: moving to HEAD~`、`commit: feat: ...` */
+  action: string;
+  /** commit 本身的 subject（一句话），用于显示 commit 内容 */
+  subject: string;
+  /** unix ms */
+  time: number;
+}
+
 export interface ConflictFile {
   path: string;
   oursContent: string;
@@ -170,6 +189,23 @@ export interface RemoteInfo {
   name: string;
   url: string;
   fetchUrl: string;
+}
+
+/**
+ * Push 选项。所有字段可选，未传则走普通 `git push`。
+ *
+ * 互斥规则（前端 UI 也应阻止同时勾选）：
+ *   `force` 与 `forceWithLease` 互斥；同时设置时 `forceWithLease` 优先。
+ */
+export interface PushOptions {
+  /** `--force-with-lease`：远端被他人改动则失败（安全的强推，推荐） */
+  forceWithLease?: boolean;
+  /** `--force`：覆盖远端 history（危险，需用户明确二次确认） */
+  force?: boolean;
+  /** `-u/--set-upstream`：推送同时设置上游分支 */
+  setUpstream?: boolean;
+  /** `--tags`：连带本地所有标签一起推送 */
+  pushTags?: boolean;
 }
 
 export interface ProgressEvent {
@@ -207,7 +243,12 @@ export interface Commands {
   stageAll(repoPath: string): Promise<void>;
   unstageAll(repoPath: string): Promise<void>;
   commit(repoPath: string, message: string, amend: boolean): Promise<string>;
-  push(repoPath: string, remote?: string, branch?: string): Promise<void>;
+  push(
+    repoPath: string,
+    remote?: string,
+    branch?: string,
+    options?: PushOptions
+  ): Promise<void>;
   getUnpushedCommits(
     repoPath: string,
     remote?: string,
@@ -252,6 +293,17 @@ export interface Commands {
   getFileDiffRaw(repoPath: string, filePath: string, staged: boolean): Promise<string>;
   deleteFile(repoPath: string, filePath: string): Promise<void>;
   stashFile(repoPath: string, filePath: string, message?: string): Promise<void>;
+  createTag(
+    repoPath: string,
+    name: string,
+    commitId?: string,
+    message?: string
+  ): Promise<void>;
+  deleteTag(repoPath: string, name: string): Promise<void>;
+  pushTag(repoPath: string, remote: string, name: string): Promise<void>;
+  deleteRemoteTag(repoPath: string, remote: string, name: string): Promise<void>;
+  checkoutTag(repoPath: string, name: string): Promise<void>;
+  getReflog(repoPath: string, limit?: number): Promise<ReflogEntry[]>;
 }
 
 export interface Platform {

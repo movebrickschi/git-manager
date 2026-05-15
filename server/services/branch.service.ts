@@ -133,4 +133,49 @@ export const branchService = {
     const git = getGit(repoPath);
     await git.raw(["reset", `--${mode}`, commitId]);
   },
+
+  /**
+   * 创建标签。
+   * - 有 `message` → annotated tag（`git tag -a <name> -m <msg> [<commit>]`）
+   * - 无 `message` → lightweight tag（`git tag <name> [<commit>]`）
+   * - 无 `commitId` → 默认指向 HEAD
+   */
+  async createTag(
+    repoPath: string,
+    name: string,
+    commitId?: string,
+    message?: string
+  ): Promise<void> {
+    const git = getGit(repoPath);
+    const args = ["tag"];
+    if (message && message.length > 0) args.push("-a", "-m", message);
+    args.push(name);
+    if (commitId && commitId.length > 0) args.push(commitId);
+    await git.raw(args);
+  },
+
+  async deleteTag(repoPath: string, name: string): Promise<void> {
+    const git = getGit(repoPath);
+    await git.raw(["tag", "-d", name]);
+  },
+
+  async pushTag(repoPath: string, remote: string, name: string): Promise<void> {
+    const git = getGit(repoPath);
+    await git.raw(["push", remote, name]);
+  },
+
+  /** 推一个空 ref 到 :refs/tags/<name> 实现远端 tag 删除（git 标准方式） */
+  async deleteRemoteTag(repoPath: string, remote: string, name: string): Promise<void> {
+    const git = getGit(repoPath);
+    await git.raw(["push", remote, `:refs/tags/${name}`]);
+  },
+
+  /**
+   * Checkout 标签会进入 detached HEAD。
+   * 调用方通常应提示用户「这是分离头状态，需 checkout 分支返回」。
+   */
+  async checkoutTag(repoPath: string, name: string): Promise<void> {
+    const git = getGit(repoPath);
+    await git.checkout(`tags/${name}`);
+  },
 };

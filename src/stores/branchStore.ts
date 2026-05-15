@@ -57,6 +57,34 @@ export const useBranchStore = defineStore("branch", () => {
     return await commands.mergeBranch(repoStore.activeRepo.path, name);
   }
 
+  async function createTag(name: string, commitId?: string, message?: string) {
+    if (!repoStore.activeRepo) return;
+    await commands.createTag(repoStore.activeRepo.path, name, commitId, message);
+    await loadBranches();
+  }
+
+  async function deleteTag(name: string) {
+    if (!repoStore.activeRepo) return;
+    await commands.deleteTag(repoStore.activeRepo.path, name);
+    await loadBranches();
+  }
+
+  async function pushTag(remote: string, name: string) {
+    if (!repoStore.activeRepo) return;
+    await commands.pushTag(repoStore.activeRepo.path, remote, name);
+  }
+
+  async function deleteRemoteTag(remote: string, name: string) {
+    if (!repoStore.activeRepo) return;
+    await commands.deleteRemoteTag(repoStore.activeRepo.path, remote, name);
+  }
+
+  async function checkoutTag(name: string) {
+    if (!repoStore.activeRepo) return;
+    await commands.checkoutTag(repoStore.activeRepo.path, name);
+    await loadBranches();
+  }
+
   function toggleFavorite(name: string) {
     const idx = favorites.value.indexOf(name);
     if (idx >= 0) {
@@ -79,6 +107,11 @@ export const useBranchStore = defineStore("branch", () => {
     deleteBranch,
     renameBranch,
     mergeBranch,
+    createTag,
+    deleteTag,
+    pushTag,
+    deleteRemoteTag,
+    checkoutTag,
     toggleFavorite,
   };
 });

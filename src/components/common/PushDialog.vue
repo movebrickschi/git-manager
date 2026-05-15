@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
 import { commands } from "@/utils/commands";
-import type { CommitInfo, FileStatus } from "@/utils/commands";
+import type { CommitInfo, FileStatus, PushOptions } from "@/utils/commands";
 import { formatTimestamp } from "@/utils/format";
 
 const props = defineProps<{
@@ -24,6 +24,20 @@ const commits = ref<CommitInfo[]>([]);
 const selectedCommit = ref<CommitInfo | null>(null);
 const commitFiles = ref<FileStatus[]>([]);
 const filesLoading = ref(false);
+
+// Push options
+const optForceWithLease = ref(false);
+const optForce = ref(false);
+const optSetUpstream = ref(false);
+const optPushTags = ref(false);
+
+// force 与 force-with-lease 互斥
+watch(optForce, (v) => {
+  if (v) optForceWithLease.value = false;
+});
+watch(optForceWithLease, (v) => {
+  if (v) optForce.value = false;
+});
 
 const remoteName = computed(() => props.remote ?? "origin");
 const branchName = computed(() => props.branch ?? props.targetBranch ?? "");
@@ -63,9 +77,32 @@ async function selectCommit(commit: CommitInfo) {
 }
 
 async function handlePush() {
+  // --force 需要二次确认（不可撤销，可能覆盖他人提交）
+  if (optForce.value) {
+    const ok = window.confirm(
+      `⚠ 你勾选了 --force（强制推送）。\n\n` +
+        `这会**强行覆盖远端 history**，如果其他协作者已经基于旧 ref 提交，\n` +
+        `他们的工作可能会被你覆盖、不可撤销。\n\n` +
+        `推荐改用 --force-with-lease（远端被他人改动时会安全失败）。\n\n` +
+        `仍要使用 --force 推送 ${branchName.value || "(当前分支)"} 到 ${remoteName.value} ？`
+    );
+    if (!ok) return;
+  }
+
+  const options: PushOptions = {};
+  if (optForceWithLease.value) options.forceWithLease = true;
+  if (optForce.value) options.force = true;
+  if (optSetUpstream.value) options.setUpstream = true;
+  if (optPushTags.value) options.pushTags = true;
+
   pushing.value = true;
   try {
-    await commands.push(props.repoPath, props.remote, props.branch);
+    await commands.push(
+      props.repoPath,
+      props.remote,
+      props.branch,
+      Object.keys(options).length > 0 ? options : undefined
+    );
     emit("confirm");
   } finally {
     pushing.value = false;
@@ -197,15 +234,38 @@ watch(
           </div>
         </div>
 
+        <!-- Push options -->
+        <div class="push-options">
+          <label class="opt-row" title="远端被他人改动时安全失败（推荐的强推方式）">
+            <input v-model="optForceWithLease" type="checkbox" :disabled="optForce" />
+            <span>强制推送（--force-with-lease 安全）</span>
+          </label>
+          <label class="opt-row opt-danger" title="无视远端 history，可能覆盖他人提交">
+            <input v-model="optForce" type="checkbox" :disabled="optForceWithLease" />
+            <span>强制推送（--force 危险）</span>
+          </label>
+          <label class="opt-row" title="同时推送本地所有 tag">
+            <input v-model="optPushTags" type="checkbox" />
+            <span>推送 tags（--tags）</span>
+          </label>
+          <label class="opt-row" title="同时建立上游跟踪（首次推送新分支时需要）">
+            <input v-model="optSetUpstream" type="checkbox" />
+            <span>设置上游（-u / --set-upstream）</span>
+          </label>
+        </div>
+
         <!-- Footer -->
         <div class="push-footer">
           <button class="push-btn" :disabled="pushing" @click="handleClose">取消</button>
           <button
             class="push-btn primary"
-            :disabled="pushing || commits.length === 0"
+            :class="{ 'push-btn-danger': optForce }"
+            :disabled="pushing || (commits.length === 0 && !optForce && !optForceWithLease)"
             @click="handlePush"
           >
             <span v-if="pushing">推送中...</span>
+            <span v-else-if="optForce">⚠ 强制推送(P)</span>
+            <span v-else-if="optForceWithLease">推送（lease）(P)</span>
             <span v-else>推送(P)</span>
           </button>
         </div>
@@ -471,6 +531,47 @@ watch(
   white-space: nowrap;
 }
 
+/* Push options */
+.push-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-background);
+  flex-shrink: 0;
+}
+
+.opt-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--color-foreground);
+  cursor: pointer;
+  user-select: none;
+}
+
+.opt-row input[type="checkbox"] {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  accent-color: var(--color-primary);
+}
+
+.opt-row input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.opt-danger {
+  color: var(--color-error, #e05252);
+}
+
+.opt-danger input[type="checkbox"] {
+  accent-color: var(--color-error, #e05252);
+}
+
 /* Footer */
 .push-footer {
   display: flex;
@@ -479,6 +580,17 @@ watch(
   padding: 10px 14px;
   border-top: 1px solid var(--color-border);
   flex-shrink: 0;
+}
+
+.push-btn.push-btn-danger {
+  background: var(--color-error, #e05252);
+  border-color: var(--color-error, #e05252);
+  color: white;
+}
+
+.push-btn.push-btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-error, #e05252) 85%, black);
+  border-color: color-mix(in srgb, var(--color-error, #e05252) 85%, black);
 }
 
 .push-btn {

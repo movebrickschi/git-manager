@@ -1,4 +1,4 @@
-import type { CommitInfo, MergeResult, RemoteInfo } from "../git-service.js";
+import type { CommitInfo, MergeResult, PushOptions, RemoteInfo } from "../git-service.js";
 import {
   errStr,
   getConflictFiles,
@@ -9,9 +9,19 @@ import {
 } from "./_helpers.js";
 
 export const remoteService = {
-  async push(repoPath: string, remote?: string, branch?: string): Promise<void> {
+  async push(
+    repoPath: string,
+    remote?: string,
+    branch?: string,
+    options?: PushOptions
+  ): Promise<void> {
     const git = getGit(repoPath);
     const args: string[] = ["push"];
+    // forceWithLease 优先于 force（与 shared/types.ts 的契约一致）
+    if (options?.forceWithLease) args.push("--force-with-lease");
+    else if (options?.force) args.push("--force");
+    if (options?.setUpstream) args.push("--set-upstream");
+    if (options?.pushTags) args.push("--tags");
     if (remote) args.push(remote);
     if (branch) args.push(branch);
     await withRetry(() => git.raw(args), { label: `push ${remote ?? ""} ${branch ?? ""}` });

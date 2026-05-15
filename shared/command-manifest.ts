@@ -31,7 +31,7 @@ export const COMMANDS = [
   { method: "stageAll", ipc: "stage_all", http: "/stage/all", bodyKeys: ["repoPath"] },
   { method: "unstageAll", ipc: "unstage_all", http: "/unstage/all", bodyKeys: ["repoPath"] },
   { method: "commit", ipc: "commit", http: "/commit", bodyKeys: ["repoPath", "message", "amend"] },
-  { method: "push", ipc: "push_remote", http: "/push", bodyKeys: ["repoPath", "remote", "branch"] },
+  { method: "push", ipc: "push_remote", http: "/push", bodyKeys: ["repoPath", "remote", "branch", "options"] },
   { method: "getUnpushedCommits", ipc: "get_unpushed_commits", http: "/unpushed-commits", bodyKeys: ["repoPath", "remote", "branch"] },
   { method: "pull", ipc: "pull_remote", http: "/pull", bodyKeys: ["repoPath", "remote", "rebase"] },
   { method: "fetch", ipc: "fetch_remote", http: "/fetch", bodyKeys: ["repoPath", "remote"] },
@@ -59,6 +59,12 @@ export const COMMANDS = [
   { method: "getFileDiffRaw", ipc: "get_file_diff_raw", http: "/file/diff-raw", bodyKeys: ["repoPath", "filePath", "staged"] },
   { method: "deleteFile", ipc: "delete_file", http: "/file/delete", bodyKeys: ["repoPath", "filePath"] },
   { method: "stashFile", ipc: "stash_file", http: "/stash/file", bodyKeys: ["repoPath", "filePath", "message"] },
+  { method: "createTag", ipc: "create_tag", http: "/tag/create", bodyKeys: ["repoPath", "name", "commitId", "message"] },
+  { method: "deleteTag", ipc: "delete_tag", http: "/tag/delete", bodyKeys: ["repoPath", "name"] },
+  { method: "pushTag", ipc: "push_tag", http: "/tag/push", bodyKeys: ["repoPath", "remote", "name"] },
+  { method: "deleteRemoteTag", ipc: "delete_remote_tag", http: "/tag/delete-remote", bodyKeys: ["repoPath", "remote", "name"] },
+  { method: "checkoutTag", ipc: "checkout_tag", http: "/tag/checkout", bodyKeys: ["repoPath", "name"] },
+  { method: "getReflog", ipc: "get_reflog", http: "/reflog", bodyKeys: ["repoPath", "limit"] },
 ] as const satisfies readonly CommandSpec[];
 
 export type CommandMethod = (typeof COMMANDS)[number]["method"];

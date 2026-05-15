@@ -6,6 +6,7 @@ import type {
   GraphRow,
   LogFilter,
   LogResult,
+  ReflogEntry,
 } from "../git-service.js";
 import { getGit, parseDiffOutput, parseNameStatus, parseRefs, LOG_FORMAT } from "./_helpers.js";
 
@@ -248,5 +249,45 @@ export const logService = {
     const git = getGit(repoPath);
     const args = staged ? ["diff", "--cached", "--", filePath] : ["diff", "--", filePath];
     return git.raw(args);
+  },
+
+  /**
+   * 读取 HEAD 的 reflog，最多 limit 条（默认 200）。
+   * 每行：%H|%h|%gd|%gs|%s|%at（以 \x00 分隔以避免 message 内的 `|` 误匹配）。
+   * 失败（仓库无 reflog / 空仓库）→ 返回空数组而不是 throw。
+   */
+  async getReflog(repoPath: string, limit = 200): Promise<ReflogEntry[]> {
+    const git = getGit(repoPath);
+    const sep = "\x00";
+    const fmt = `%H${sep}%h${sep}%gd${sep}%gs${sep}%s${sep}%at`;
+    try {
+      const raw = await git.raw([
+        "reflog",
+        "show",
+        "HEAD",
+        `--format=${fmt}`,
+        "-n",
+        String(Math.max(1, Math.min(limit, 5000))),
+      ]);
+      if (!raw.trim()) return [];
+      const entries: ReflogEntry[] = [];
+      const lines = raw.trim().split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const parts = lines[i]!.split(sep);
+        if (parts.length < 6) continue;
+        entries.push({
+          index: i,
+          commitId: parts[0] ?? "",
+          shortId: parts[1] ?? "",
+          ref: parts[2] ?? "",
+          action: parts[3] ?? "",
+          subject: parts[4] ?? "",
+          time: parseInt(parts[5] ?? "0") * 1000,
+        });
+      }
+      return entries;
+    } catch {
+      return [];
+    }
   },
 };

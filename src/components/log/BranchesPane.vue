@@ -13,6 +13,8 @@ import { translateGitError } from "@/utils/git-error";
 import { SHORTCUTS, useKeyboardShortcuts } from "@/utils/keyboard";
 const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/ThreeWayMerge.vue"));
 import PushDialog from "@/components/common/PushDialog.vue";
+import CreateTagDialog from "@/components/common/CreateTagDialog.vue";
+import ReflogDialog from "@/components/common/ReflogDialog.vue";
 
 function friendlyErr(input: unknown): string {
   if (input == null) return translateGitError("");
@@ -58,6 +60,14 @@ const pushDialogBranch = ref<string | undefined>(undefined);
 const showConflictDialog = ref(false);
 const conflictDialogFiles = ref<string[]>([]);
 const conflictDialogFirstFile = ref("");
+
+// Tag 相关
+const showCreateTagDialog = ref(false);
+const tagContextMenuRef = ref<InstanceType<typeof ContextMenu>>();
+const contextTagName = ref<string | null>(null);
+
+// Reflog 弹窗
+const showReflogDialog = ref(false);
 
 function openConflictDialog(files: string[]) {
   if (files.length === 0) return;
@@ -732,6 +742,142 @@ async function handleRenameBranch(oldName: string) {
     actionLoading.value = false;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Tag actions
+// ---------------------------------------------------------------------------
+
+function openCreateTagDialog(): void {
+  clearActionError();
+  showCreateTagDialog.value = true;
+}
+
+async function onCreateTagConfirmed(payload: {
+  name: string;
+  message: string;
+  annotated: boolean;
+  pushAfter: boolean;
+}): Promise<void> {
+  showCreateTagDialog.value = false;
+  clearActionError();
+  actionLoading.value = true;
+  try {
+    await branchStore.createTag(
+      payload.name,
+      undefined,
+      payload.annotated ? payload.message : ""
+    );
+    if (payload.pushAfter) {
+      const remote = await resolveDefaultRemote();
+      await branchStore.pushTag(remote, payload.name);
+    }
+    await refreshAfterGitOp();
+  } catch (e: unknown) {
+    actionError.value = friendlyErr(e);
+  } finally {
+    actionLoading.value = false;
+  }
+}
+
+function showTagContextMenu(event: MouseEvent, tag: string): void {
+  contextTagName.value = tag;
+  tagContextMenuRef.value?.show(event);
+}
+
+const tagContextMenuItems = computed<MenuItem[]>(() => {
+  const tag = contextTagName.value;
+  if (!tag) return [];
+  return [
+    {
+      label: `Checkout '${tag}'（进入分离 HEAD）`,
+      action: () => handleCheckoutTag(tag),
+    },
+    {
+      label: `推送 '${tag}' 到默认远端`,
+      action: () => handlePushTag(tag),
+    },
+    { separator: true, label: "" },
+    {
+      label: `删除本地标签 '${tag}'`,
+      action: () => handleDeleteLocalTag(tag),
+    },
+    {
+      label: `删除远端标签 '${tag}'…`,
+      action: () => handleDeleteRemoteTag(tag),
+    },
+    { separator: true, label: "" },
+    {
+      label: "复制标签名",
+      action: () => {
+        void navigator.clipboard?.writeText(tag);
+      },
+    },
+  ];
+});
+
+async function handleCheckoutTag(tag: string): Promise<void> {
+  if (
+    !window.confirm(
+      `Checkout 标签 '${tag}' 会进入分离 HEAD（detached HEAD）状态。\n继续吗？\n（之后可用 checkout <branch> 返回正常分支）`
+    )
+  )
+    return;
+  clearActionError();
+  actionLoading.value = true;
+  try {
+    await branchStore.checkoutTag(tag);
+    await refreshAfterGitOp();
+  } catch (e: unknown) {
+    actionError.value = friendlyErr(e);
+  } finally {
+    actionLoading.value = false;
+  }
+}
+
+async function handlePushTag(tag: string): Promise<void> {
+  clearActionError();
+  actionLoading.value = true;
+  try {
+    const remote = await resolveDefaultRemote();
+    await branchStore.pushTag(remote, tag);
+  } catch (e: unknown) {
+    actionError.value = friendlyErr(e);
+  } finally {
+    actionLoading.value = false;
+  }
+}
+
+async function handleDeleteLocalTag(tag: string): Promise<void> {
+  if (!window.confirm(`确认删除本地标签 '${tag}'？此操作不可撤销。`)) return;
+  clearActionError();
+  actionLoading.value = true;
+  try {
+    await branchStore.deleteTag(tag);
+  } catch (e: unknown) {
+    actionError.value = friendlyErr(e);
+  } finally {
+    actionLoading.value = false;
+  }
+}
+
+async function handleDeleteRemoteTag(tag: string): Promise<void> {
+  if (
+    !window.confirm(
+      `确认从默认远端删除标签 '${tag}'？\n该操作会推送 ':refs/tags/${tag}'，**远端将立即丢失此标签**，不可撤销。`
+    )
+  )
+    return;
+  clearActionError();
+  actionLoading.value = true;
+  try {
+    const remote = await resolveDefaultRemote();
+    await branchStore.deleteRemoteTag(remote, tag);
+  } catch (e: unknown) {
+    actionError.value = friendlyErr(e);
+  } finally {
+    actionLoading.value = false;
+  }
+}
 </script>
 
 <template>
@@ -816,6 +962,24 @@ async function handleRenameBranch(oldName: string) {
             <line x1="12" y1="18" x2="12" y2="6" />
           </svg>
           Push
+        </ToolbarButton>
+        <ToolbarButton
+          title="迷路：查看 Git Reflog，恢复误 reset / rebase 丢失的提交"
+          :disabled="!repoReady"
+          @click="showReflogDialog = true"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <polyline points="1 4 1 10 7 10" />
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+          </svg>
+          迷路
         </ToolbarButton>
       </div>
       <div v-if="actionError" class="action-error">{{ actionError }}</div>
@@ -1051,12 +1215,26 @@ async function handleRenameBranch(oldName: string) {
       </div>
 
       <!-- Tags -->
-      <div v-if="showTags && filteredTags.length > 0" class="branch-group">
-        <div class="group-header" @click="showTags = !showTags">
-          <span>TAGS</span>
-          <span class="count">{{ filteredTags.length }}</span>
+      <div v-if="showTags" class="branch-group">
+        <div class="group-header tags-header">
+          <span class="group-toggle" @click="showTags = !showTags">
+            <span>TAGS</span>
+            <span class="count">{{ filteredTags.length }}</span>
+          </span>
+          <button
+            class="tag-create-btn"
+            title="在 HEAD 创建新标签…"
+            @click.stop="openCreateTagDialog"
+          >
+            +
+          </button>
         </div>
-        <div v-for="tag in filteredTags" :key="tag" class="branch-item">
+        <div
+          v-for="tag in filteredTags"
+          :key="tag"
+          class="branch-item"
+          @contextmenu.prevent="showTagContextMenu($event, tag)"
+        >
           <svg
             width="12"
             height="12"
@@ -1072,10 +1250,28 @@ async function handleRenameBranch(oldName: string) {
           </svg>
           <span class="branch-name">{{ tag }}</span>
         </div>
+        <div v-if="filteredTags.length === 0" class="tag-empty-hint">
+          暂无标签 · 点 + 创建
+        </div>
       </div>
     </div>
 
     <ContextMenu ref="contextMenuRef" :items="contextMenuItems" />
+    <ContextMenu ref="tagContextMenuRef" :items="tagContextMenuItems" />
+
+    <CreateTagDialog
+      :visible="showCreateTagDialog"
+      target-label="HEAD（当前所在 commit）"
+      @confirm="onCreateTagConfirmed"
+      @cancel="showCreateTagDialog = false"
+    />
+
+    <ReflogDialog
+      :visible="showReflogDialog"
+      :repo-path="repoStore.activeRepo?.path ?? ''"
+      @close="showReflogDialog = false"
+      @changed="refreshAfterGitOp"
+    />
 
     <!-- 推送确认弹框 -->
     <PushDialog
@@ -1230,6 +1426,46 @@ async function handleRenameBranch(oldName: string) {
 
 .count {
   font-weight: 400;
+}
+
+.tags-header {
+  cursor: default;
+}
+
+.group-toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.tag-create-btn {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--color-foreground-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tag-create-btn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-foreground);
+  border-color: var(--color-foreground-muted);
+}
+
+.tag-empty-hint {
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--color-foreground-muted);
+  font-style: italic;
 }
 
 .branch-item {

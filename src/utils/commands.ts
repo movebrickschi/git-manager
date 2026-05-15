@@ -23,6 +23,8 @@ export type {
   MergeResult,
   ConflictFile,
   RemoteInfo,
+  PushOptions,
+  ReflogEntry,
   ProgressEvent,
 } from "./types";
 
