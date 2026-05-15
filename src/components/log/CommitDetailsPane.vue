@@ -129,6 +129,7 @@ function copyHash() {
   font-size: 11px;
   font-weight: 600;
   color: var(--color-foreground-muted);
+  user-select: none;
 }
 
 .empty {
@@ -142,6 +143,13 @@ function copyHash() {
   flex: 1;
   overflow-y: auto;
   padding: 8px;
+  user-select: text;
+  cursor: text;
+}
+
+.details-content ::selection {
+  background: var(--color-primary, #007acc);
+  color: #fff;
 }
 
 .commit-message {
