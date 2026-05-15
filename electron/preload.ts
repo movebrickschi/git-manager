@@ -34,6 +34,7 @@ const ALLOWED_CHANNELS = new Set<string>([
   "cherry_pick",
   "revert_commit",
   "reset_to_commit",
+  "squash_commits",
   "get_status",
   "stage_file",
   "unstage_file",

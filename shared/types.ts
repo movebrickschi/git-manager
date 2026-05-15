@@ -255,6 +255,7 @@ export interface Commands {
     commitId: string,
     mode: "soft" | "mixed" | "hard"
   ): Promise<void>;
+  squashCommits(repoPath: string, count: number, message: string): Promise<string>;
   getStatus(repoPath: string): Promise<StatusResult>;
   stageFile(repoPath: string, filePath: string): Promise<void>;
   unstageFile(repoPath: string, filePath: string): Promise<void>;

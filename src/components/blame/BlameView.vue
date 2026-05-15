@@ -4,8 +4,10 @@ import { useRepoStore } from "@/stores/repoStore";
 import { useLogStore } from "@/stores/logStore";
 import type { BlameInfo, BlameLine } from "@/utils/commands";
 import { commands } from "@/utils/commands";
-import { formatTimestamp, shortenHash } from "@/utils/format";
+import { formatTimestamp } from "@/utils/format";
 import VirtualList from "@/components/common/VirtualList.vue";
+import ContextMenu from "@/components/common/ContextMenu.vue";
+import type { MenuItem } from "@/components/common/ContextMenu.vue";
 
 const props = defineProps<{
   filePath: string;
@@ -20,6 +22,60 @@ const loading = ref(false);
 const hoveredCommit = ref<string | null>(null);
 const tooltipLine = ref<BlameLine | null>(null);
 const tooltipPos = ref({ x: 0, y: 0 });
+const searchText = ref("");
+const contextMenuRef = ref<InstanceType<typeof ContextMenu>>();
+const contextLine = ref<BlameLine | null>(null);
+
+const filteredLines = computed<BlameLine[]>(() => {
+  if (!blameInfo.value) return [];
+  const q = searchText.value.trim().toLowerCase();
+  if (!q) return blameInfo.value.lines;
+  return blameInfo.value.lines.filter(
+    (l) =>
+      l.content.toLowerCase().includes(q) ||
+      l.commitId.toLowerCase().includes(q) ||
+      l.author.toLowerCase().includes(q) ||
+      l.summary.toLowerCase().includes(q)
+  );
+});
+
+function showContextMenu(event: MouseEvent, line: BlameLine): void {
+  contextLine.value = line;
+  contextMenuRef.value?.show(event);
+}
+
+const contextMenuItems = computed<MenuItem[]>(() => {
+  const line = contextLine.value;
+  if (!line) return [];
+  return [
+    {
+      label: `跳到 commit ${line.shortId}`,
+      action: () => jumpToCommit(line.commitId),
+    },
+    { separator: true, label: "" },
+    {
+      label: `复制 short hash (${line.shortId})`,
+      action: () => void navigator.clipboard?.writeText(line.shortId),
+    },
+    {
+      label: "复制完整 hash",
+      action: () => void navigator.clipboard?.writeText(line.commitId),
+    },
+    {
+      label: `复制作者邮箱 (${line.authorEmail})`,
+      action: () => void navigator.clipboard?.writeText(line.authorEmail),
+    },
+    { separator: true, label: "" },
+    {
+      label: "复制行内容",
+      action: () => void navigator.clipboard?.writeText(line.content),
+    },
+    {
+      label: "复制 commit 摘要",
+      action: () => void navigator.clipboard?.writeText(line.summary),
+    },
+  ];
+});
 
 const BLAME_COLORS = [
   "rgba(224, 108, 117, 0.15)",
@@ -84,12 +140,24 @@ function isNewGroup(lines: BlameLine[], index: number): boolean {
 
 <template>
   <div class="blame-view">
+    <div class="blame-search-bar">
+      <input
+        v-model="searchText"
+        class="blame-search-input"
+        type="search"
+        placeholder="过滤行内容 / commit / 作者 / 摘要..."
+      />
+      <span v-if="blameInfo" class="blame-search-count">
+        {{ filteredLines.length }} / {{ blameInfo.lines.length }}
+      </span>
+    </div>
     <div v-if="loading" class="loading">加载 Blame 数据...</div>
     <div v-else-if="!blameInfo" class="empty">无法加载 Blame 数据</div>
+    <div v-else-if="filteredLines.length === 0" class="empty">无匹配行</div>
     <VirtualList
       v-else
       class="blame-content"
-      :items="blameInfo.lines"
+      :items="filteredLines"
       :item-height="20"
       :overscan="20"
       :get-key="(_line, i) => i"
@@ -103,6 +171,7 @@ function isNewGroup(lines: BlameLine[], index: number): boolean {
                 ? 'var(--color-surface-active)'
                 : commitColorMap[line.commitId],
           }"
+          @contextmenu.prevent="showContextMenu($event, line)"
         >
           <!-- Blame gutter -->
           <div
@@ -111,7 +180,7 @@ function isNewGroup(lines: BlameLine[], index: number): boolean {
             @mouseleave="hideTooltip"
             @click="jumpToCommit(line.commitId)"
           >
-            <template v-if="isNewGroup(blameInfo.lines, i)">
+            <template v-if="isNewGroup(filteredLines, i)">
               <span class="blame-hash mono">{{ line.shortId }}</span>
               <span class="blame-author">{{ line.author }}</span>
               <span class="blame-date">{{ formatTimestamp(line.time) }}</span>
@@ -126,6 +195,8 @@ function isNewGroup(lines: BlameLine[], index: number): boolean {
         </div>
       </template>
     </VirtualList>
+
+    <ContextMenu ref="contextMenuRef" :items="contextMenuItems" />
 
     <!-- Tooltip -->
     <Teleport to="body">
@@ -151,6 +222,38 @@ function isNewGroup(lines: BlameLine[], index: number): boolean {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+}
+
+.blame-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  flex-shrink: 0;
+}
+
+.blame-search-input {
+  flex: 1;
+  font-size: 12px;
+  padding: 3px 8px;
+  background: var(--color-surface-active);
+  color: var(--color-foreground);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+}
+
+.blame-search-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.blame-search-count {
+  font-size: 11px;
+  color: var(--color-foreground-muted);
+  font-feature-settings: "tnum";
+  flex-shrink: 0;
 }
 
 .loading,

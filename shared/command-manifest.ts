@@ -25,6 +25,7 @@ export const COMMANDS = [
   { method: "cherryPick", ipc: "cherry_pick", http: "/cherry-pick", bodyKeys: ["repoPath", "commitId"] },
   { method: "revertCommit", ipc: "revert_commit", http: "/commit/revert", bodyKeys: ["repoPath", "commitId"] },
   { method: "resetToCommit", ipc: "reset_to_commit", http: "/commit/reset", bodyKeys: ["repoPath", "commitId", "mode"] },
+  { method: "squashCommits", ipc: "squash_commits", http: "/commits/squash", bodyKeys: ["repoPath", "count", "message"] },
   { method: "getStatus", ipc: "get_status", http: "/status", bodyKeys: ["repoPath"] },
   { method: "stageFile", ipc: "stage_file", http: "/stage/file", bodyKeys: ["repoPath", "filePath"] },
   { method: "unstageFile", ipc: "unstage_file", http: "/unstage/file", bodyKeys: ["repoPath", "filePath"] },

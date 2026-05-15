@@ -115,6 +115,11 @@ export const useLogStore = defineStore("log", () => {
     selectedCommitId.value = id;
   }
 
+  function clearSelection() {
+    selectedCommitIds.value = [];
+    selectedCommitId.value = null;
+  }
+
   watch(
     () => repoStore.activeRepo?.path,
     () => {
@@ -137,5 +142,6 @@ export const useLogStore = defineStore("log", () => {
     loadCommits,
     cancelFetchLog,
     selectCommit,
+    clearSelection,
   };
 });

@@ -135,6 +135,31 @@ export const branchService = {
   },
 
   /**
+   * Squash 最近 `count` 个 commit（含 HEAD）为一个新 commit。
+   *
+   * 实现：`git reset --soft HEAD~count` 把 HEAD 移到 base，所有改动保留在 index，
+   * 再 `git commit -m <message>` 创建合并后的新 commit。该实现只在"从 HEAD 起的
+   * 连续 count 个 commit"语义下工作；前端必须自行校验这一前提。
+   *
+   * 失败场景：
+   * - 仓库历史不足 count 个 commit（HEAD~count 不存在）→ git reset 报错
+   * - 有未 staged 的本地改动也会"被并入"新 commit（这是 --soft 的行为，符合用户意图）
+   */
+  async squashCommits(repoPath: string, count: number, message: string): Promise<string> {
+    if (!Number.isInteger(count) || count < 2) {
+      throw new Error("squashCommits: count 必须 >= 2");
+    }
+    if (typeof message !== "string" || message.trim().length === 0) {
+      throw new Error("squashCommits: message 不能为空");
+    }
+    const git = getGit(repoPath);
+    await git.raw(["reset", "--soft", `HEAD~${count}`]);
+    await git.commit(message);
+    const head = (await git.revparse(["HEAD"])).trim();
+    return head;
+  },
+
+  /**
    * 创建标签。
    * - 有 `message` → annotated tag（`git tag -a <name> -m <msg> [<commit>]`）
    * - 无 `message` → lightweight tag（`git tag <name> [<commit>]`）

@@ -180,6 +180,48 @@ async function doReset() {
   }
 }
 
+// ---- Squash N commits ----
+/**
+ * 判断当前选中是否满足 squash 前提：包含 HEAD 的连续 N 个 commit（N >= 2）。
+ * 返回 N，不满足返回 0。
+ */
+function getSquashableCount(): number {
+  const ids = new Set(logStore.selectedCommitIds);
+  if (ids.size < 2) return 0;
+  const commits = logStore.commits;
+  if (commits.length < ids.size) return 0;
+  // 必须包含 HEAD（commits[0]）以及紧随其后的连续 ids.size - 1 个
+  for (let i = 0; i < ids.size; i++) {
+    if (!ids.has(commits[i]!.id)) return 0;
+  }
+  return ids.size;
+}
+
+const squashableCount = computed(() => getSquashableCount());
+
+async function handleSquashCommits() {
+  const count = getSquashableCount();
+  if (count < 2) return;
+  if (!repoStore.activeRepo) return;
+  const commits = logStore.commits.slice(0, count);
+  const defaultMessage = `${commits[0]!.summary}\n\nSquashed ${count} commits:\n${commits
+    .map((c) => `- ${c.shortId} ${c.summary}`)
+    .join("\n")}`;
+  const message = window.prompt(
+    `合并最近 ${count} 个 commit（包含 HEAD）为一个新 commit。\n输入合并后的 commit message：`,
+    defaultMessage
+  );
+  if (!message || message.trim().length === 0) return;
+  try {
+    await commands.squashCommits(repoStore.activeRepo.path, count, message);
+    logStore.clearSelection();
+    await logStore.loadCommits(true);
+    showToast(`已合并 ${count} 个 commit`);
+  } catch (e: any) {
+    showToast(`Squash 失败：${e.message}`);
+  }
+}
+
 // ---- Save as Patch ----
 async function handleSaveAsPatch() {
   if (!contextCommit.value || !repoStore.activeRepo) return;
@@ -235,6 +277,14 @@ const contextMenuItems = computed<MenuItem[]>(() => {
     { label: "新建 Tag...", action: () => {} },
     { separator: true, label: "" },
     { label: "Save as Patch...", action: handleSaveAsPatch },
+    ...(squashableCount.value >= 2
+      ? [
+          {
+            label: `Squash ${squashableCount.value} commits 为一个...`,
+            action: handleSquashCommits,
+          },
+        ]
+      : []),
     { separator: true, label: "" },
     { label: "Reset Current Branch to Here...", action: handleResetToHere },
     { label: "Revert Commit", action: handleRevertCommit },
