@@ -40,3 +40,11 @@ coverage/
 
 # Misc
 *.tsbuildinfo
+
+# Cursor agent 提交流程的临时文件（commit message / log 缓存）
+.commit-msg.txt
+.commit.log
+.lint.log
+.test.log
+.typecheck.log
+.push.log
