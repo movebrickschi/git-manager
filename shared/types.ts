@@ -160,6 +160,24 @@ export interface MergeResult {
 }
 
 /**
+ * `git submodule status` 解析出的子模块状态。
+ *
+ * `state` 取自前缀字符：` ` initialized / `-` uninitialized / `+` modified /
+ * `U` merge-conflict（详见 git-submodule(1)）。
+ */
+export interface Submodule {
+  path: string;
+  name: string;
+  /** 来自 .gitmodules 的 url；读不到时为空字符串 */
+  url: string;
+  /** 当前 working tree 的 commit；uninitialized 时为 null */
+  head: string | null;
+  /** `git describe` 描述，可能为 null */
+  described: string | null;
+  state: "initialized" | "uninitialized" | "modified" | "merge-conflict";
+}
+
+/**
  * `git reflog show HEAD --format=...` 解析出的一条记录。
  * 用于「迷路（reflog）」面板恢复误操作丢失的 commit。
  */
@@ -304,6 +322,12 @@ export interface Commands {
   deleteRemoteTag(repoPath: string, remote: string, name: string): Promise<void>;
   checkoutTag(repoPath: string, name: string): Promise<void>;
   getReflog(repoPath: string, limit?: number): Promise<ReflogEntry[]>;
+  createPatch(repoPath: string, commitId: string): Promise<string>;
+  applyPatch(repoPath: string, patchContent: string): Promise<MergeResult>;
+  getSubmodules(repoPath: string): Promise<Submodule[]>;
+  initSubmodules(repoPath: string, paths?: string[]): Promise<void>;
+  updateSubmodules(repoPath: string, paths?: string[]): Promise<void>;
+  syncSubmodules(repoPath: string, paths?: string[]): Promise<void>;
 }
 
 export interface Platform {

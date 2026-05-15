@@ -2,12 +2,14 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import { useRepoStore } from "./repoStore";
 import { commands } from "@/utils/commands";
-import type { BranchInfo } from "@/utils/commands";
+import type { BranchInfo, Submodule } from "@/utils/commands";
 
 export const useBranchStore = defineStore("branch", () => {
   const localBranches = ref<BranchInfo[]>([]);
   const remoteBranches = ref<BranchInfo[]>([]);
   const tags = ref<string[]>([]);
+  const submodules = ref<Submodule[]>([]);
+  const submodulesLoading = ref(false);
   const loading = ref(false);
   const searchQuery = ref("");
   const favorites = ref<string[]>([]);
@@ -94,10 +96,40 @@ export const useBranchStore = defineStore("branch", () => {
     }
   }
 
+  async function loadSubmodules() {
+    if (!repoStore.activeRepo) return;
+    submodulesLoading.value = true;
+    try {
+      submodules.value = await commands.getSubmodules(repoStore.activeRepo.path);
+    } finally {
+      submodulesLoading.value = false;
+    }
+  }
+
+  async function initSubmodule(path?: string) {
+    if (!repoStore.activeRepo) return;
+    await commands.initSubmodules(repoStore.activeRepo.path, path ? [path] : undefined);
+    await loadSubmodules();
+  }
+
+  async function updateSubmodule(path?: string) {
+    if (!repoStore.activeRepo) return;
+    await commands.updateSubmodules(repoStore.activeRepo.path, path ? [path] : undefined);
+    await loadSubmodules();
+  }
+
+  async function syncSubmodule(path?: string) {
+    if (!repoStore.activeRepo) return;
+    await commands.syncSubmodules(repoStore.activeRepo.path, path ? [path] : undefined);
+    await loadSubmodules();
+  }
+
   return {
     localBranches,
     remoteBranches,
     tags,
+    submodules,
+    submodulesLoading,
     loading,
     searchQuery,
     favorites,
@@ -113,5 +145,9 @@ export const useBranchStore = defineStore("branch", () => {
     deleteRemoteTag,
     checkoutTag,
     toggleFavorite,
+    loadSubmodules,
+    initSubmodule,
+    updateSubmodule,
+    syncSubmodule,
   };
 });

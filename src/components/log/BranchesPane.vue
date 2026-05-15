@@ -7,7 +7,7 @@ import SearchBar from "@/components/common/SearchBar.vue";
 import ToolbarButton from "@/components/common/ToolbarButton.vue";
 import ContextMenu from "@/components/common/ContextMenu.vue";
 import type { MenuItem } from "@/components/common/ContextMenu.vue";
-import type { BranchInfo } from "@/utils/commands";
+import type { BranchInfo, Submodule } from "@/utils/commands";
 import { commands } from "@/utils/commands";
 import { translateGitError } from "@/utils/git-error";
 import { SHORTCUTS, useKeyboardShortcuts } from "@/utils/keyboard";
@@ -69,6 +69,94 @@ const contextTagName = ref<string | null>(null);
 // Reflog 弹窗
 const showReflogDialog = ref(false);
 
+// Submodules
+const showSubmodules = ref(true);
+const submoduleContextMenuRef = ref<InstanceType<typeof ContextMenu>>();
+const contextSubmodule = ref<Submodule | null>(null);
+
+function showSubmoduleContextMenu(event: MouseEvent, sm: Submodule): void {
+  contextSubmodule.value = sm;
+  submoduleContextMenuRef.value?.show(event);
+}
+
+const submoduleContextMenuItems = computed<MenuItem[]>(() => {
+  const sm = contextSubmodule.value;
+  if (!sm) return [];
+  const items: MenuItem[] = [];
+  if (sm.state === "uninitialized") {
+    items.push({ label: `Init '${sm.path}'`, action: () => handleInitSubmodule(sm.path) });
+  }
+  items.push({
+    label: `Update '${sm.path}'（git submodule update --init）`,
+    action: () => handleUpdateSubmodule(sm.path),
+  });
+  items.push({
+    label: `Sync '${sm.path}'（重读 .gitmodules URL）`,
+    action: () => handleSyncSubmodule(sm.path),
+  });
+  items.push({ separator: true, label: "" });
+  items.push({
+    label: "复制路径",
+    action: () => void navigator.clipboard?.writeText(sm.path),
+  });
+  if (sm.url) {
+    items.push({
+      label: "复制远程 URL",
+      action: () => void navigator.clipboard?.writeText(sm.url),
+    });
+  }
+  return items;
+});
+
+async function handleInitSubmodule(path?: string): Promise<void> {
+  clearActionError();
+  actionLoading.value = true;
+  try {
+    await branchStore.initSubmodule(path);
+  } catch (e: unknown) {
+    actionError.value = friendlyErr(e);
+  } finally {
+    actionLoading.value = false;
+  }
+}
+
+async function handleUpdateSubmodule(path?: string): Promise<void> {
+  clearActionError();
+  actionLoading.value = true;
+  try {
+    await branchStore.updateSubmodule(path);
+  } catch (e: unknown) {
+    actionError.value = friendlyErr(e);
+  } finally {
+    actionLoading.value = false;
+  }
+}
+
+async function handleSyncSubmodule(path?: string): Promise<void> {
+  clearActionError();
+  actionLoading.value = true;
+  try {
+    await branchStore.syncSubmodule(path);
+  } catch (e: unknown) {
+    actionError.value = friendlyErr(e);
+  } finally {
+    actionLoading.value = false;
+  }
+}
+
+function submoduleStateIcon(state: Submodule["state"]): { color: string; title: string } {
+  switch (state) {
+    case "uninitialized":
+      return { color: "#9aa0a6", title: "未初始化（右键 Init 拉取）" };
+    case "modified":
+      return { color: "#f0a500", title: "已修改（与主仓库记录的 commit 不一致）" };
+    case "merge-conflict":
+      return { color: "#e06c75", title: "合并冲突" };
+    default:
+      return { color: "#4ec9b0", title: "已初始化" };
+  }
+}
+
 function openConflictDialog(files: string[]) {
   if (files.length === 0) return;
   conflictDialogFiles.value = files;
@@ -93,6 +181,7 @@ useKeyboardShortcuts([
 
 onMounted(() => {
   // branches already loaded by parent
+  void branchStore.loadSubmodules();
 });
 
 const headBranch = computed(() => branchStore.localBranches.find((b) => b.isHead) ?? null);
@@ -134,6 +223,7 @@ async function resolveDefaultRemote(): Promise<string> {
 async function refreshAfterGitOp() {
   await branchStore.loadBranches();
   await logStore.loadCommits(true);
+  // submodules 不需要每次都跟 git op 同步刷新（拉取代价较大），仅在 mount 加载
 }
 
 function clearActionError() {
@@ -1254,10 +1344,65 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
           暂无标签 · 点 + 创建
         </div>
       </div>
+
+      <!-- Submodules -->
+      <div v-if="branchStore.submodules.length > 0 || branchStore.submodulesLoading" class="branch-group">
+        <div class="group-header submodules-header">
+          <span class="group-toggle" @click="showSubmodules = !showSubmodules">
+            <span>SUBMODULES</span>
+            <span class="count">{{ branchStore.submodules.length }}</span>
+          </span>
+          <button
+            class="tag-create-btn"
+            title="Update 全部子模块（git submodule update --init --recursive）"
+            :disabled="actionLoading"
+            @click.stop="handleUpdateSubmodule(undefined)"
+          >
+            ↻
+          </button>
+        </div>
+        <template v-if="showSubmodules">
+          <div
+            v-for="sm in branchStore.submodules"
+            :key="sm.path"
+            class="branch-item submodule-item"
+            :title="sm.url || sm.path"
+            @contextmenu.prevent="showSubmoduleContextMenu($event, sm)"
+          >
+            <span
+              class="submodule-state-dot"
+              :style="{ background: submoduleStateIcon(sm.state).color }"
+              :title="submoduleStateIcon(sm.state).title"
+            />
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <rect x="3" y="3" width="7" height="7" />
+              <rect x="14" y="3" width="7" height="7" />
+              <rect x="14" y="14" width="7" height="7" />
+              <rect x="3" y="14" width="7" height="7" />
+            </svg>
+            <span class="branch-name submodule-name">{{ sm.path }}</span>
+            <span v-if="sm.described" class="submodule-described">{{ sm.described }}</span>
+          </div>
+          <div
+            v-if="branchStore.submodules.length === 0 && branchStore.submodulesLoading"
+            class="tag-empty-hint"
+          >
+            扫描中...
+          </div>
+        </template>
+      </div>
     </div>
 
     <ContextMenu ref="contextMenuRef" :items="contextMenuItems" />
     <ContextMenu ref="tagContextMenuRef" :items="tagContextMenuItems" />
+    <ContextMenu ref="submoduleContextMenuRef" :items="submoduleContextMenuItems" />
 
     <CreateTagDialog
       :visible="showCreateTagDialog"
@@ -1466,6 +1611,31 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
   font-size: 11px;
   color: var(--color-foreground-muted);
   font-style: italic;
+}
+
+.submodule-item {
+  position: relative;
+}
+
+.submodule-state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.submodule-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.submodule-described {
+  font-size: 10px;
+  color: var(--color-foreground-muted);
+  font-feature-settings: "tnum";
 }
 
 .branch-item {

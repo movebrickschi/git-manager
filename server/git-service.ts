@@ -17,6 +17,8 @@ import { remoteService } from "./services/remote.service.js";
 import { stashService } from "./services/stash.service.js";
 import { blameService } from "./services/blame.service.js";
 import { conflictService } from "./services/conflict.service.js";
+import { patchService } from "./services/patch.service.js";
+import { submoduleService } from "./services/submodule.service.js";
 
 export type {
   BlameInfo,
@@ -42,6 +44,7 @@ export type {
   RepoOpenResult,
   StashEntry,
   StatusResult,
+  Submodule,
 } from "../shared/types.js";
 
 export const gitService = {
@@ -53,6 +56,8 @@ export const gitService = {
   ...stashService,
   ...blameService,
   ...conflictService,
+  ...patchService,
+  ...submoduleService,
 };
 
 export type GitService = typeof gitService;

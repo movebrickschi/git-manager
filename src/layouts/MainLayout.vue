@@ -6,6 +6,9 @@ import Toolbar from "@/components/common/Toolbar.vue";
 import KeyboardShortcutsDialog from "@/components/common/KeyboardShortcutsDialog.vue";
 import { useRepoStore } from "@/stores/repoStore";
 import { commands, platform } from "@/utils/commands";
+import { useAutoFetch } from "@/composables/useAutoFetch";
+
+useAutoFetch();
 
 const showShortcutsDialog = ref(false);
 function handleGlobalKey(e: KeyboardEvent) {
@@ -28,6 +31,46 @@ const repoStore = useRepoStore();
 // 加号菜单状态
 const showAddMenu = ref(false);
 const addMenuRef = ref<HTMLElement | null>(null);
+
+// Apply Patch
+const patchFileInput = ref<HTMLInputElement | null>(null);
+const applyPatchBusy = ref(false);
+const applyPatchMessage = ref<{ kind: "ok" | "err"; text: string } | null>(null);
+
+function openApplyPatchPicker() {
+  showAddMenu.value = false;
+  applyPatchMessage.value = null;
+  patchFileInput.value?.click();
+}
+
+async function onPatchFilePicked(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = ""; // 允许重复选同一文件
+  if (!file) return;
+  if (!repoStore.activeRepo) {
+    applyPatchMessage.value = { kind: "err", text: "请先打开一个仓库再 Apply Patch" };
+    return;
+  }
+  applyPatchBusy.value = true;
+  try {
+    const text = await file.text();
+    const result = await commands.applyPatch(repoStore.activeRepo.path, text);
+    if (result.success) {
+      applyPatchMessage.value = {
+        kind: "ok",
+        text: `已应用 patch：${file.name}（请在「本地变更」中审阅后再 commit）`,
+      };
+    } else {
+      const tail = result.conflicts.length > 0 ? `\n冲突：${result.conflicts.join(", ")}` : "";
+      applyPatchMessage.value = { kind: "err", text: `${result.message}${tail}` };
+    }
+  } catch (err: any) {
+    applyPatchMessage.value = { kind: "err", text: err?.message ?? String(err) };
+  } finally {
+    applyPatchBusy.value = false;
+  }
+}
 
 // 打开仓库弹框
 const showManualInput = ref(false);
@@ -195,7 +238,44 @@ onUnmounted(() => {
             </svg>
             克隆仓库
           </button>
+          <button
+            class="add-menu-item"
+            :disabled="!repoStore.activeRepo || applyPatchBusy"
+            :title="repoStore.activeRepo ? 'Apply Patch (.patch / .diff)' : '请先打开仓库'"
+            @click="openApplyPatchPicker"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            {{ applyPatchBusy ? "Apply Patch 中..." : "Apply Patch..." }}
+          </button>
         </div>
+      </div>
+      <input
+        ref="patchFileInput"
+        type="file"
+        accept=".patch,.diff,text/plain"
+        style="display: none"
+        @change="onPatchFilePicked"
+      />
+      <div
+        v-if="applyPatchMessage"
+        class="patch-toast"
+        :class="applyPatchMessage.kind"
+        role="status"
+        @click="applyPatchMessage = null"
+      >
+        {{ applyPatchMessage.text }}
+        <span class="patch-toast-close">×</span>
       </div>
 
       <div class="toolbar-spacer" />
@@ -484,5 +564,49 @@ onUnmounted(() => {
   color: #e06c75;
   font-size: 12px;
   padding: 4px 0;
+}
+
+.add-menu-item:disabled {
+  color: var(--color-foreground-muted);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.patch-toast {
+  position: fixed;
+  top: 56px;
+  right: 12px;
+  max-width: 420px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 1100;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.patch-toast.ok {
+  border-color: #4ec9b0;
+  color: #b8e4d8;
+}
+
+.patch-toast.err {
+  border-color: #e06c75;
+  color: #f3c0c4;
+}
+
+.patch-toast-close {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--color-foreground-muted);
+  margin-left: auto;
 }
 </style>

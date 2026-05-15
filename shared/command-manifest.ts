@@ -65,6 +65,12 @@ export const COMMANDS = [
   { method: "deleteRemoteTag", ipc: "delete_remote_tag", http: "/tag/delete-remote", bodyKeys: ["repoPath", "remote", "name"] },
   { method: "checkoutTag", ipc: "checkout_tag", http: "/tag/checkout", bodyKeys: ["repoPath", "name"] },
   { method: "getReflog", ipc: "get_reflog", http: "/reflog", bodyKeys: ["repoPath", "limit"] },
+  { method: "createPatch", ipc: "create_patch", http: "/patch/create", bodyKeys: ["repoPath", "commitId"] },
+  { method: "applyPatch", ipc: "apply_patch", http: "/patch/apply", bodyKeys: ["repoPath", "patchContent"] },
+  { method: "getSubmodules", ipc: "get_submodules", http: "/submodules", bodyKeys: ["repoPath"] },
+  { method: "initSubmodules", ipc: "init_submodules", http: "/submodules/init", bodyKeys: ["repoPath", "paths"] },
+  { method: "updateSubmodules", ipc: "update_submodules", http: "/submodules/update", bodyKeys: ["repoPath", "paths"] },
+  { method: "syncSubmodules", ipc: "sync_submodules", http: "/submodules/sync", bodyKeys: ["repoPath", "paths"] },
 ] as const satisfies readonly CommandSpec[];
 
 export type CommandMethod = (typeof COMMANDS)[number]["method"];

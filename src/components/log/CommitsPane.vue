@@ -180,6 +180,28 @@ async function doReset() {
   }
 }
 
+// ---- Save as Patch ----
+async function handleSaveAsPatch() {
+  if (!contextCommit.value || !repoStore.activeRepo) return;
+  const commit = contextCommit.value;
+  try {
+    const patch = await commands.createPatch(repoStore.activeRepo.path, commit.id);
+    const filename = `${commit.shortId}-${commit.summary.slice(0, 40).replace(/[^\w.-]+/g, "_")}.patch`;
+    const blob = new Blob([patch], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5_000);
+    showToast(`已导出 patch：${filename}`);
+  } catch (e: any) {
+    showToast(`导出 patch 失败：${e.message}`);
+  }
+}
+
 // ---- 二次确认 ----
 async function doConfirmAction() {
   showConfirmDialog.value = false;
@@ -211,6 +233,8 @@ const contextMenuItems = computed<MenuItem[]>(() => {
     { separator: true, label: "" },
     { label: "新建分支...", action: () => {} },
     { label: "新建 Tag...", action: () => {} },
+    { separator: true, label: "" },
+    { label: "Save as Patch...", action: handleSaveAsPatch },
     { separator: true, label: "" },
     { label: "Reset Current Branch to Here...", action: handleResetToHere },
     { label: "Revert Commit", action: handleRevertCommit },
