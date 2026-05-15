@@ -246,6 +246,11 @@ export interface Commands {
   checkoutBranch(repoPath: string, name: string): Promise<void>;
   forceCheckoutBranch(repoPath: string, name: string): Promise<void>;
   smartCheckoutBranch(repoPath: string, name: string): Promise<MergeResult>;
+  previewCheckoutConflicts(
+    repoPath: string,
+    branch: string,
+    dirtyFiles: string[]
+  ): Promise<{ wouldConflict: string[]; safe: string[] }>;
   deleteBranch(repoPath: string, name: string, force: boolean): Promise<void>;
   renameBranch(repoPath: string, oldName: string, newName: string): Promise<void>;
   mergeBranch(repoPath: string, name: string): Promise<MergeResult>;

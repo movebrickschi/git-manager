@@ -1,0 +1,30 @@
+feat(branch): Smart Checkout 冲突预检测 + pop 失败自动跳本地变更
+
+接 60725e1 的增强，把 IDEA Git 插件最精细的三件能力补齐：
+
+1. 冲突预检测（previewCheckoutConflicts）
+   - 后端用 `git diff --name-only HEAD..<branch>` 取两分支差异
+   - 与 dirty 文件取交集 = wouldConflict；其余为 safe
+   - 失败时回退到"全部当冲突"，避免误导用户
+
+2. CheckoutChoiceDialog 两栏可视化
+   - 红色区块：N 个会冲突（目标分支也改过）
+   - 绿色区块：N 个 Smart 可安全保留
+   - 顶部黄色警示：Smart 需后续合并、Force 会丢这些文件
+
+3. pop 冲突后自动跳"本地变更" tab + 全局 toast
+   - branchStore 暴露 tabSwitchSignal / globalToast 信号 ref
+   - GitLogView watch tabSwitchSignal 切 activeTab
+   - MainLayout 注入全局 toast（基于 useToast、4 秒自动隐藏）
+   - 成功 / pop 冲突 / 强制丢弃 全部产生对应 toast
+
+跨端同步:
+- shared/types.ts Commands 加 previewCheckoutConflicts
+- shared/command-manifest.ts 加 spec
+- electron/preload.ts ALLOWED_CHANNELS 加 channel
+- preload 同步守护测试通过（command-manifest.test.ts）
+
+质量:
+- typecheck × 3 端通过
+- lint 0 errors / 53 warnings (≤ 65 baseline)
+- vitest 12 files / 105 cases all pass

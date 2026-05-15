@@ -7,15 +7,34 @@ import type { BranchInfo, Submodule } from "@/utils/commands";
 /**
  * IDEA 风格切分支 dirty 决策窗口的状态机。
  * `resolve` 为 null 表示当前没有挂起的请求；非 null 时 dialog 应该可见。
+ *
+ * `wouldConflict` / `safe` 是切到目标分支后的影响预检测：
+ * - `wouldConflict`：dirty 且目标分支也动过 → Smart pop 时可能冲突，Force 直接丢失
+ * - `safe`：dirty 但目标分支未动 → Smart pop 100% 成功保留；Force 仍丢失
  */
 export interface CheckoutDialogState {
   visible: boolean;
   branchName: string;
   dirtyFiles: string[];
+  wouldConflict: string[];
+  safe: string[];
   pending: boolean;
   resultMessage: string;
   resultKind: "ok" | "err" | null;
   resolve: ((choice: "smart" | "force" | "cancel") => void) | null;
+}
+
+/** 跨组件切 tab 的"信号 ref"，bump 数字触发 watcher。 */
+export interface TabSwitchSignal {
+  tab: "log" | "commit" | "stash";
+  seq: number;
+}
+
+/** 全局 toast 信号；MainLayout 监听并显示。 */
+export interface GlobalToast {
+  message: string;
+  kind: "ok" | "err" | "info";
+  seq: number;
 }
 
 export const useBranchStore = defineStore("branch", () => {
@@ -32,11 +51,24 @@ export const useBranchStore = defineStore("branch", () => {
     visible: false,
     branchName: "",
     dirtyFiles: [],
+    wouldConflict: [],
+    safe: [],
     pending: false,
     resultMessage: "",
     resultKind: null,
     resolve: null,
   });
+
+  const tabSwitchSignal = ref<TabSwitchSignal>({ tab: "log", seq: 0 });
+  const globalToast = ref<GlobalToast>({ message: "", kind: "info", seq: 0 });
+
+  function requestTabSwitch(tab: "log" | "commit" | "stash"): void {
+    tabSwitchSignal.value = { tab, seq: tabSwitchSignal.value.seq + 1 };
+  }
+
+  function showToast(message: string, kind: "ok" | "err" | "info" = "info"): void {
+    globalToast.value = { message, kind, seq: globalToast.value.seq + 1 };
+  }
 
   const repoStore = useRepoStore();
 
@@ -64,6 +96,8 @@ export const useBranchStore = defineStore("branch", () => {
       visible: false,
       branchName: "",
       dirtyFiles: [],
+      wouldConflict: [],
+      safe: [],
       pending: false,
       resultMessage: "",
       resultKind: null,
@@ -103,11 +137,23 @@ export const useBranchStore = defineStore("branch", () => {
       return;
     }
 
+    let wouldConflict: string[] = [];
+    let safe: string[] = dirty;
+    try {
+      const preview = await commands.previewCheckoutConflicts(repoPath, name, dirty);
+      wouldConflict = preview.wouldConflict;
+      safe = preview.safe;
+    } catch {
+      // 预检测失败 → 退化为"全部 dirty 当作安全"，仍交给用户决策
+    }
+
     const choice = await new Promise<"smart" | "force" | "cancel">((resolve) => {
       checkoutDialog.value = {
         visible: true,
         branchName: name,
         dirtyFiles: dirty,
+        wouldConflict,
+        safe,
         pending: false,
         resultMessage: "",
         resultKind: null,
@@ -130,23 +176,32 @@ export const useBranchStore = defineStore("branch", () => {
           closeCheckoutDialog();
           repoStore.activeRepo.currentBranch = name;
           await loadBranches();
+          showToast(result.message || `已切换到 '${name}' 并恢复本地修改`, "ok");
           return;
         }
-        // 失败：保留 dialog 显示错误信息
+        // pop 冲突：分支已切，关闭 dialog → 跳到"本地变更"tab → 显示 toast
+        if (result.conflicts.length > 0) {
+          closeCheckoutDialog();
+          repoStore.activeRepo.currentBranch = name;
+          await loadBranches();
+          requestTabSwitch("commit");
+          showToast(
+            `Stash pop 冲突，${result.conflicts.length} 个文件需手动解决（已跳到本地变更）`,
+            "err"
+          );
+          return;
+        }
+        // 其它失败（stash 或 checkout 阶段）：仍在原分支
         checkoutDialog.value.pending = false;
         checkoutDialog.value.resultKind = "err";
         checkoutDialog.value.resultMessage = result.message;
-        // 即使 pop 冲突，分支也已切换，刷新一下 currentBranch 与列表
-        if (result.conflicts.length > 0) {
-          repoStore.activeRepo.currentBranch = name;
-          await loadBranches();
-        }
         return;
       }
       await commands.forceCheckoutBranch(repoPath, name);
       closeCheckoutDialog();
       repoStore.activeRepo.currentBranch = name;
       await loadBranches();
+      showToast(`已强制切换到 '${name}'，本地未提交修改已丢弃`, "ok");
     } catch (e: unknown) {
       checkoutDialog.value.pending = false;
       checkoutDialog.value.resultKind = "err";
@@ -256,7 +311,11 @@ export const useBranchStore = defineStore("branch", () => {
     searchQuery,
     favorites,
     checkoutDialog,
+    tabSwitchSignal,
+    globalToast,
     resolveCheckoutChoice,
+    requestTabSwitch,
+    showToast,
     loadBranches,
     createBranch,
     checkoutBranch,

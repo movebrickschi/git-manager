@@ -20,6 +20,7 @@ export const COMMANDS = [
   { method: "checkoutBranch", ipc: "checkout_branch", http: "/branch/checkout", bodyKeys: ["repoPath", "name"] },
   { method: "forceCheckoutBranch", ipc: "force_checkout_branch", http: "/branch/checkout-force", bodyKeys: ["repoPath", "name"] },
   { method: "smartCheckoutBranch", ipc: "smart_checkout_branch", http: "/branch/checkout-smart", bodyKeys: ["repoPath", "name"] },
+  { method: "previewCheckoutConflicts", ipc: "preview_checkout_conflicts", http: "/branch/checkout-preview", bodyKeys: ["repoPath", "branch", "dirtyFiles"] },
   { method: "deleteBranch", ipc: "delete_branch", http: "/branch/delete", bodyKeys: ["repoPath", "name", "force"] },
   { method: "renameBranch", ipc: "rename_branch", http: "/branch/rename", bodyKeys: ["repoPath", "oldName", "newName"] },
   { method: "mergeBranch", ipc: "merge_branch", http: "/branch/merge", bodyKeys: ["repoPath", "name"] },

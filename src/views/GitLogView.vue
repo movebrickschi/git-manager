@@ -29,6 +29,14 @@ const settings = useSettingsStore();
 
 const activeTab = ref<"log" | "commit" | "stash">("log");
 
+watch(
+  () => branchStore.tabSwitchSignal,
+  (sig) => {
+    if (sig && sig.seq > 0) activeTab.value = sig.tab;
+  },
+  { deep: true }
+);
+
 const selectedFile = ref<FileStatus | null>(null);
 const diffResult = ref<DiffResult | null>(null);
 const changedFilesSource = ref<"commit" | "working">("commit");

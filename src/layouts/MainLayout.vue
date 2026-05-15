@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import StatusBar from "@/components/common/StatusBar.vue";
 import Toolbar from "@/components/common/Toolbar.vue";
@@ -9,8 +9,22 @@ import { useRepoStore } from "@/stores/repoStore";
 import { useBranchStore } from "@/stores/branchStore";
 import { commands, platform } from "@/utils/commands";
 import { useAutoFetch } from "@/composables/useAutoFetch";
+import { useToast } from "@/composables/useToast";
 
 const branchStore = useBranchStore();
+
+const { toastMessage, toastVisible, show: showToast } = useToast(4000);
+const toastKind = ref<"ok" | "err" | "info">("info");
+
+watch(
+  () => branchStore.globalToast,
+  (sig) => {
+    if (!sig || sig.seq === 0) return;
+    toastKind.value = sig.kind;
+    showToast(sig.message);
+  },
+  { deep: true }
+);
 
 useAutoFetch();
 
@@ -353,11 +367,18 @@ onUnmounted(() => {
       :visible="branchStore.checkoutDialog.visible"
       :branch-name="branchStore.checkoutDialog.branchName"
       :dirty-files="branchStore.checkoutDialog.dirtyFiles"
+      :would-conflict="branchStore.checkoutDialog.wouldConflict"
+      :safe="branchStore.checkoutDialog.safe"
       :pending="branchStore.checkoutDialog.pending"
       :result-message="branchStore.checkoutDialog.resultMessage"
       :result-kind="branchStore.checkoutDialog.resultKind"
       @choose="branchStore.resolveCheckoutChoice($event)"
     />
+    <Teleport to="body">
+      <div v-if="toastVisible" class="global-toast" :class="`global-toast--${toastKind}`">
+        {{ toastMessage }}
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -367,6 +388,37 @@ onUnmounted(() => {
   flex-direction: column;
   height: 100%;
   width: 100%;
+}
+
+.global-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 36px;
+  transform: translateX(-50%);
+  z-index: 2000;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 12px;
+  max-width: 70vw;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  user-select: text;
+  pointer-events: none;
+  white-space: pre-wrap;
+}
+
+.global-toast--ok {
+  background: rgba(0, 122, 51, 0.92);
+  color: #fff;
+}
+
+.global-toast--err {
+  background: rgba(192, 64, 64, 0.92);
+  color: #fff;
+}
+
+.global-toast--info {
+  background: rgba(40, 40, 40, 0.92);
+  color: #fff;
 }
 
 .main-content {

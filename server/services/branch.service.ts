@@ -62,6 +62,53 @@ export const branchService = {
   },
 
   /**
+   * 预检测切到 `branch` 后会冲突的本地 dirty 文件。
+   *
+   * 算法：拿到 `git diff HEAD..<branch> --name-only` 列出两端不同的文件路径，
+   * 与传入 `dirtyFiles` 取交集即"会被覆盖/冲突"的文件，其余为"Smart Checkout
+   * 可安全保留"的文件。
+   *
+   * 注意：
+   * - 未传 `dirtyFiles`（或空数组）时返回 `{ wouldConflict: [], safe: [] }`，
+   *   表示工作区干净、无需检测。
+   * - rename 检测关闭（--no-renames）以避免噪音误判；对绝大多数 conflict 场景已够用。
+   * - 出错时回退到"假设全部冲突"，避免对用户误导为"安全"。
+   */
+  async previewCheckoutConflicts(
+    repoPath: string,
+    branch: string,
+    dirtyFiles: string[]
+  ): Promise<{ wouldConflict: string[]; safe: string[] }> {
+    if (!Array.isArray(dirtyFiles) || dirtyFiles.length === 0) {
+      return { wouldConflict: [], safe: [] };
+    }
+    const git = getGit(repoPath);
+    try {
+      const raw = await git.raw([
+        "diff",
+        "--name-only",
+        "--no-renames",
+        `HEAD..${branch}`,
+      ]);
+      const changed = new Set(
+        raw
+          .split("\n")
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0)
+      );
+      const wouldConflict: string[] = [];
+      const safe: string[] = [];
+      for (const f of dirtyFiles) {
+        if (changed.has(f)) wouldConflict.push(f);
+        else safe.push(f);
+      }
+      return { wouldConflict, safe };
+    } catch {
+      return { wouldConflict: [...dirtyFiles], safe: [] };
+    }
+  },
+
+  /**
    * Smart checkout（仿 IntelliJ IDEA）：
    *   1. `git stash push --include-untracked -m <auto-tag>` 暂存全部 dirty
    *   2. `git checkout <name>` 切到目标分支

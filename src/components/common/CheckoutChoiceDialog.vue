@@ -5,6 +5,8 @@ const props = defineProps<{
   visible: boolean;
   branchName: string;
   dirtyFiles: string[];
+  wouldConflict?: string[];
+  safe?: string[];
   pending?: boolean;
   resultMessage?: string;
   resultKind?: "ok" | "err" | null;
@@ -14,8 +16,13 @@ const emit = defineEmits<{
   (e: "choose", choice: "smart" | "force" | "cancel"): void;
 }>();
 
-const displayFiles = computed(() => props.dirtyFiles.slice(0, 30));
-const overflowCount = computed(() => Math.max(0, props.dirtyFiles.length - displayFiles.value.length));
+const conflictList = computed(() => (props.wouldConflict ?? []).slice(0, 30));
+const conflictOverflow = computed(() =>
+  Math.max(0, (props.wouldConflict ?? []).length - conflictList.value.length)
+);
+const safeList = computed(() => (props.safe ?? []).slice(0, 30));
+const safeOverflow = computed(() => Math.max(0, (props.safe ?? []).length - safeList.value.length));
+const hasConflict = computed(() => (props.wouldConflict ?? []).length > 0);
 
 function pick(c: "smart" | "force" | "cancel"): void {
   if (props.pending) return;
@@ -37,15 +44,37 @@ function pick(c: "smart" | "force" | "cancel"): void {
             目标分支：<code>{{ branchName }}</code>
           </div>
 
-          <div class="co-files-header">
-            本地有 {{ dirtyFiles.length }} 个文件未提交：
+          <div v-if="hasConflict" class="co-warning">
+            ⚠ {{ wouldConflict!.length }} 个文件在两个分支都改动过，Smart Checkout 时需要后续合并冲突；Force 会丢失这些文件的本地修改。
           </div>
-          <ul class="co-files">
-            <li v-for="f in displayFiles" :key="f" :title="f">{{ f }}</li>
-            <li v-if="overflowCount > 0" class="co-files-more">…还有 {{ overflowCount }} 个</li>
-          </ul>
 
-          <div v-if="resultMessage" class="co-result" :class="resultKind === 'err' ? 'co-result--err' : 'co-result--ok'">
+          <div v-if="hasConflict" class="co-section">
+            <div class="co-section-title co-section-title--err">
+              <span class="dot dot--err"></span>
+              {{ wouldConflict!.length }} 个会冲突（目标分支也改过）
+            </div>
+            <ul class="co-files co-files--err">
+              <li v-for="f in conflictList" :key="'c-' + f" :title="f">{{ f }}</li>
+              <li v-if="conflictOverflow > 0" class="co-files-more">…还有 {{ conflictOverflow }} 个</li>
+            </ul>
+          </div>
+
+          <div v-if="(safe ?? []).length > 0" class="co-section">
+            <div class="co-section-title co-section-title--ok">
+              <span class="dot dot--ok"></span>
+              {{ safe!.length }} 个 Smart 可安全保留
+            </div>
+            <ul class="co-files co-files--ok">
+              <li v-for="f in safeList" :key="'s-' + f" :title="f">{{ f }}</li>
+              <li v-if="safeOverflow > 0" class="co-files-more">…还有 {{ safeOverflow }} 个</li>
+            </ul>
+          </div>
+
+          <div
+            v-if="resultMessage"
+            class="co-result"
+            :class="resultKind === 'err' ? 'co-result--err' : 'co-result--ok'"
+          >
             {{ resultMessage }}
           </div>
 
@@ -147,17 +176,58 @@ function pick(c: "smart" | "force" | "cancel"): void {
   font-size: 12px;
 }
 
-.co-files-header {
+.co-warning {
+  font-size: 11px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: rgba(220, 140, 30, 0.12);
+  border: 1px solid rgba(220, 140, 30, 0.4);
+  color: #b07015;
+  line-height: 1.4;
+}
+
+.co-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.co-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
-  color: var(--color-foreground-muted);
-  margin-top: 4px;
+  font-weight: 600;
+}
+
+.co-section-title--err {
+  color: #c04040;
+}
+
+.co-section-title--ok {
+  color: #2a8a4a;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot--err {
+  background: #c04040;
+}
+
+.dot--ok {
+  background: #2a8a4a;
 }
 
 .co-files {
   list-style: none;
   margin: 0;
   padding: 6px 10px;
-  max-height: 140px;
+  max-height: 110px;
   overflow-y: auto;
   background: var(--color-surface-hover);
   border: 1px solid var(--color-border);
@@ -165,6 +235,14 @@ function pick(c: "smart" | "force" | "cancel"): void {
   font-family: var(--font-mono, monospace);
   font-size: 11px;
   color: var(--color-foreground-muted);
+}
+
+.co-files--err {
+  border-color: rgba(220, 50, 50, 0.4);
+}
+
+.co-files--ok {
+  border-color: rgba(0, 122, 51, 0.4);
 }
 
 .co-files li {
