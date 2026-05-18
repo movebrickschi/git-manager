@@ -132,10 +132,17 @@ export const logService = {
     else args.push("--all");
 
     if (filter.author) args.push(`--author=${filter.author}`);
-    if (filter.dateFrom) args.push(`--after=${filter.dateFrom}`);
+    if (filter.dateFrom) {
+      // 纯日期 yyyy-mm-dd 显式补到当天 00:00:00。
+      // git 对纯日期 --after=DATE 默认按「DATE 当天结束之后」解析（即 23:59:59），
+      // 会漏掉当天所有 commit；补 00:00:00 后语义变为「DATE 当天起始之后」= 包含当天。
+      const v = /^\d{4}-\d{2}-\d{2}$/.test(filter.dateFrom)
+        ? `${filter.dateFrom} 00:00:00`
+        : filter.dateFrom;
+      args.push(`--after=${v}`);
+    }
     if (filter.dateTo) {
-      // 纯日期 yyyy-mm-dd 补到当天 23:59:59，让 --before 包含整天的 commit
-      // 否则 git 把 "2026-05-18" 解析为 "2026-05-18 00:00:00"，会漏掉当天所有 commit
+      // 纯日期补到当天 23:59:59，与 git 默认行为一致，明确包含整天。
       const v = /^\d{4}-\d{2}-\d{2}$/.test(filter.dateTo)
         ? `${filter.dateTo} 23:59:59`
         : filter.dateTo;
