@@ -309,6 +309,143 @@ function onSearch() {
   logStore.loadCommits(true);
 }
 
+// ---- Filter popovers (author / date) ----
+const showAuthorPopover = ref(false);
+const showDatePopover = ref(false);
+const authorInput = ref("");
+const dateFromInput = ref("");
+const dateToInput = ref("");
+const authorWrapRef = ref<HTMLElement>();
+const dateWrapRef = ref<HTMLElement>();
+const authorPopoverRef = ref<HTMLElement>();
+const datePopoverRef = ref<HTMLElement>();
+const authorPopoverPos = ref({ top: 0, left: 0 });
+const datePopoverPos = ref({ top: 0, left: 0 });
+
+const hasAuthorFilter = computed(() => !!logStore.filter.author);
+const hasDateFilter = computed(
+  () => !!(logStore.filter.dateFrom || logStore.filter.dateTo)
+);
+
+// 候选作者：基于当前已加载的 commits 去重，给 <datalist> 用
+const authorSuggestions = computed(() => {
+  const set = new Set<string>();
+  for (const c of logStore.commits) {
+    if (c.author) set.add(c.author);
+  }
+  return [...set].sort();
+});
+
+function computePopoverPos(anchor: HTMLElement | undefined): {
+  top: number;
+  left: number;
+} {
+  if (!anchor) return { top: 0, left: 0 };
+  const rect = anchor.getBoundingClientRect();
+  return { top: rect.bottom + 4, left: rect.left };
+}
+
+function toggleAuthorPopover() {
+  showDatePopover.value = false;
+  if (showAuthorPopover.value) {
+    showAuthorPopover.value = false;
+    return;
+  }
+  authorInput.value = logStore.filter.author ?? "";
+  authorPopoverPos.value = computePopoverPos(authorWrapRef.value);
+  showAuthorPopover.value = true;
+}
+
+function toggleDatePopover() {
+  showAuthorPopover.value = false;
+  if (showDatePopover.value) {
+    showDatePopover.value = false;
+    return;
+  }
+  dateFromInput.value = logStore.filter.dateFrom ?? "";
+  dateToInput.value = logStore.filter.dateTo ?? "";
+  datePopoverPos.value = computePopoverPos(dateWrapRef.value);
+  showDatePopover.value = true;
+}
+
+function applyAuthor() {
+  logStore.filter.author = authorInput.value.trim() || null;
+  showAuthorPopover.value = false;
+  logStore.loadCommits(true);
+}
+
+function clearAuthor() {
+  logStore.filter.author = null;
+  authorInput.value = "";
+  showAuthorPopover.value = false;
+  logStore.loadCommits(true);
+}
+
+function applyDate() {
+  logStore.filter.dateFrom = dateFromInput.value || null;
+  logStore.filter.dateTo = dateToInput.value || null;
+  showDatePopover.value = false;
+  logStore.loadCommits(true);
+}
+
+function clearDate() {
+  logStore.filter.dateFrom = null;
+  logStore.filter.dateTo = null;
+  dateFromInput.value = "";
+  dateToInput.value = "";
+  showDatePopover.value = false;
+  logStore.loadCommits(true);
+}
+
+function setDatePreset(days: number) {
+  const to = new Date();
+  const from = new Date();
+  from.setDate(from.getDate() - days + 1);
+  const fmt = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${dd}`;
+  };
+  dateFromInput.value = fmt(from);
+  dateToInput.value = fmt(to);
+}
+
+function onPopoverDocClick(e: MouseEvent) {
+  const target = e.target as Node;
+  if (
+    showAuthorPopover.value &&
+    !authorWrapRef.value?.contains(target) &&
+    !authorPopoverRef.value?.contains(target)
+  ) {
+    showAuthorPopover.value = false;
+  }
+  if (
+    showDatePopover.value &&
+    !dateWrapRef.value?.contains(target) &&
+    !datePopoverRef.value?.contains(target)
+  ) {
+    showDatePopover.value = false;
+  }
+}
+
+function onPopoverDocKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape") {
+    showAuthorPopover.value = false;
+    showDatePopover.value = false;
+  }
+}
+
+onMounted(() => {
+  document.addEventListener("click", onPopoverDocClick);
+  document.addEventListener("keydown", onPopoverDocKeydown);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("click", onPopoverDocClick);
+  document.removeEventListener("keydown", onPopoverDocKeydown);
+});
+
 function getRefClass(refType: string): string {
   const classes: Record<string, string> = {
     head: "ref-head",
@@ -331,35 +468,55 @@ function getRefClass(refType: string): string {
         @search="onSearch"
       />
 
-      <ToolbarButton title="按作者筛选">
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
+      <div ref="authorWrapRef" class="filter-anchor">
+        <ToolbarButton
+          :title="hasAuthorFilter ? `作者：${logStore.filter.author}` : '按作者筛选'"
+          :active="hasAuthorFilter || showAuthorPopover"
+          @click="toggleAuthorPopover"
         >
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-          <circle cx="12" cy="7" r="4" />
-        </svg>
-      </ToolbarButton>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
+          </svg>
+          <span v-if="hasAuthorFilter" class="filter-dot" />
+        </ToolbarButton>
+      </div>
 
-      <ToolbarButton title="按日期筛选">
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
+      <div ref="dateWrapRef" class="filter-anchor">
+        <ToolbarButton
+          :title="
+            hasDateFilter
+              ? `日期：${logStore.filter.dateFrom ?? '*'} ~ ${
+                  logStore.filter.dateTo ?? '*'
+                }`
+              : '按日期筛选'
+          "
+          :active="hasDateFilter || showDatePopover"
+          @click="toggleDatePopover"
         >
-          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-          <line x1="16" y1="2" x2="16" y2="6" />
-          <line x1="8" y1="2" x2="8" y2="6" />
-          <line x1="3" y1="10" x2="21" y2="10" />
-        </svg>
-      </ToolbarButton>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+          </svg>
+          <span v-if="hasDateFilter" class="filter-dot" />
+        </ToolbarButton>
+      </div>
 
       <div style="flex: 1" />
 
@@ -505,6 +662,72 @@ function getRefClass(refType: string): string {
       <Transition name="toast">
         <div v-if="toastVisible" class="toast">{{ toastMessage }}</div>
       </Transition>
+    </Teleport>
+
+    <!-- 作者筛选 popover -->
+    <Teleport to="body">
+      <div
+        v-if="showAuthorPopover"
+        ref="authorPopoverRef"
+        class="filter-popover"
+        :style="{
+          top: authorPopoverPos.top + 'px',
+          left: authorPopoverPos.left + 'px',
+        }"
+      >
+        <div class="popover-title">按作者筛选</div>
+        <input
+          v-model="authorInput"
+          class="popover-input"
+          type="text"
+          placeholder="作者名称 / 邮箱片段"
+          list="commits-author-suggestions"
+          autofocus
+          @keydown.enter="applyAuthor"
+          @keydown.esc="showAuthorPopover = false"
+        />
+        <datalist id="commits-author-suggestions">
+          <option v-for="a in authorSuggestions" :key="a" :value="a" />
+        </datalist>
+        <div class="popover-hint">支持 git --author=&lt;pattern&gt; 模糊匹配</div>
+        <div class="popover-footer">
+          <button class="popover-btn" @click="clearAuthor">清除</button>
+          <button class="popover-btn primary" @click="applyAuthor">应用</button>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 日期筛选 popover -->
+    <Teleport to="body">
+      <div
+        v-if="showDatePopover"
+        ref="datePopoverRef"
+        class="filter-popover date-popover"
+        :style="{
+          top: datePopoverPos.top + 'px',
+          left: datePopoverPos.left + 'px',
+        }"
+      >
+        <div class="popover-title">按日期筛选</div>
+        <div class="popover-presets">
+          <button class="preset-btn" @click="setDatePreset(1)">今天</button>
+          <button class="preset-btn" @click="setDatePreset(7)">近 7 天</button>
+          <button class="preset-btn" @click="setDatePreset(30)">近 30 天</button>
+          <button class="preset-btn" @click="setDatePreset(90)">近 90 天</button>
+        </div>
+        <div class="popover-row">
+          <label class="popover-label">从</label>
+          <input v-model="dateFromInput" type="date" class="popover-input" />
+        </div>
+        <div class="popover-row">
+          <label class="popover-label">至</label>
+          <input v-model="dateToInput" type="date" class="popover-input" />
+        </div>
+        <div class="popover-footer">
+          <button class="popover-btn" @click="clearDate">清除</button>
+          <button class="popover-btn primary" @click="applyDate">应用</button>
+        </div>
+      </div>
     </Teleport>
   </div>
 </template>
@@ -877,5 +1100,134 @@ function getRefClass(refType: string): string {
 .toast-leave-to {
   opacity: 0;
   transform: translateX(-50%) translateY(8px);
+}
+
+/* ---- Filter anchor + indicator dot ---- */
+.filter-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.filter-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  pointer-events: none;
+}
+
+/* ---- Filter popover (Teleport 到 body，position: fixed) ---- */
+.filter-popover {
+  position: fixed;
+  z-index: 9500;
+  min-width: 240px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.filter-popover.date-popover {
+  min-width: 260px;
+}
+
+.popover-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-foreground);
+}
+
+.popover-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  height: 26px;
+  font-size: 12px;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+}
+
+.popover-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.popover-hint {
+  font-size: 11px;
+  color: var(--color-foreground-muted);
+}
+
+.popover-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.popover-label {
+  width: 28px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--color-foreground-muted);
+}
+
+.popover-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.preset-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  background: var(--color-surface-active);
+  color: var(--color-foreground);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.preset-btn:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-foreground-muted);
+}
+
+.popover-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.popover-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  background: var(--color-surface-active);
+  color: var(--color-foreground);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.popover-btn:hover {
+  background: var(--color-surface-hover);
+}
+
+.popover-btn.primary {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+.popover-btn.primary:hover {
+  opacity: 0.9;
 }
 </style>
