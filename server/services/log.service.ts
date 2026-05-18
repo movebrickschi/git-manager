@@ -133,7 +133,14 @@ export const logService = {
 
     if (filter.author) args.push(`--author=${filter.author}`);
     if (filter.dateFrom) args.push(`--after=${filter.dateFrom}`);
-    if (filter.dateTo) args.push(`--before=${filter.dateTo}`);
+    if (filter.dateTo) {
+      // 纯日期 yyyy-mm-dd 补到当天 23:59:59，让 --before 包含整天的 commit
+      // 否则 git 把 "2026-05-18" 解析为 "2026-05-18 00:00:00"，会漏掉当天所有 commit
+      const v = /^\d{4}-\d{2}-\d{2}$/.test(filter.dateTo)
+        ? `${filter.dateTo} 23:59:59`
+        : filter.dateTo;
+      args.push(`--before=${v}`);
+    }
     if (filter.searchText) {
       if (filter.useRegex) {
         args.push(`--grep=${filter.searchText}`);
