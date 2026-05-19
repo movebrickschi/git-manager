@@ -207,3 +207,47 @@ describe("server routes — 参数透传契约", () => {
     expect(gitService.commit).toHaveBeenCalledWith("/r", "feat: x", false);
   });
 });
+
+describe("server routes — daily report module (Web 模式同步性验证)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env.NODE_ENV;
+  });
+
+  it("POST /api/report/abort 应返回 { ok: true }", async () => {
+    const res = await request(makeApp()).post("/api/report/abort").send({});
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toEqual({ ok: true });
+  });
+
+  it("POST /api/report/branches 传空 repos 应返回 {}（不抛错）", async () => {
+    const res = await request(makeApp()).post("/api/report/branches").send({ repos: [] });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toEqual({});
+  });
+
+  it("POST /api/report/authors 传空 repos 应返回 []（不抛错）", async () => {
+    const res = await request(makeApp()).post("/api/report/authors").send({ repos: [] });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toEqual([]);
+  });
+
+  it("POST /api/report/extract 没有仓库时应回 NO_REPO（service-level 错误，HTTP 仍 200）", async () => {
+    const res = await request(makeApp())
+      .post("/api/report/extract")
+      .send({
+        range: { preset: "today" },
+        repos: [],
+        excludeMerge: true,
+        excludeRevert: true,
+        dedupMessage: true,
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.ok).toBe(false);
+    expect(res.body.data.code).toBe("NO_REPO");
+  });
+});
