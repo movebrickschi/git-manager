@@ -107,6 +107,82 @@ npm run dev:electron
 # → 🔌 测试连接 → 保存 → ✨
 ```
 
+## 日报 / 周报 / 月报
+
+侧边栏 **「日报」** Tab 一键把多仓库 Git 提交记录聚合成结构化 Markdown 报告，支持 AI 润色 + 一键复制 / 导出。常见场景：日终 / 周末写汇报、月底总结、Sprint 复盘。
+
+### 能力一览
+
+| 维度 | 说明 |
+|---|---|
+| **时间范围** | 今日 / 昨日 / 本周（ISO 周一起）/ 上周 / 本月 / 上月 / 自定义区间 |
+| **作者过滤** | 仅我（默认）/ 全部 / 按邮箱多选；多选自动 OR 合并 |
+| **仓库过滤** | 多仓库联合扫描，每个仓库可**单独**指定扫描分支（不会切换工作区） |
+| **关键字** | include / exclude 双向；逗号或换行分隔；命中 commit message 任意行即可 |
+| **去重** | 自动剔除 merge commit（双父）、Revert commit、message 完全重复 |
+| **分组** | 三层 `仓库 → 模块（feat/fix/perf/...）→ 日期`；conventional commits 前缀自动解析 module 与 scope |
+| **渲染** | 每条 commit 作为 `####` 四级标题；commit message 的 body 行展开为 `-` bullet；输出 Markdown / 纯文本两种 |
+| **AI 润色** | 4 风格（正式 / 轻松 / 项目符号 / 叙事段落）× 3 语言（中文 / 英文 / 自动）× 自定义提示词 |
+| **复制 / 导出** | 一键写入剪贴板；导出 `.md` 文件 |
+
+### 与 commit message 生成共用 AI 配置
+
+日报润色与 commit 生成走**同一份** `ai-settings.json` 与 `ai-apikey.json`（safeStorage 加密）。即：
+
+- 顶层 `baseUrl` / `apiKey` / `model` / `timeout` 两边都用，**只填一次**
+- 子段 `report` 独立保存润色 `style` / `lang` / `maxInputChars` / `customPrompt`，不污染 commit 配置
+
+落盘格式示例（`{userData}/ai-settings.json`）：
+
+```jsonc
+{
+  "baseUrl": "https://api.deepseek.com/v1",
+  "model": "deepseek-chat",
+  "commitStyle": "cc",
+  "lang": "auto",
+  "timeout": 30000,
+  "maxDiffChars": 16000,
+  "report": {
+    "style": "formal",
+    "lang": "auto",
+    "maxInputChars": 32000,
+    "customPrompt": "每条加上工时估算"
+  }
+}
+```
+
+`customPrompt` 非空时被**追加**到 system prompt 末尾，并标注「优先级高于固定模板的 1-8 条规则」，因此可以覆盖默认风格之外的任何附加要求（工时 / 客户语境 / emoji 偏好等）。
+
+### 错误兜底
+
+| 触发 | 处理 |
+|---|---|
+| 未打开任何仓库 | 「生成报告」按钮 disabled |
+| 范围内无匹配提交 | toast `NO_COMMITS`，提示放宽筛选条件 |
+| 单仓库 git log 失败 | 显示该仓库错误条，**其余仓库结果照常返回** |
+| AI 未配置 apiKey | ✨ 润色按钮触发后回 `NO_API_KEY`，引导到 commit 面板 AI 设置 |
+| 润色超时 / 5xx | 静默重试 1 次（2s backoff）；用户可主动点「取消」abort |
+| 输入 Markdown 超 `maxInputChars` | 自动尾部截断并附「已截断」提示，避免上下文打爆 |
+
+### 快速上手（30 秒）
+
+```powershell
+# 1. 启动桌面应用
+npm run dev:electron
+# 或直接装安装包：release\Git Manager Setup x.y.z.exe
+
+# 2. Welcome 页打开任一 Git 仓库
+# 3. 侧边栏切到「日报」Tab
+# 4. 顶部过滤栏：选「今日」/「本周」→「全部 / 仅我」→ 勾选仓库 →（可选）切到某个分支
+# 5. 点「🚀 生成报告」→ 预览区即出 Markdown
+# 6. （可选）点「✨ AI 润色」前选风格 / 语言，或展开「▸ 提示词」加自定义要求
+# 7. 「📋 复制」粘贴到企微 / 钉钉 / 邮箱，或「💾 导出 .md」存档
+```
+
+### 设计文档
+
+完整的设计稿、Java→TS 映射表、P0/P1/P2 路线图、风险与回滚策略详见 [`docs/PROPOSAL.md`](docs/PROPOSAL.md)。
+
 ## 开发
 
 ### 前置要求
