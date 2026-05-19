@@ -3,6 +3,7 @@ import * as path from "path";
 import { gitService } from "../server/git-service";
 import { COMMANDS } from "../shared/command-manifest";
 import { registerAiHandlers } from "./ai-handlers";
+import { registerReportHandlers } from "./report-handlers";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -135,4 +136,5 @@ for (const spec of COMMANDS) {
 }
 
 registerAiHandlers();
+registerReportHandlers();
 

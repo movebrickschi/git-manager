@@ -5,7 +5,9 @@ import { aiBridge } from "@/services/ai";
 import {
   AI_PRESETS,
   DEFAULT_PUBLIC_AI_SETTINGS,
+  DEFAULT_REPORT_AI_SETTINGS,
   type AiSettings,
+  type ReportAiSettings,
 } from "../../../shared/ai/types";
 
 const { t } = useI18n();
@@ -25,6 +27,15 @@ const commitStyle = ref<AiSettings["commitStyle"]>("cc");
 const lang = ref<AiSettings["lang"]>("auto");
 const timeout = ref(DEFAULT_PUBLIC_AI_SETTINGS.timeout);
 const maxDiffChars = ref(DEFAULT_PUBLIC_AI_SETTINGS.maxDiffChars);
+
+/**
+ * 日报润色专属配置。复用 commit 同一份 baseUrl/apiKey/model/timeout（顶层），
+ * 仅风格 / 语言 / 输入截断阈值在此独立保留。
+ *
+ * UI 暂不暴露这三项（保持设置面板简洁），实际配置入口由 Wave 4 的 ReportPanel 提供；
+ * 此处仅作 round-trip 透传，避免重写时把已有 report 配置覆盖为默认值。
+ */
+const reportConfig = ref<ReportAiSettings>({ ...DEFAULT_REPORT_AI_SETTINGS });
 
 const presetId = ref("custom");
 const advancedOpen = ref(false);
@@ -63,6 +74,7 @@ async function loadSettings() {
     lang.value = view.lang;
     timeout.value = view.timeout;
     maxDiffChars.value = view.maxDiffChars;
+    reportConfig.value = { ...DEFAULT_REPORT_AI_SETTINGS, ...(view.report ?? {}) };
     apiKeyExisting.value = view.hasApiKey;
     apiKey.value = "";
     presetId.value = detectPresetFromUrl(view.baseUrl);
@@ -84,6 +96,7 @@ function buildSettings(): AiSettings {
       500,
       Number(maxDiffChars.value) || DEFAULT_PUBLIC_AI_SETTINGS.maxDiffChars
     ),
+    report: { ...reportConfig.value },
   };
 }
 

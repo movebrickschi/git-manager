@@ -138,8 +138,24 @@ function cleanMessage(raw: string): string {
   return s;
 }
 
-async function callChatCompletions(
-  settings: AiSettings,
+/**
+ * AI 服务连接层配置（baseUrl / apiKey / model / timeout）。
+ *
+ * `AiSettings` 是它的超集，所以 commit message 调用方可以直接传 AiSettings；
+ * Daily Report 调用方只需要构造一个 4 字段子集即可复用同一份连接。
+ */
+export type AiConnection = Pick<AiSettings, "baseUrl" | "apiKey" | "model" | "timeout">;
+
+/**
+ * 通用 chat/completions 调用（commit 生成与日报润色共用）。
+ *
+ * - 自动管理 timeout AbortController
+ * - 兼容外部 signal（用户主动 abort）
+ * - HTTP 错误按 AiErrorCode 分类
+ * - 清理输出：去三反引号围栏、去前后中英引号
+ */
+export async function chatCompletions(
+  settings: AiConnection,
   system: string,
   user: string,
   externalSignal?: AbortSignal
@@ -318,7 +334,7 @@ export function makeAiService(deps: AiServiceDeps) {
           settings,
         });
 
-        let result = await callChatCompletions(settings, system, user, ctrl.signal);
+        let result = await chatCompletions(settings, system, user, ctrl.signal);
         if (
           !result.ok &&
           (result.code === "SERVER" || result.code === "NETWORK") &&
@@ -326,7 +342,7 @@ export function makeAiService(deps: AiServiceDeps) {
         ) {
           await new Promise((r) => setTimeout(r, 2000));
           if (!ctrl.signal.aborted) {
-            result = await callChatCompletions(settings, system, user, ctrl.signal);
+            result = await chatCompletions(settings, system, user, ctrl.signal);
           } else {
             return { ok: false, code: "ABORT", reason: "已取消" };
           }

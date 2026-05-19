@@ -28,11 +28,11 @@ const logStore = useLogStore();
 const repoStore = useRepoStore();
 
 const props = defineProps<{
-  activeTab: "log" | "commit" | "stash";
+  activeTab: "log" | "commit" | "stash" | "report";
 }>();
 
 const emit = defineEmits<{
-  "update:activeTab": [tab: "log" | "commit" | "stash"];
+  "update:activeTab": [tab: "log" | "commit" | "stash" | "report"];
 }>();
 
 const searchQuery = ref("");
@@ -994,6 +994,14 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
         @click="emit('update:activeTab', 'log')"
       >
         {{ logTabLabel }}
+      </button>
+      <button
+        class="tab-btn"
+        :class="{ active: props.activeTab === 'report' }"
+        @click="emit('update:activeTab', 'report')"
+        title="按时间范围聚合提交，生成日报/周报，支持 AI 润色"
+      >
+        日报
       </button>
     </div>
 

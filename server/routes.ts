@@ -3,7 +3,9 @@ import { randomUUID } from "crypto";
 import { gitService } from "./git-service.js";
 import { COMMANDS } from "../shared/command-manifest.js";
 import { makeAiService, createPlainFileStorage } from "./services/ai.service.js";
+import { makeReportService } from "./services/report.service.js";
 import type { AiSettings } from "../shared/ai/types.js";
+import type { ReportFilter, ReportPolishInput } from "../shared/report/types.js";
 
 const router = Router();
 
@@ -107,6 +109,51 @@ router.post(
   "/ai/abort",
   wrap(async () => {
     aiService.abort();
+    return { ok: true };
+  })
+);
+
+const reportService = makeReportService({
+  secretStorage: aiStorage.secret,
+  publicStorage: aiStorage.pub,
+});
+
+router.post(
+  "/report/authors",
+  wrap(async (req) => {
+    const body = (req.body ?? {}) as { repos?: unknown; since?: unknown; until?: unknown };
+    const repos = Array.isArray(body.repos) ? (body.repos as unknown[]).filter((x): x is string => typeof x === "string") : [];
+    const since = typeof body.since === "string" ? body.since : undefined;
+    const until = typeof body.until === "string" ? body.until : undefined;
+    return await reportService.listAuthors(repos, since, until);
+  })
+);
+
+router.post(
+  "/report/branches",
+  wrap(async (req) => {
+    const body = (req.body ?? {}) as { repos?: unknown };
+    const repos = Array.isArray(body.repos)
+      ? (body.repos as unknown[]).filter((x): x is string => typeof x === "string")
+      : [];
+    return await reportService.listBranches(repos);
+  })
+);
+
+router.post(
+  "/report/extract",
+  wrap(async (req) => await reportService.extract(req.body as ReportFilter))
+);
+
+router.post(
+  "/report/polish",
+  wrap(async (req) => await reportService.polish(req.body as ReportPolishInput))
+);
+
+router.post(
+  "/report/abort",
+  wrap(async () => {
+    reportService.abort();
     return { ok: true };
   })
 );

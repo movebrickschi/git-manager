@@ -10,6 +10,7 @@ import CommitDetailsPane from "@/components/log/CommitDetailsPane.vue";
 import StashList from "@/components/stash/StashList.vue";
 import DiffViewer from "@/components/diff/DiffViewer.vue";
 import LocalChangesView from "@/components/changes/LocalChangesView.vue";
+import ReportPanel from "@/components/report/ReportPanel.vue";
 
 const BlameView = defineAsyncComponent(() => import("@/components/blame/BlameView.vue"));
 const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/ThreeWayMerge.vue"));
@@ -27,7 +28,7 @@ const branchStore = useBranchStore();
 const commitStore = useCommitStore();
 const settings = useSettingsStore();
 
-const activeTab = ref<"log" | "commit" | "stash">("log");
+const activeTab = ref<"log" | "commit" | "stash" | "report">("log");
 
 watch(
   () => branchStore.tabSwitchSignal,
@@ -141,6 +142,9 @@ function closeMerge() {
 
         <!-- 搁置 tab -->
         <StashList v-else-if="activeTab === 'stash'" style="height: 100%" />
+
+        <!-- 日报 tab -->
+        <ReportPanel v-else-if="activeTab === 'report'" style="height: 100%" />
 
         <!-- 日志 tab: 提交图 -->
         <Splitpanes v-else horizontal class="default-theme" style="height: 100%">

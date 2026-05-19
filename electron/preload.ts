@@ -94,6 +94,11 @@ const ALLOWED_CHANNELS = new Set<string>([
   "ai:save_settings",
   "ai:test_connection",
   "ai:abort",
+  "report:list_authors",
+  "report:list_branches",
+  "report:extract",
+  "report:polish",
+  "report:abort",
 ]);
 
 contextBridge.exposeInMainWorld("electronAPI", {
