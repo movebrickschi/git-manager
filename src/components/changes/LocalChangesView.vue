@@ -6,7 +6,7 @@ import { useI18n } from "vue-i18n";
 import { useCommitStore } from "@/stores/commitStore";
 import { useFilterStore } from "@/stores/filterStore";
 import { useRepoStore } from "@/stores/repoStore";
-import { commands } from "@/utils/commands";
+import { commands, platform } from "@/utils/commands";
 import type { DiffResult, FileStatus } from "@/utils/commands";
 import DiffViewer from "@/components/diff/DiffViewer.vue";
 import ContextMenu from "@/components/common/ContextMenu.vue";
@@ -617,6 +617,22 @@ function handleCopyPath(): void {
 }
 
 /**
+ * 在系统文件资源管理器中定位并选中当前右键的文件。
+ * 仅 Electron 桌面模式可用；Web 模式下菜单项已 disable，不会进入此函数。
+ * 路径拼接：repo.path 是绝对路径、file.path 是相对仓库根的 POSIX 路径，
+ * 直接拼 `/` 在 Windows 上也合法（Win32 API 接受 forward slash）。
+ */
+async function handleRevealInFolder(): Promise<void> {
+  if (!contextFile.value || !repoStore.activeRepo) return;
+  const absPath = `${repoStore.activeRepo.path}/${contextFile.value.path}`;
+  try {
+    await platform.revealInFolder(absPath);
+  } catch (e: unknown) {
+    showToast(`无法在资源管理器中打开: ${errMsg(e)}`);
+  }
+}
+
+/**
  * 把当前右键文件（单选）或选中集合（多选）加入到与「过滤规则」相同的规则列表。
  * 沿用 useFilterRules.addPaths：按行去重 + 自动持久化。
  */
@@ -748,6 +764,11 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   } else {
     items.push({ label: "删除文件…", action: handleDeleteFile });
     items.push({ label: "复制路径", action: handleCopyPath });
+    items.push({
+      label: "在资源管理器中显示",
+      disabled: !platform.isElectron,
+      action: handleRevealInFolder,
+    });
   }
 
   items.push({ separator: true, label: "" });

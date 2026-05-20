@@ -99,6 +99,7 @@ const ALLOWED_CHANNELS = new Set<string>([
   "report:extract",
   "report:polish",
   "report:abort",
+  "system:reveal_in_folder",
 ]);
 
 contextBridge.exposeInMainWorld("electronAPI", {
@@ -109,4 +110,5 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return ipcRenderer.invoke(channel, ...args);
   },
   selectDirectory: () => ipcRenderer.invoke("dialog:openDirectory"),
+  revealInFolder: (absPath: string) => ipcRenderer.invoke("system:reveal_in_folder", absPath),
 });

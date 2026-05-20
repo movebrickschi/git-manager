@@ -14,5 +14,6 @@ export function createElectronPlatform(): Platform {
   return {
     isElectron: true,
     selectDirectory: () => window.electronAPI!.selectDirectory(),
+    revealInFolder: (absPath: string) => window.electronAPI!.revealInFolder(absPath),
   };
 }

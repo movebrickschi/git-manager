@@ -4,6 +4,7 @@ interface Window {
   electronAPI?: {
     invoke(channel: string, ...args: any[]): Promise<any>;
     selectDirectory(): Promise<string | null>;
+    revealInFolder(absPath: string): Promise<void>;
   };
 }
 

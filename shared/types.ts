@@ -383,4 +383,11 @@ export interface Commands {
 export interface Platform {
   isElectron: boolean;
   selectDirectory(): Promise<string | null>;
+  /**
+   * 在系统文件管理器中定位并高亮某个文件 / 目录。
+   * - Electron：调 shell.showItemInFolder（Win 资源管理器 / macOS Finder / Linux xdg）
+   * - Web：当前不支持，调用即 reject 错误码 NOT_SUPPORTED
+   * 调用方传**绝对路径**；前端拼接 `repoPath + filePath` 时务必用 path.join 保留分隔符。
+   */
+  revealInFolder(absPath: string): Promise<void>;
 }

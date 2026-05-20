@@ -66,5 +66,10 @@ export function createWebPlatform(): Platform {
         input.click();
       });
     },
+    revealInFolder: () => {
+      return Promise.reject(
+        new Error("NOT_SUPPORTED: revealInFolder is only available in the desktop app")
+      );
+    },
   };
 }

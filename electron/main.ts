@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, session, shell } from "electron";
+import { promises as fs } from "fs";
 import * as path from "path";
 import { gitService } from "../server/git-service";
 import { COMMANDS } from "../shared/command-manifest";
@@ -114,6 +115,30 @@ ipcMain.handle("dialog:openDirectory", async () => {
     title: "选择 Git 仓库",
   });
   return result.canceled ? null : (result.filePaths[0] ?? null);
+});
+
+/**
+ * 在系统文件管理器中定位并选中给定路径。
+ * - Windows：资源管理器
+ * - macOS：Finder
+ * - Linux：默认文件管理器
+ *
+ * 安全：要求绝对路径，且必须真实存在；目录/文件均接受。
+ * 路径不存在或参数非法时回 INVALID_PATH，主进程不会崩。
+ */
+ipcMain.handle("system:reveal_in_folder", async (_e, absPath: unknown) => {
+  if (typeof absPath !== "string" || absPath.length === 0) {
+    throw new Error("INVALID_PATH: absPath must be a non-empty string");
+  }
+  if (!path.isAbsolute(absPath)) {
+    throw new Error(`INVALID_PATH: not absolute: ${absPath}`);
+  }
+  try {
+    await fs.access(absPath);
+  } catch {
+    throw new Error(`INVALID_PATH: not found: ${absPath}`);
+  }
+  shell.showItemInFolder(absPath);
 });
 
 for (const spec of COMMANDS) {
