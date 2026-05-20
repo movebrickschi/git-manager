@@ -7,12 +7,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const releaseDir = path.join(root, "release");
 
-if (process.platform !== "win32") {
-  console.log("[prebuild-clean] non-win32, skip");
-  process.exit(0);
-}
-
-const TARGET_NAMES = ["Git Manager.exe", "rcedit-x64.exe", "rcedit-ia32.exe", "app-builder.exe"];
+// Windows 上 electron-builder 残留的子进程（rcedit / app-builder）以及
+// 上一次产物的 Git Manager.exe 都可能锁 release/ 目录，先 taskkill 再删。
+const WIN_TARGET_NAMES = [
+  "Git Manager.exe",
+  "rcedit-x64.exe",
+  "rcedit-ia32.exe",
+  "app-builder.exe",
+];
 
 function killByName(name) {
   try {
@@ -53,7 +55,7 @@ async function exists(p) {
 
 async function tryRemoveRelease() {
   if (!(await exists(releaseDir))) return true;
-  const maxAttempts = 5;
+  const maxAttempts = process.platform === "win32" ? 5 : 1;
   for (let i = 1; i <= maxAttempts; i++) {
     try {
       await fs.rm(releaseDir, { recursive: true, force: true });
@@ -68,8 +70,12 @@ async function tryRemoveRelease() {
   return false;
 }
 
-for (const n of TARGET_NAMES) killByName(n);
-killProjectLocalProcesses();
+if (process.platform === "win32") {
+  for (const n of WIN_TARGET_NAMES) killByName(n);
+  killProjectLocalProcesses();
+} else {
+  console.log(`[prebuild-clean] ${process.platform}: skip process killing, only clean release/`);
+}
 
 const ok = await tryRemoveRelease();
 if (!ok) {

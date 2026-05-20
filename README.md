@@ -227,7 +227,39 @@ npm run dev
 ```bash
 npm run build:electron
 # 输出目录: release/
+# 行为：根据当前操作系统自动出包
+#   - Windows → Git Manager Setup x.y.z.exe (NSIS)
+#   - macOS   → Git-Manager-x.y.z-arm64.dmg + Git-Manager-x.y.z-x64.dmg
 ```
+
+**构建 macOS 安装包（双架构）**
+
+> macOS 包必须在 macOS 设备上原生构建，Windows / Linux 上无法产出 `.dmg`。
+
+```bash
+# 同时出 Apple Silicon (arm64) + Intel (x64) 两个 dmg
+pnpm run build:mac
+
+# 只出 Apple Silicon
+pnpm run build:mac:arm64
+
+# 只出 Intel
+pnpm run build:mac:x64
+
+# 输出位置：
+#   release/Git Manager-0.1.0-arm64.dmg
+#   release/Git Manager-0.1.0-x64.dmg
+```
+
+> 说明：当前发布版**未做 Apple 代码签名 / 公证**，首次打开 dmg 中的 app 时 macOS Gatekeeper 会拦截。
+> 用户处理办法：
+>
+> 1. **推荐**：右键点击 `Git Manager.app` → 选「打开」→ 在弹窗里再次确认「打开」；
+> 2. 或者命令行解除隔离属性：`xattr -dr com.apple.quarantine /Applications/Git\ Manager.app`
+>
+> 后续如需上架公证、消除 Gatekeeper 拦截，需要 Apple Developer Program（$99/年）与 `CSC_LINK` / `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` 环境变量。
+
+**完整的 macOS 打包操作手册（前置要求 / 常见坑 / 一键命令清单 / 签名公证 / Universal Binary）**：详见 [`docs/BUILD_MACOS.md`](docs/BUILD_MACOS.md)。
 
 **构建 Web 版本**
 

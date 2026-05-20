@@ -14,6 +14,9 @@
     "build:icon": "node scripts/build-icon.mjs",
     "prebuild:electron": "node scripts/prebuild-clean.mjs",
     "build:electron": "npm run build:icon && vue-tsc --noEmit && vite build && tsc -p tsconfig.electron.json && node scripts/postbuild-electron.mjs && electron-builder",
+    "build:mac": "npm run build:icon && vue-tsc --noEmit && vite build && tsc -p tsconfig.electron.json && node scripts/postbuild-electron.mjs && electron-builder --mac --arm64 --x64",
+    "build:mac:arm64": "npm run build:icon && vue-tsc --noEmit && vite build && tsc -p tsconfig.electron.json && node scripts/postbuild-electron.mjs && electron-builder --mac --arm64",
+    "build:mac:x64": "npm run build:icon && vue-tsc --noEmit && vite build && tsc -p tsconfig.electron.json && node scripts/postbuild-electron.mjs && electron-builder --mac --x64",
     "build:web": "vue-tsc --noEmit && vite build && tsc -p tsconfig.server.json",
     "preview": "vite preview",
     "typecheck:web": "vue-tsc --noEmit",
@@ -60,6 +63,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-vue": "^10.9.1",
     "png-to-ico": "^3.0.1",
+    "png2icons": "^2.0.1",
     "prettier": "^3.8.3",
     "sharp": "^0.34.5",
     "supertest": "^7.2.2",
@@ -94,6 +98,23 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["arm64", "x64"]
+        }
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.developer-tools",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "identity": null,
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "dmg": {
+      "writeUpdateInfo": false
     }
   }
 }

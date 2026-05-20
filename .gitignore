@@ -9,6 +9,8 @@ release/
 release-verify/
 src-tauri/target/
 build/icon.ico
+build/icon.icns
+build/icon.png
 
 # Vue / TS internal cache
 node_modules/.vue-global-types/
