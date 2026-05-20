@@ -1,3 +1,5 @@
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { simpleGit, type SimpleGit } from "simple-git";
 import type {
   FileStatus,
@@ -7,6 +9,18 @@ import type {
 } from "../git-service.js";
 
 export const GIT_TIMEOUT_MS = 30_000;
+
+/**
+ * 单个 untracked 文件 diff 的合成阈值（字节）。
+ * 超过该阈值视为大文件，不读全文，只回 1 行占位说明，避免把内存打爆。
+ */
+export const UNTRACKED_DIFF_MAX_BYTES = 1024 * 1024;
+
+/**
+ * 二进制嗅探阈值。读取前 N 字节，若含 \0 即视为二进制。
+ * 与 git 自身行为一致：git diff 在文件含 NUL 时会输出 "Binary files ... differ"。
+ */
+const BINARY_SNIFF_BYTES = 8 * 1024;
 
 const NON_RETRYABLE_PATTERNS = [
   /authentication/i,
@@ -128,6 +142,14 @@ export function parseStatusCode(
   return results;
 }
 
+/**
+ * 严格匹配 git 二进制 diff 行：必须是独立一行 + 行首 + 完整格式。
+ * git 输出形如 `Binary files a/foo.png and b/foo.png differ`，这一行不会带
+ * `+`/`-`/` ` 前缀。这样可以避免误伤代码里出现 "Binary files" 字面量的情况
+ * （例如本文件 buildUntrackedDiff 里就有这串字面量）。
+ */
+const BINARY_DIFF_LINE = /^Binary files .+ and .+ differ$/;
+
 export function parseDiffOutput(raw: string, filePath?: string): DiffResultModel {
   const result: DiffResultModel = {
     oldPath: null,
@@ -138,12 +160,14 @@ export function parseDiffOutput(raw: string, filePath?: string): DiffResultModel
     newContent: null,
   };
 
-  if (raw.includes("Binary files")) {
+  const lines = raw.split("\n");
+
+  if (lines.some((line) => BINARY_DIFF_LINE.test(line))) {
     result.binary = true;
+    if (filePath) result.newPath = filePath;
     return result;
   }
 
-  const lines = raw.split("\n");
   let currentHunk: DiffHunk | null = null;
   let oldLineNo = 0;
   let newLineNo = 0;
@@ -201,6 +225,94 @@ export function parseDiffOutput(raw: string, filePath?: string): DiffResultModel
   }
 
   return result;
+}
+
+/**
+ * 为 untracked 文件合成一份 unified diff（/dev/null → 新文件）。
+ * 背景：`git diff -- <untracked>` 与 `git diff --cached -- <untracked>` 对未跟踪文件
+ *      都返回空字符串（untracked 不在 git 的比对范围里），导致前端 DiffViewer 左右两屏空白。
+ *
+ * 行为兜底：
+ *   - 文件不存在 / 读取失败 → 返回空 DiffResultModel（前端会保持"加载 Diff 中…"占位，但至少不会误导）
+ *   - 文件大小 > UNTRACKED_DIFF_MAX_BYTES → 输出 1 行占位说明，不读全文
+ *   - 前 BINARY_SNIFF_BYTES 字节含 \0 → 走 "Binary files differ" 路径，由 parseDiffOutput 标记 binary=true
+ *   - 文本文件 → 把全部内容作为 + 行写入，模仿 git 的 `\ No newline at end of file` 末尾换行处理
+ */
+export async function buildUntrackedDiff(
+  repoPath: string,
+  filePath: string
+): Promise<DiffResultModel> {
+  const abs = path.resolve(repoPath, filePath);
+
+  let stat: Awaited<ReturnType<typeof fs.stat>>;
+  try {
+    stat = await fs.stat(abs);
+  } catch {
+    return parseDiffOutput("", filePath);
+  }
+
+  if (!stat.isFile()) {
+    return parseDiffOutput("", filePath);
+  }
+
+  if (stat.size === 0) {
+    const synthetic = [
+      `diff --git a/${filePath} b/${filePath}`,
+      `new file mode 100644`,
+      `--- /dev/null`,
+      `+++ b/${filePath}`,
+    ].join("\n");
+    return parseDiffOutput(synthetic, filePath);
+  }
+
+  if (stat.size > UNTRACKED_DIFF_MAX_BYTES) {
+    const sizeKB = (stat.size / 1024).toFixed(1);
+    const synthetic = [
+      `diff --git a/${filePath} b/${filePath}`,
+      `new file mode 100644`,
+      `--- /dev/null`,
+      `+++ b/${filePath}`,
+      `@@ -0,0 +1,1 @@`,
+      `+[git-manager] file too large to preview (${sizeKB} KB > 1024 KB); open the file directly`,
+    ].join("\n");
+    return parseDiffOutput(synthetic, filePath);
+  }
+
+  let buf: Buffer;
+  try {
+    buf = await fs.readFile(abs);
+  } catch {
+    return parseDiffOutput("", filePath);
+  }
+
+  const sniffEnd = Math.min(buf.length, BINARY_SNIFF_BYTES);
+  for (let i = 0; i < sniffEnd; i++) {
+    if (buf[i] === 0) {
+      const synthetic = [
+        `diff --git a/${filePath} b/${filePath}`,
+        `new file mode 100644`,
+        `Binary files /dev/null and b/${filePath} differ`,
+      ].join("\n");
+      return parseDiffOutput(synthetic, filePath);
+    }
+  }
+
+  const content = buf.toString("utf8");
+  const endsWithNewline = content.endsWith("\n");
+  const body = endsWithNewline ? content.slice(0, -1) : content;
+  const lines = body.length === 0 ? [] : body.split("\n");
+
+  const synthetic = [
+    `diff --git a/${filePath} b/${filePath}`,
+    `new file mode 100644`,
+    `--- /dev/null`,
+    `+++ b/${filePath}`,
+    `@@ -0,0 +1,${lines.length} @@`,
+    ...lines.map((l) => `+${l}`),
+    ...(endsWithNewline ? [] : [`\\ No newline at end of file`]),
+  ].join("\n");
+
+  return parseDiffOutput(synthetic, filePath);
 }
 
 export function parseRefs(refStr: string, headBranch: string): RefInfo[] {

@@ -8,7 +8,14 @@ import type {
   LogResult,
   ReflogEntry,
 } from "../git-service.js";
-import { getGit, parseDiffOutput, parseNameStatus, parseRefs, LOG_FORMAT } from "./_helpers.js";
+import {
+  buildUntrackedDiff,
+  getGit,
+  parseDiffOutput,
+  parseNameStatus,
+  parseRefs,
+  LOG_FORMAT,
+} from "./_helpers.js";
 
 /**
  * 提交图构建。原 O(N²) 实现使用 `activeLanes.indexOf(...)` 在 1k+ 提交时显著卡顿。
@@ -233,6 +240,11 @@ export const logService = {
     const git = getGit(repoPath);
     const args = staged ? ["diff", "--cached", "--", filePath] : ["diff", "--", filePath];
     const raw = await git.raw(args);
+
+    if (!staged && !raw.trim()) {
+      return buildUntrackedDiff(repoPath, filePath);
+    }
+
     return parseDiffOutput(raw, filePath);
   },
 

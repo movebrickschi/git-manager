@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useReportStore } from "@/stores/reportStore";
 import { useRepoStore } from "@/stores/repoStore";
+import { renderMarkdown } from "@/utils/markdown";
 import type { ReportRangePreset } from "../../../shared/report/types";
 import type { ReportLang, ReportPolishStyle } from "../../../shared/ai/types";
 
@@ -46,6 +47,32 @@ const pickedAuthorEmails = ref<string[]>([]);
 const copyHint = ref<string | null>(null);
 const promptExpanded = ref(false);
 const promptSaveHint = ref<string | null>(null);
+
+type PreviewMode = "markdown" | "preview";
+const VIEW_MODE_KEY = "git-manager.report-view-mode";
+
+function loadInitialViewMode(): PreviewMode {
+  try {
+    const raw = localStorage.getItem(VIEW_MODE_KEY);
+    if (raw === "preview" || raw === "markdown") return raw;
+  } catch {
+    // localStorage 不可用时使用默认值
+  }
+  return "markdown";
+}
+
+const viewMode = ref<PreviewMode>(loadInitialViewMode());
+
+function setViewMode(mode: PreviewMode): void {
+  viewMode.value = mode;
+  try {
+    localStorage.setItem(VIEW_MODE_KEY, mode);
+  } catch {
+    // 忽略写入失败
+  }
+}
+
+const renderedPreviewHtml = computed(() => renderMarkdown(reportStore.previewMarkdown));
 
 async function handleSavePolishConfig() {
   await reportStore.savePolishConfig();
@@ -361,6 +388,32 @@ function currentBranchFor(repoPath: string): string {
           共 <b>{{ reportStore.result?.totalCommits }}</b> 条提交
           / <b>{{ reportStore.result?.groups.length }}</b> 个项目
         </span>
+        <div
+          class="view-mode-group"
+          role="tablist"
+          aria-label="预览模式切换"
+        >
+          <button
+            class="view-mode-btn"
+            :class="{ active: viewMode === 'preview' }"
+            role="tab"
+            :aria-selected="viewMode === 'preview'"
+            title="渲染 Markdown"
+            @click="setViewMode('preview')"
+          >
+            Preview
+          </button>
+          <button
+            class="view-mode-btn"
+            :class="{ active: viewMode === 'markdown' }"
+            role="tab"
+            :aria-selected="viewMode === 'markdown'"
+            title="编辑 Markdown 源码"
+            @click="setViewMode('markdown')"
+          >
+            Markdown
+          </button>
+        </div>
         <div class="spacer"></div>
         <div class="polish-group" title="以下选项仅在点击「AI 润色」时生效">
           <span class="polish-label">✨ 润色为</span>
@@ -429,6 +482,7 @@ function currentBranchFor(repoPath: string): string {
         </div>
       </div>
       <textarea
+        v-show="viewMode === 'markdown'"
         v-model="reportStore.previewMarkdown"
         class="preview-editor"
         spellcheck="false"
@@ -436,6 +490,11 @@ function currentBranchFor(repoPath: string): string {
         autocorrect="off"
         autocapitalize="off"
       ></textarea>
+      <div
+        v-show="viewMode === 'preview'"
+        class="preview-rendered"
+        v-html="renderedPreviewHtml"
+      ></div>
       <div v-if="copyHint" class="copy-toast">{{ copyHint }}</div>
     </section>
 
@@ -801,6 +860,145 @@ function currentBranchFor(repoPath: string): string {
   font-size: 13px;
   line-height: 1.6;
   white-space: pre-wrap;
+}
+
+.view-mode-group {
+  display: inline-flex;
+  margin-left: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.view-mode-btn {
+  font-size: 11px;
+  padding: 3px 10px;
+  background: var(--color-surface);
+  color: var(--color-foreground-muted);
+  border: none;
+  cursor: pointer;
+  border-right: 1px solid var(--color-border);
+  transition: all 120ms ease;
+}
+
+.view-mode-btn:last-child {
+  border-right: none;
+}
+
+.view-mode-btn:hover:not(.active) {
+  background: var(--color-surface-hover);
+  color: var(--color-foreground);
+}
+
+.view-mode-btn.active {
+  background: var(--color-accent, #0066cc);
+  color: #fff;
+}
+
+.preview-rendered {
+  flex: 1;
+  overflow: auto;
+  padding: 14px 18px;
+  background: var(--color-surface);
+  color: var(--color-foreground);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.preview-rendered :deep(h1),
+.preview-rendered :deep(h2),
+.preview-rendered :deep(h3),
+.preview-rendered :deep(h4),
+.preview-rendered :deep(h5),
+.preview-rendered :deep(h6) {
+  margin: 18px 0 8px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.preview-rendered :deep(h1) {
+  font-size: 22px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.preview-rendered :deep(h2) {
+  font-size: 18px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.preview-rendered :deep(h3) {
+  font-size: 16px;
+}
+
+.preview-rendered :deep(h4) {
+  font-size: 14px;
+}
+
+.preview-rendered :deep(p) {
+  margin: 8px 0;
+}
+
+.preview-rendered :deep(ul),
+.preview-rendered :deep(ol) {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.preview-rendered :deep(li) {
+  margin: 2px 0;
+}
+
+.preview-rendered :deep(code) {
+  font-family: ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  padding: 1px 5px;
+  background: var(--color-surface-hover);
+  border-radius: 3px;
+}
+
+.preview-rendered :deep(pre) {
+  margin: 10px 0;
+  padding: 10px 12px;
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.preview-rendered :deep(pre code) {
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.preview-rendered :deep(blockquote) {
+  margin: 8px 0;
+  padding: 6px 12px;
+  border-left: 3px solid var(--color-accent, #0066cc);
+  background: var(--color-surface-hover);
+  color: var(--color-foreground-muted);
+}
+
+.preview-rendered :deep(hr) {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 14px 0;
+}
+
+.preview-rendered :deep(a) {
+  color: var(--color-accent, #0066cc);
+  text-decoration: none;
+}
+
+.preview-rendered :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.preview-rendered :deep(strong) {
+  font-weight: 600;
 }
 
 .copy-toast {

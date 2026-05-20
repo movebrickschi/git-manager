@@ -616,6 +616,20 @@ function handleCopyPath(): void {
   showToast("路径已复制");
 }
 
+/**
+ * 把当前右键文件（单选）或选中集合（多选）加入到与「过滤规则」相同的规则列表。
+ * 沿用 useFilterRules.addPaths：按行去重 + 自动持久化。
+ */
+function handleAddToFilter(): void {
+  if (!contextFile.value) return;
+  const ctxKey = makeKey(contextSection.value, contextFile.value.path);
+  const isMulti = selectedTotal.value > 1 && selectedKeys.value.has(ctxKey);
+  const paths = isMulti
+    ? Array.from(new Set(selectedKeys.value)).map((k) => k.slice(k.indexOf(":") + 1))
+    : [contextFile.value.path];
+  filterRules.addPaths(paths);
+}
+
 function openMergeDialog(filePath: string): void {
   const allConflicted = [...commitStore.stagedFiles, ...commitStore.unstagedFiles]
     .filter((f) => f.status === "conflicted")
@@ -735,6 +749,13 @@ const contextMenuItems = computed<MenuItem[]>(() => {
     items.push({ label: "删除文件…", action: handleDeleteFile });
     items.push({ label: "复制路径", action: handleCopyPath });
   }
+
+  items.push({ separator: true, label: "" });
+  const filterCount = isMulti ? selectedTotal.value : 1;
+  items.push({
+    label: `添加到过滤规则${isMulti ? ` (${filterCount})` : ""}`,
+    action: handleAddToFilter,
+  });
 
   return items;
 });

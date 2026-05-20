@@ -44,5 +44,49 @@ export function useFilterRules(opts: {
       : EXAMPLE_RULES;
   }
 
-  return { visible, draft, hasRules, open, close, save, insertExample };
+  /**
+   * 把选中的文件路径作为新规则追加到当前仓库的过滤规则末尾。
+   * - 自动跳过已存在的同名规则（按行去重）
+   * - 直接调用 filterStore.setRules 落库；不打开 dialog
+   * - 返回实际新增的条数
+   */
+  function addPaths(paths: string[]): number {
+    const repoPath = opts.getRepoPath();
+    if (!repoPath) {
+      opts.onMessage?.("未选中仓库，无法添加过滤规则");
+      return 0;
+    }
+    const incoming = paths.map((p) => p.trim()).filter(Boolean);
+    if (incoming.length === 0) return 0;
+
+    const current = filterStore.getRules(repoPath);
+    const existingLines = new Set(
+      current
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith("#"))
+    );
+
+    const additions: string[] = [];
+    for (const p of incoming) {
+      if (!existingLines.has(p)) {
+        existingLines.add(p);
+        additions.push(p);
+      }
+    }
+
+    if (additions.length === 0) {
+      opts.onMessage?.("所选路径已存在于过滤规则中");
+      return 0;
+    }
+
+    const merged = current
+      ? `${current.replace(/\s+$/, "")}\n${additions.join("\n")}`
+      : additions.join("\n");
+    filterStore.setRules(repoPath, merged);
+    opts.onMessage?.(`已添加 ${additions.length} 条过滤规则`);
+    return additions.length;
+  }
+
+  return { visible, draft, hasRules, open, close, save, insertExample, addPaths };
 }
