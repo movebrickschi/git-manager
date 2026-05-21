@@ -10,11 +10,15 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    include: ["server/**/*.test.ts", "src/**/*.test.ts"],
+    include: [
+      "server/**/*.test.ts",
+      "src/**/*.test.ts",
+      "shared/**/*.test.ts",
+    ],
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
-      include: ["server/**/*.ts", "src/utils/**/*.ts"],
+      include: ["server/**/*.ts", "src/utils/**/*.ts", "shared/**/*.ts"],
       exclude: ["**/*.test.ts", "**/*.d.ts"],
     },
   },

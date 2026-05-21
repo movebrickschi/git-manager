@@ -123,8 +123,44 @@ function rangeTitleZh(rangeISO: { fromISO: string; toISO: string }): string {
 }
 
 /**
+ * 在日报明细中需要被过滤掉的 Git commit trailer token（大小写不敏感）。
+ *
+ * 这些都是「署名 / 审签 / Gerrit 变更 ID / 邮抄」等元数据，
+ * 出现在日报正文里只会污染汇报内容（典型：`Co-authored-by: Cursor <…>`）。
+ *
+ * 列表参考 git interpret-trailers 中的常见 trailer 习惯用法；
+ * `Fixes / Closes / Resolves / Refs` 等「issue 引用」类故意保留，
+ * 因为它们对工作汇报是有信息量的（看得到改了哪个工单）。
+ */
+const SKIPPABLE_TRAILER_TOKENS = new Set<string>([
+  "co-authored-by",
+  "signed-off-by",
+  "reviewed-by",
+  "acked-by",
+  "tested-by",
+  "reported-by",
+  "suggested-by",
+  "helped-by",
+  "cc",
+  "change-id",
+]);
+
+/**
+ * 判断给定行是否是应当从明细中剔除的 Git trailer。
+ *
+ * 规则：行形如 `Token: Value`（冒号后必须有非空内容），
+ * Token 仅由字母 / 数字 / 连字符组成，且其小写形式落在跳过白名单。
+ */
+function isSkippableTrailer(line: string): boolean {
+  const m = line.match(/^([A-Za-z][A-Za-z0-9-]*)\s*:\s*\S/);
+  if (!m) return false;
+  return SKIPPABLE_TRAILER_TOKENS.has(m[1].toLowerCase());
+}
+
+/**
  * 从 commit message 中提取"明细行"——subject 之后的 body 部分，
- * 去掉前后空行、tab、reset，单行去重保序。
+ * 去掉前后空行、tab、reset，单行去重保序；并跳过 Git 标准 trailer
+ * （如 Co-authored-by / Signed-off-by），避免这些元数据混入日报正文。
  */
 function extractDetailLines(message: string): string[] {
   const rawLines = message.split(/\r?\n/);
@@ -136,9 +172,12 @@ function extractDetailLines(message: string): string[] {
   for (const raw of rest) {
     const line = raw.replace(/^[\s\t]+|[\s\t]+$/g, "");
     if (!line) continue;
+    if (isSkippableTrailer(line)) continue;
     // 已有 markdown bullet 前缀的统一剥掉，由调用方再补
     const stripped = line.replace(/^[-*•·]\s+/, "").trim();
     if (!stripped) continue;
+    // bullet 前缀剥掉之后再次检查是否为 trailer（防止「- Co-authored-by: …」绕过）
+    if (isSkippableTrailer(stripped)) continue;
     if (seen.has(stripped)) continue;
     seen.add(stripped);
     out.push(stripped);
