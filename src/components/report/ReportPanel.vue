@@ -903,6 +903,15 @@ function currentBranchFor(repoPath: string): string {
   color: var(--color-foreground);
   font-size: 13px;
   line-height: 1.7;
+  /* 覆盖 #app 全局的 user-select: none，让用户可以在 Preview 中选中复制 */
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+.preview-rendered :deep(*) {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .preview-rendered :deep(h1),
@@ -944,6 +953,27 @@ function currentBranchFor(repoPath: string): string {
 .preview-rendered :deep(ol) {
   margin: 8px 0;
   padding-left: 24px;
+}
+
+/* 嵌套列表更紧凑，并切换到空心圆点以体现层级 */
+.preview-rendered :deep(ul ul),
+.preview-rendered :deep(ol ul),
+.preview-rendered :deep(ul ol),
+.preview-rendered :deep(ol ol) {
+  margin: 2px 0 6px;
+  padding-left: 22px;
+}
+
+.preview-rendered :deep(ul) {
+  list-style: disc outside;
+}
+
+.preview-rendered :deep(ul ul) {
+  list-style: circle outside;
+}
+
+.preview-rendered :deep(ul ul ul) {
+  list-style: square outside;
 }
 
 .preview-rendered :deep(li) {

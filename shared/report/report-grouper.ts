@@ -146,14 +146,20 @@ function extractDetailLines(message: string): string[] {
   return out;
 }
 
-/** 渲染单条 commit：subject 作为 commit 标题块，body 行展开为 bullet。 */
+/**
+ * 渲染单条 commit：
+ * - subject 作为顶级 bullet（`- subject [`scope`]`）
+ * - commit body 的明细行作为缩进 2 空格的子 bullet（`  - detail`）
+ *
+ * 这样 Markdown 源码与 Preview 同时呈现"工作项 + 子明细"层级感，
+ * 与企微 / 钉钉 / GitHub 上的常见周报格式一致。
+ */
 function renderEntryBlockMd(entry: ReportEntry): string[] {
   const scope = entry.scope ? ` \`${entry.scope}\`` : "";
   const lines: string[] = [];
-  lines.push(`#### ${entry.subject}${scope}`);
+  lines.push(`- ${entry.subject}${scope}`);
   const details = extractDetailLines(entry.message);
-  for (const d of details) lines.push(`- ${d}`);
-  lines.push("");
+  for (const d of details) lines.push(`  - ${d}`);
   return lines;
 }
 
@@ -206,6 +212,7 @@ export function renderMarkdown(
         for (const entry of date.entries) {
           lines.push(...renderEntryBlockMd(entry));
         }
+        lines.push("");
       }
     }
   }
