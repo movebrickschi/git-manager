@@ -39,6 +39,9 @@ const showDivergence = ref(false);
 const divergenceBehind = ref(0);
 const divergenceAhead = ref(0);
 
+// Error display
+const pushError = ref("");
+
 // Conflict resolution state
 const showConflictResolver = ref(false);
 const conflictFiles = ref<string[]>([]);
@@ -98,6 +101,7 @@ async function doPush() {
   if (optPushTags.value) options.pushTags = true;
 
   pushing.value = true;
+  pushError.value = "";
   try {
     await commands.push(
       props.repoPath,
@@ -106,12 +110,15 @@ async function doPush() {
       Object.keys(options).length > 0 ? options : undefined
     );
     emit("confirm");
+  } catch (e: unknown) {
+    pushError.value = e instanceof Error ? e.message : String(e);
   } finally {
     pushing.value = false;
   }
 }
 
 async function handlePush() {
+  pushError.value = "";
   if (optForce.value) {
     const ok = window.confirm(
       `⚠ 你勾选了 --force（强制推送）。\n\n` +
@@ -130,7 +137,6 @@ async function handlePush() {
     return;
   }
 
-  // Proactive divergence detection
   pushing.value = true;
   try {
     await commands.fetch(props.repoPath, remoteName.value);
@@ -149,16 +155,18 @@ async function handlePush() {
       return;
     }
 
-    await doPush();
-  } catch (e) {
     pushing.value = false;
-    throw e;
+    await doPush();
+  } catch (e: unknown) {
+    pushing.value = false;
+    pushError.value = e instanceof Error ? e.message : String(e);
   }
 }
 
 async function handleDivergenceRebase() {
   showDivergence.value = false;
   pushing.value = true;
+  pushError.value = "";
   try {
     const result = await commands.pull(props.repoPath, remoteName.value, true);
     if (result.conflicts && result.conflicts.length > 0) {
@@ -168,18 +176,21 @@ async function handleDivergenceRebase() {
     }
     if (!result.success) {
       pushing.value = false;
-      throw new Error(result.message);
+      pushError.value = result.message || "拉取失败";
+      return;
     }
-    await doPush();
-  } catch (e) {
     pushing.value = false;
-    throw e;
+    await doPush();
+  } catch (e: unknown) {
+    pushing.value = false;
+    pushError.value = e instanceof Error ? e.message : String(e);
   }
 }
 
 async function handleDivergenceMerge() {
   showDivergence.value = false;
   pushing.value = true;
+  pushError.value = "";
   try {
     const result = await commands.pull(props.repoPath, remoteName.value, false);
     if (result.conflicts && result.conflicts.length > 0) {
@@ -189,12 +200,14 @@ async function handleDivergenceMerge() {
     }
     if (!result.success) {
       pushing.value = false;
-      throw new Error(result.message);
+      pushError.value = result.message || "拉取失败";
+      return;
     }
-    await doPush();
-  } catch (e) {
     pushing.value = false;
-    throw e;
+    await doPush();
+  } catch (e: unknown) {
+    pushing.value = false;
+    pushError.value = e instanceof Error ? e.message : String(e);
   }
 }
 
@@ -221,15 +234,17 @@ async function onConflictResolved() {
   if (pendingPushAfterResolve.value) {
     pendingPushAfterResolve.value = false;
     pushing.value = true;
+    pushError.value = "";
     try {
       const mergeState = await commands.getMergeState(props.repoPath);
       if (mergeState.state !== "none") {
         await commands.continueOperation(props.repoPath, mergeState.state);
       }
-      await doPush();
-    } catch (e) {
       pushing.value = false;
-      throw e;
+      await doPush();
+    } catch (e: unknown) {
+      pushing.value = false;
+      pushError.value = e instanceof Error ? e.message : String(e);
     }
   }
 }
@@ -264,6 +279,7 @@ watch(
       showDivergence.value = false;
       showConflictResolver.value = false;
       pendingPushAfterResolve.value = false;
+      pushError.value = "";
       loadCommits();
     }
   },
@@ -404,6 +420,17 @@ watch(
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Error display -->
+        <div v-if="pushError" class="push-error">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="15" y1="9" x2="9" y2="15" />
+            <line x1="9" y1="9" x2="15" y2="15" />
+          </svg>
+          <span>{{ pushError }}</span>
+          <button class="push-error-close" @click="pushError = ''">✕</button>
         </div>
 
         <!-- Push options -->
@@ -792,6 +819,42 @@ watch(
 .push-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Error display */
+.push-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: color-mix(in srgb, var(--color-error, #e05252) 12%, var(--color-surface));
+  border-top: 1px solid color-mix(in srgb, var(--color-error, #e05252) 30%, transparent);
+  color: var(--color-error, #e05252);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.push-error span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.push-error-close {
+  background: none;
+  border: none;
+  color: var(--color-error, #e05252);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  opacity: 0.7;
+}
+
+.push-error-close:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--color-error, #e05252) 20%, transparent);
 }
 
 /* Conflict modal */
