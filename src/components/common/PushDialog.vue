@@ -65,16 +65,26 @@ const repoLabel = computed(
   () => props.repoName ?? props.repoPath.split(/[\\/]/).pop() ?? props.repoPath
 );
 
+const isNewBranch = ref(false);
+
 async function loadCommits() {
   if (!props.repoPath) return;
   loading.value = true;
   commits.value = [];
   selectedCommit.value = null;
   commitFiles.value = [];
+  isNewBranch.value = false;
   try {
     commits.value = await commands.getUnpushedCommits(props.repoPath, props.remote, props.branch);
     if (commits.value.length > 0) {
       await selectCommit(commits.value[0]!);
+    } else {
+      const branches = await commands.getBranches(props.repoPath);
+      const current = branches.local.find((b) => b.isHead);
+      if (current && !current.upstream) {
+        isNewBranch.value = true;
+        optSetUpstream.value = true;
+      }
     }
   } finally {
     loading.value = false;
@@ -375,6 +385,9 @@ watch(
             <!-- Commit list -->
             <div class="commit-list-area">
               <div v-if="loading" class="list-empty">加载中...</div>
+              <div v-else-if="commits.length === 0 && isNewBranch" class="list-empty list-info">
+                新分支，将推送到远程并建立上游跟踪
+              </div>
               <div v-else-if="commits.length === 0" class="list-empty">无待推送的提交</div>
               <div
                 v-for="commit in commits"
@@ -459,7 +472,7 @@ watch(
           <button
             class="push-btn primary"
             :class="{ 'push-btn-danger': optForce }"
-            :disabled="pushing || (commits.length === 0 && !optForce && !optForceWithLease)"
+            :disabled="pushing || (commits.length === 0 && !optForce && !optForceWithLease && !optSetUpstream)"
             @click="handlePush"
           >
             <span v-if="pushing">推送中...</span>
@@ -600,6 +613,10 @@ watch(
   padding: 16px 12px;
   font-size: 12px;
   color: var(--color-foreground-muted);
+}
+
+.list-info {
+  color: var(--color-primary, #4a9eff);
 }
 
 .commit-row {
