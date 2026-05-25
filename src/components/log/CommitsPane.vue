@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { useLogStore } from "@/stores/logStore";
 import { useRepoStore } from "@/stores/repoStore";
+import { useBranchStore } from "@/stores/branchStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useRebaseStore } from "@/stores/rebaseStore";
 import Toolbar from "@/components/common/Toolbar.vue";
@@ -15,6 +16,7 @@ import { formatTimestamp } from "@/utils/format";
 
 const logStore = useLogStore();
 const repoStore = useRepoStore();
+const branchStore = useBranchStore();
 const settings = useSettingsStore();
 const rebaseStore = useRebaseStore();
 
@@ -235,6 +237,44 @@ async function handleInteractiveRebase() {
   await rebaseStore.openSequencer(commit.id, `${commit.shortId} ${commit.summary}`);
 }
 
+// ---- New branch from commit ----
+async function handleNewBranchFromCommit() {
+  if (!contextCommit.value || !repoStore.activeRepo) return;
+  const commit = contextCommit.value;
+  const name = window.prompt(
+    `基于 ${commit.shortId} 新建分支，请输入分支名：`,
+    `branch-from-${commit.shortId}`
+  );
+  if (!name) return;
+  try {
+    await branchStore.createBranch(name, commit.id);
+    await branchStore.checkoutBranch(name);
+    await logStore.loadCommits(true);
+    await branchStore.loadBranches();
+    showToast(`已从 ${commit.shortId} 创建并签出分支 '${name}'`);
+  } catch (e: any) {
+    showToast(`创建分支失败：${e.message}`);
+  }
+}
+
+// ---- New tag from commit ----
+async function handleCreateTagFromCommit() {
+  if (!contextCommit.value || !repoStore.activeRepo) return;
+  const commit = contextCommit.value;
+  const name = window.prompt(
+    `在 ${commit.shortId} 创建标签，请输入标签名：`,
+    `tag-${commit.shortId}`
+  );
+  if (!name) return;
+  try {
+    await branchStore.createTag(name, commit.id, "");
+    await branchStore.loadBranches();
+    showToast(`已在 ${commit.shortId} 创建标签 '${name}'`);
+  } catch (e: any) {
+    showToast(`创建标签失败：${e.message}`);
+  }
+}
+
 // ---- Save as Patch ----
 async function handleSaveAsPatch() {
   if (!contextCommit.value || !repoStore.activeRepo) return;
@@ -286,8 +326,8 @@ const contextMenuItems = computed<MenuItem[]>(() => {
     { label: "Cherry-pick", action: handleCherryPick },
     { label: "Checkout Revision", action: handleCheckoutRevision },
     { separator: true, label: "" },
-    { label: "新建分支...", action: () => {} },
-    { label: "新建 Tag...", action: () => {} },
+    { label: "新建分支...", action: handleNewBranchFromCommit },
+    { label: "新建 Tag...", action: handleCreateTagFromCommit },
     { separator: true, label: "" },
     { label: "Save as Patch...", action: handleSaveAsPatch },
     ...(squashableCount.value >= 2

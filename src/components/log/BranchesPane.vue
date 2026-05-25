@@ -15,6 +15,7 @@ const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/Thre
 import PushDialog from "@/components/common/PushDialog.vue";
 import CreateTagDialog from "@/components/common/CreateTagDialog.vue";
 import ReflogDialog from "@/components/common/ReflogDialog.vue";
+import BranchPopup from "@/components/branch/BranchPopup.vue";
 
 function friendlyErr(input: unknown): string {
   if (input == null) return translateGitError("");
@@ -68,6 +69,15 @@ const contextTagName = ref<string | null>(null);
 
 // Reflog 弹窗
 const showReflogDialog = ref(false);
+
+// 新建分支弹窗
+const showNewBranchDialog = ref(false);
+const newBranchFromRef = ref("");
+
+// 重命名分支弹窗
+const showRenameDialog = ref(false);
+const renameOldName = ref("");
+const renameNewName = ref("");
 
 // Submodules
 const showSubmodules = ref(true);
@@ -726,19 +736,22 @@ const repoReady = computed(() => !!repoStore.activeRepo);
 const logTabLabel = computed(() => `日志: ${repoStore.activeRepo?.name ?? "-"}`);
 
 function handleNewBranchFrom(fromBranch: string) {
-  const name = window.prompt(`基于 '${fromBranch}' 新建分支，请输入分支名：`);
-  if (!name) return;
+  newBranchFromRef.value = fromBranch;
+  showNewBranchDialog.value = true;
+}
+
+async function onNewBranchConfirmed(name: string, fromBranch: string) {
+  showNewBranchDialog.value = false;
   actionLoading.value = true;
-  branchStore
-    .createBranch(name, fromBranch)
-    .then(() => branchStore.checkoutBranch(name))
-    .then(() => refreshAfterGitOp())
-    .catch((e: unknown) => {
-      actionError.value = e instanceof Error ? e.message : String(e);
-    })
-    .finally(() => {
-      actionLoading.value = false;
-    });
+  try {
+    await branchStore.createBranch(name, fromBranch);
+    await branchStore.checkoutBranch(name);
+    await refreshAfterGitOp();
+  } catch (e: unknown) {
+    actionError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    actionLoading.value = false;
+  }
 }
 
 async function handleCheckoutAndRebase(branchToCheckout: string, rebaseOnto: string) {
@@ -816,8 +829,16 @@ async function handleSetTracking(branchName: string) {
   }
 }
 
-async function handleRenameBranch(oldName: string) {
-  const newName = window.prompt(`重命名分支 '${oldName}'，请输入新名称：`);
+function handleRenameBranch(oldName: string) {
+  renameOldName.value = oldName;
+  renameNewName.value = oldName;
+  showRenameDialog.value = true;
+}
+
+async function onRenameConfirmed() {
+  const oldName = renameOldName.value;
+  const newName = renameNewName.value.trim();
+  showRenameDialog.value = false;
   if (!newName || newName === oldName) return;
   const path = repoStore.activeRepo?.path;
   if (!path) return;
@@ -1426,6 +1447,46 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
       @changed="refreshAfterGitOp"
     />
 
+    <!-- 从指定分支新建分支弹窗 -->
+    <BranchPopup
+      :visible="showNewBranchDialog"
+      :from-branch="newBranchFromRef"
+      @confirm="onNewBranchConfirmed"
+      @close="showNewBranchDialog = false"
+    />
+
+    <!-- 重命名分支弹窗 -->
+    <Teleport to="body">
+      <div v-if="showRenameDialog" class="rename-overlay" @click.self="showRenameDialog = false">
+        <div class="rename-dialog">
+          <h4>重命名分支</h4>
+          <div class="rename-field">
+            <label>当前名称</label>
+            <input :value="renameOldName" disabled class="rename-input disabled" />
+          </div>
+          <div class="rename-field">
+            <label>新名称</label>
+            <input
+              v-model="renameNewName"
+              class="rename-input"
+              @keydown.enter="onRenameConfirmed"
+              autofocus
+            />
+          </div>
+          <div class="rename-actions">
+            <button class="rename-btn" @click="showRenameDialog = false">取消</button>
+            <button
+              class="rename-btn primary"
+              :disabled="!renameNewName.trim() || renameNewName.trim() === renameOldName"
+              @click="onRenameConfirmed"
+            >
+              确认
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <!-- 推送确认弹框 -->
     <PushDialog
       :visible="showPushDialog"
@@ -1786,5 +1847,87 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
 
 .chevron-open {
   transform: rotate(90deg);
+}
+
+/* ---- Rename dialog ---- */
+.rename-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.rename-dialog {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 20px;
+  min-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.rename-dialog h4 {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.rename-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rename-field label {
+  font-size: 12px;
+  color: var(--color-foreground-muted);
+}
+
+.rename-input {
+  padding: 6px 8px;
+  border-radius: 3px;
+}
+
+.rename-input.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.rename-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.rename-btn {
+  padding: 6px 16px;
+  background: var(--color-surface-hover);
+  color: var(--color-foreground);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.rename-btn:hover {
+  background: var(--color-surface-active);
+}
+
+.rename-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.rename-btn.primary {
+  background: var(--color-primary);
+  color: white;
+}
+
+.rename-btn.primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
 }
 </style>

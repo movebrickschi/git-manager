@@ -1,58 +1,61 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { useBranchStore } from "@/stores/branchStore";
+import { ref, watch, nextTick } from "vue";
 
 const props = defineProps<{
   visible: boolean;
+  fromBranch?: string;
 }>();
 
 const emit = defineEmits<{
   close: [];
+  confirm: [name: string, fromBranch: string];
 }>();
 
-const branchStore = useBranchStore();
 const newBranchName = ref("");
-const startPoint = ref("");
+const inputRef = ref<HTMLInputElement>();
 
-async function createBranch() {
-  if (!newBranchName.value.trim()) return;
-  try {
-    await branchStore.createBranch(
-      newBranchName.value.trim(),
-      startPoint.value.trim() || undefined
-    );
-    newBranchName.value = "";
-    startPoint.value = "";
-    emit("close");
-  } catch (e: any) {
-    console.error("Failed to create branch:", e);
+watch(
+  () => props.visible,
+  (val) => {
+    if (val) {
+      newBranchName.value = "";
+      nextTick(() => inputRef.value?.focus());
+    }
   }
+);
+
+function handleConfirm() {
+  const name = newBranchName.value.trim();
+  if (!name) return;
+  emit("confirm", name, props.fromBranch ?? "HEAD");
 }
 </script>
 
 <template>
-  <div v-if="visible" class="popup-overlay" @click.self="emit('close')">
-    <div class="popup">
-      <h4>新建分支</h4>
-      <div class="field">
-        <label>分支名称</label>
-        <input
-          v-model="newBranchName"
-          placeholder="feature/my-feature"
-          @keydown.enter="createBranch"
-          autofocus
-        />
-      </div>
-      <div class="field">
-        <label>起始点 (可选)</label>
-        <input v-model="startPoint" placeholder="HEAD" />
-      </div>
-      <div class="actions">
-        <button class="btn" @click="emit('close')">取消</button>
-        <button class="btn primary" @click="createBranch">创建</button>
+  <Teleport to="body">
+    <div v-if="visible" class="popup-overlay" @click.self="emit('close')">
+      <div class="popup">
+        <h4>新建分支</h4>
+        <div class="field">
+          <label>基于</label>
+          <input :value="fromBranch ?? 'HEAD'" disabled class="disabled-input" />
+        </div>
+        <div class="field">
+          <label>分支名称</label>
+          <input
+            ref="inputRef"
+            v-model="newBranchName"
+            placeholder="feature/my-feature"
+            @keydown.enter="handleConfirm"
+          />
+        </div>
+        <div class="actions">
+          <button class="btn" @click="emit('close')">取消</button>
+          <button class="btn primary" :disabled="!newBranchName.trim()" @click="handleConfirm">创建</button>
+        </div>
       </div>
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -63,7 +66,7 @@ async function createBranch() {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 2000;
 }
 
 .popup {
@@ -75,6 +78,7 @@ async function createBranch() {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
 .popup h4 {
@@ -98,10 +102,16 @@ async function createBranch() {
   border-radius: 3px;
 }
 
+.disabled-input {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  margin-top: 4px;
 }
 
 .btn {
@@ -115,11 +125,18 @@ async function createBranch() {
 .btn:hover {
   background: var(--color-surface-active);
 }
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .btn.primary {
   background: var(--color-primary);
   color: white;
 }
-.btn.primary:hover {
+
+.btn.primary:hover:not(:disabled) {
   background: var(--color-primary-hover);
 }
 </style>
