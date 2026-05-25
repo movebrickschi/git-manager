@@ -17,6 +17,7 @@ import { contextBridge, ipcRenderer } from "electron";
  */
 const ALLOWED_CHANNELS = new Set<string>([
   "dialog:openDirectory",
+  "titlebar:set-theme",
   "open_repo",
   "get_log",
   "get_commit_detail",

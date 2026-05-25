@@ -115,6 +115,15 @@ app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
+ipcMain.handle("titlebar:set-theme", (_e, isDark: boolean) => {
+  if (!mainWindow) return;
+  mainWindow.setTitleBarOverlay({
+    color: isDark ? "#252526" : "#ffffff",
+    symbolColor: isDark ? "#cccccc" : "#333333",
+    height: 36,
+  });
+});
+
 ipcMain.handle("dialog:openDirectory", async () => {
   if (!mainWindow) return null;
   const result = await dialog.showOpenDialog(mainWindow, {
