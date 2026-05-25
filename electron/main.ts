@@ -47,11 +47,11 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: "Git Manager",
-    backgroundColor: "#252526",
+    backgroundColor: "#1a1b23",
     titleBarStyle: "hidden",
     titleBarOverlay: {
-      color: "#252526",
-      symbolColor: "#cccccc",
+      color: "#22242e",
+      symbolColor: "#d1d5e0",
       height: 36,
     },
     webPreferences: {
@@ -118,8 +118,8 @@ app.on("activate", () => {
 ipcMain.handle("titlebar:set-theme", (_e, isDark: boolean) => {
   if (!mainWindow) return;
   mainWindow.setTitleBarOverlay({
-    color: isDark ? "#252526" : "#ffffff",
-    symbolColor: isDark ? "#cccccc" : "#333333",
+    color: isDark ? "#22242e" : "#ffffff",
+    symbolColor: isDark ? "#d1d5e0" : "#1f2937",
     height: 36,
   });
 });
