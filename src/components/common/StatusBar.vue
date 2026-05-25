@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { useRepoStore } from "@/stores/repoStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAutoFetch } from "@/composables/useAutoFetch";
@@ -7,6 +7,9 @@ import { useAutoFetch } from "@/composables/useAutoFetch";
 const repoStore = useRepoStore();
 const settings = useSettingsStore();
 const { isFetching, lastFetchAt, lastErrors, triggerFetch } = useAutoFetch();
+const showIntervalEditor = ref(false);
+const intervalInput = ref(String(settings.autoFetchIntervalMinutes));
+const intervalInputRef = ref<HTMLInputElement | null>(null);
 
 function toggleAutoFetch() {
   settings.setAutoFetchEnabled(!settings.autoFetchEnabled);
@@ -16,15 +19,18 @@ function manualFetch() {
   if (!isFetching.value) void triggerFetch();
 }
 
-function promptInterval() {
-  const next = prompt(
-    "后台 fetch 间隔（分钟，1-120）",
-    String(settings.autoFetchIntervalMinutes)
-  );
-  if (next === null) return;
-  const n = Number(next);
-  if (Number.isFinite(n) && n >= 1 && n <= 120) {
+async function openIntervalEditor() {
+  intervalInput.value = String(settings.autoFetchIntervalMinutes);
+  showIntervalEditor.value = true;
+  await nextTick();
+  intervalInputRef.value?.select();
+}
+
+function applyInterval() {
+  const n = Number(intervalInput.value);
+  if (Number.isFinite(n)) {
     settings.setAutoFetchIntervalMinutes(n);
+    showIntervalEditor.value = false;
   }
 }
 
@@ -68,31 +74,48 @@ const fetchTitle = computed(() => {
       <span v-else class="status-item">未打开仓库</span>
     </div>
     <div class="status-bar-right">
-      <button
-        class="status-item auto-fetch-toggle"
-        :class="{ active: settings.autoFetchEnabled, busy: isFetching, error: lastErrors.size > 0 }"
-        :title="fetchTitle"
-        @click="toggleAutoFetch"
-        @click.middle.prevent="manualFetch"
-        @contextmenu.prevent="promptInterval"
-      >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          :class="{ spin: isFetching }"
+      <div class="auto-fetch-wrapper">
+        <button
+          class="status-item auto-fetch-toggle"
+          :class="{ active: settings.autoFetchEnabled, busy: isFetching, error: lastErrors.size > 0 }"
+          :title="fetchTitle"
+          @click="toggleAutoFetch"
+          @click.middle.prevent="manualFetch"
+          @contextmenu.prevent="openIntervalEditor"
         >
-          <polyline points="23 4 23 10 17 10" />
-          <polyline points="1 20 1 14 7 14" />
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-        </svg>
-        <span v-if="settings.autoFetchEnabled" class="auto-fetch-min">{{
-          settings.autoFetchIntervalMinutes
-        }}m</span>
-      </button>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            :class="{ spin: isFetching }"
+          >
+            <polyline points="23 4 23 10 17 10" />
+            <polyline points="1 20 1 14 7 14" />
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+          </svg>
+          <span v-if="settings.autoFetchEnabled" class="auto-fetch-min">{{
+            settings.autoFetchIntervalMinutes
+          }}m</span>
+        </button>
+        <div v-if="showIntervalEditor" class="interval-popover" @click.stop>
+          <label>Fetch 间隔（分钟）</label>
+          <div class="interval-row">
+            <input
+              ref="intervalInputRef"
+              v-model="intervalInput"
+              type="number"
+              min="1"
+              max="120"
+              @keydown.enter.prevent="applyInterval"
+              @keydown.esc.prevent="showIntervalEditor = false"
+            />
+            <button @click="applyInterval">确定</button>
+          </div>
+        </div>
+      </div>
       <button class="status-item theme-toggle" @click="settings.toggleTheme" title="切换主题">
         <svg
           v-if="settings.theme === 'dark'"
@@ -180,6 +203,12 @@ const fetchTitle = computed(() => {
   color: var(--color-foreground);
 }
 
+.auto-fetch-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 .auto-fetch-toggle {
   display: flex;
   align-items: center;
@@ -214,6 +243,49 @@ const fetchTitle = computed(() => {
 .auto-fetch-min {
   font-feature-settings: "tnum";
   letter-spacing: 0;
+}
+
+.interval-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 1000;
+  width: 180px;
+  padding: 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  color: var(--color-foreground);
+}
+
+.interval-popover label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--color-foreground-muted);
+  font-size: 12px;
+}
+
+.interval-row {
+  display: flex;
+  gap: 6px;
+}
+
+.interval-row input {
+  min-width: 0;
+  flex: 1;
+  padding: 4px 6px;
+}
+
+.interval-row button {
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: white;
+}
+
+.interval-row button:hover {
+  background: var(--color-primary-hover);
 }
 
 @keyframes auto-fetch-spin {

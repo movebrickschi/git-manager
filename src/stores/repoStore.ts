@@ -19,16 +19,55 @@ const REPO_COLORS = [
   "#cb2431",
   "#188038",
 ];
+const RECENT_REPOS_KEY = "gm.recentRepos";
+const MAX_RECENT_REPOS = 8;
+
+function loadRecentRepos(): string[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RECENT_REPOS_KEY) ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentRepos(paths: string[]) {
+  try {
+    localStorage.setItem(RECENT_REPOS_KEY, JSON.stringify(paths));
+  } catch {
+    /* ignore quota */
+  }
+}
 
 export const useRepoStore = defineStore("repo", () => {
   const repos = ref<RepoInfo[]>([]);
+  const recentRepos = ref<string[]>(loadRecentRepos());
   const activeRepoIndex = ref(0);
 
   const activeRepo = computed(() => repos.value[activeRepoIndex.value] ?? null);
 
+  function rememberRepo(path: string) {
+    recentRepos.value = [
+      path,
+      ...recentRepos.value.filter((p) => p !== path),
+    ].slice(0, MAX_RECENT_REPOS);
+    saveRecentRepos(recentRepos.value);
+  }
+
+  function syncOpenReposToRecent() {
+    const paths = repos.value.map((repo) => repo.path);
+    if (paths.length === 0) return;
+    recentRepos.value = [
+      ...paths,
+      ...recentRepos.value.filter((path) => !paths.includes(path)),
+    ].slice(0, MAX_RECENT_REPOS);
+    saveRecentRepos(recentRepos.value);
+  }
+
   async function openRepo(path: string) {
     const info = await commands.openRepo(path);
-    const existing = repos.value.findIndex((r) => r.path === path);
+    rememberRepo(info.path);
+    const existing = repos.value.findIndex((r) => r.path === info.path);
     if (existing >= 0) {
       activeRepoIndex.value = existing;
       repos.value[existing].currentBranch = info.currentBranch;
@@ -58,10 +97,12 @@ export const useRepoStore = defineStore("repo", () => {
 
   return {
     repos,
+    recentRepos,
     activeRepoIndex,
     activeRepo,
     openRepo,
     closeRepo,
     setActiveRepo,
+    syncOpenReposToRecent,
   };
 });

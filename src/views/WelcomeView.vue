@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useRepoStore } from "@/stores/repoStore";
 import { commands, platform } from "@/utils/commands";
 
 const router = useRouter();
 const repoStore = useRepoStore();
-const recentRepos = ref<string[]>([]);
+const recentRepos = computed(() => repoStore.recentRepos);
 const cloneUrl = ref("");
 const clonePath = ref("");
 const showCloneDialog = ref(false);
@@ -16,6 +16,10 @@ const manualPath = ref("");
 const showManualInput = ref(false);
 const errorMsg = ref("");
 const loading = ref(false);
+
+onMounted(() => {
+  repoStore.syncOpenReposToRecent();
+});
 
 async function openFolder() {
   errorMsg.value = "";
@@ -64,6 +68,10 @@ async function openRecentRepo(path: string) {
   } finally {
     loading.value = false;
   }
+}
+
+function repoName(path: string) {
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
 async function cloneRepo() {
@@ -149,12 +157,16 @@ async function cloneRepo() {
         </button>
       </div>
 
-      <div v-if="recentRepos.length > 0" class="recent-repos">
+      <div class="recent-repos">
         <h3>最近打开</h3>
-        <div
+        <div v-if="recentRepos.length === 0" class="recent-repo-empty">
+          暂无历史，打开仓库后会显示在这里
+        </div>
+        <button
           v-for="repo in recentRepos"
           :key="repo"
           class="recent-repo-item"
+          :disabled="loading"
           @click="openRecentRepo(repo)"
         >
           <svg
@@ -167,8 +179,11 @@ async function cloneRepo() {
           >
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
           </svg>
-          <span>{{ repo }}</span>
-        </div>
+          <span class="recent-repo-text">
+            <span class="recent-repo-name">{{ repoName(repo) }}</span>
+            <span class="recent-repo-path">{{ repo }}</span>
+          </span>
+        </button>
       </div>
     </div>
 
@@ -232,11 +247,13 @@ async function cloneRepo() {
 
 <style scoped>
 .welcome-view {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   height: 100%;
   background: var(--color-background);
+  -webkit-app-region: drag;
 }
 
 .welcome-content {
@@ -271,6 +288,7 @@ async function cloneRepo() {
 }
 
 .action-btn {
+  -webkit-app-region: no-drag;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -300,6 +318,8 @@ async function cloneRepo() {
 
 .recent-repos {
   width: 100%;
+  max-height: 260px;
+  overflow: auto;
 }
 
 .recent-repos h3 {
@@ -309,22 +329,66 @@ async function cloneRepo() {
   margin-bottom: 8px;
 }
 
+.recent-repo-empty {
+  -webkit-app-region: no-drag;
+  padding: 14px 12px;
+  border: 1px dashed var(--color-border);
+  border-radius: 6px;
+  color: var(--color-foreground-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
 .recent-repo-item {
+  -webkit-app-region: no-drag;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 4px;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  background: transparent;
+  border-radius: 6px;
   cursor: pointer;
   color: var(--color-foreground);
   font-size: 13px;
+  text-align: left;
 }
 
 .recent-repo-item:hover {
   background: var(--color-surface-hover);
 }
 
+.recent-repo-item:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.recent-repo-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.recent-repo-name {
+  overflow: hidden;
+  color: var(--color-foreground-bright);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-repo-path {
+  overflow: hidden;
+  color: var(--color-foreground-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dialog-overlay {
+  -webkit-app-region: no-drag;
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
