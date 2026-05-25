@@ -709,12 +709,4 @@ function getStatusClass(status: FileStatus["status"]): string {
   transform: translateX(-50%) translateY(8px);
 }
 
-:deep(.splitpanes__splitter) {
-  background: var(--color-border) !important;
-}
-
-:deep(.splitpanes--vertical > .splitpanes__splitter) {
-  width: 3px !important;
-  min-width: 3px !important;
-}
 </style>

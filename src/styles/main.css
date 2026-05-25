@@ -170,3 +170,46 @@ pre,
 .mono {
   font-family: var(--font-mono);
 }
+
+.splitpanes.default-theme .splitpanes__pane {
+  background-color: transparent;
+}
+
+.splitpanes.default-theme .splitpanes__splitter,
+.default-theme.splitpanes .splitpanes__splitter {
+  background-color: transparent !important;
+  border: none !important;
+  margin: 0 !important;
+  transition: background-color var(--transition-fast);
+}
+
+.splitpanes.default-theme .splitpanes__splitter::before,
+.splitpanes.default-theme .splitpanes__splitter::after,
+.default-theme.splitpanes .splitpanes__splitter::before,
+.default-theme.splitpanes .splitpanes__splitter::after {
+  display: none !important;
+}
+
+.default-theme.splitpanes--vertical > .splitpanes__splitter,
+.default-theme .splitpanes--vertical > .splitpanes__splitter,
+.splitpanes--vertical > .splitpanes__splitter {
+  width: 3px !important;
+  min-width: 3px !important;
+}
+
+.default-theme.splitpanes--horizontal > .splitpanes__splitter,
+.default-theme .splitpanes--horizontal > .splitpanes__splitter,
+.splitpanes--horizontal > .splitpanes__splitter {
+  height: 3px !important;
+  min-height: 3px !important;
+}
+
+.splitpanes.default-theme .splitpanes__splitter:hover,
+.default-theme.splitpanes .splitpanes__splitter:hover {
+  background-color: color-mix(in srgb, var(--color-primary) 35%, transparent) !important;
+}
+
+.splitpanes.default-theme.splitpanes--dragging > .splitpanes__splitter,
+.default-theme.splitpanes .splitpanes--dragging > .splitpanes__splitter {
+  background-color: var(--color-primary) !important;
+}

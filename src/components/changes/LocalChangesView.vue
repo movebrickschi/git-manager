@@ -1327,15 +1327,6 @@ watch(
   font-size: 12px;
 }
 
-:deep(.splitpanes__splitter) {
-  background: var(--color-border) !important;
-}
-
-:deep(.splitpanes--vertical > .splitpanes__splitter) {
-  width: 3px !important;
-  min-width: 3px !important;
-}
-
 /* ---- 模态弹窗（diff / 快速提交 共用） ---- */
 .modal-overlay {
   position: fixed;

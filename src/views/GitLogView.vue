@@ -342,17 +342,4 @@ function closeMerge() {
   color: var(--color-foreground);
 }
 
-:deep(.splitpanes__splitter) {
-  background: var(--color-border) !important;
-}
-
-:deep(.splitpanes--vertical > .splitpanes__splitter) {
-  width: 3px !important;
-  min-width: 3px !important;
-}
-
-:deep(.splitpanes--horizontal > .splitpanes__splitter) {
-  height: 3px !important;
-  min-height: 3px !important;
-}
 </style>
