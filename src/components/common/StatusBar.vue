@@ -135,11 +135,12 @@ const fetchTitle = computed(() => {
   align-items: center;
   justify-content: space-between;
   height: 24px;
-  padding: 0 8px;
-  background: var(--color-primary);
-  color: white;
+  padding: 0 10px;
+  background: var(--color-surface);
+  color: var(--color-foreground-muted);
   font-size: 12px;
   flex-shrink: 0;
+  box-shadow: 0 -1px 0 var(--color-border);
 }
 
 .status-bar-left,
@@ -155,22 +156,28 @@ const fetchTitle = computed(() => {
   gap: 4px;
 }
 
+.branch-indicator {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
 .repo-path {
-  opacity: 0.8;
+  opacity: 0.85;
   font-size: 11px;
 }
 
 .theme-toggle {
   background: none;
-  color: white;
+  color: var(--color-foreground-muted);
   padding: 2px;
   display: flex;
   align-items: center;
-  border-radius: 2px;
+  border-radius: 3px;
 }
 
 .theme-toggle:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--color-surface-hover);
+  color: var(--color-foreground);
 }
 
 .auto-fetch-toggle {
@@ -178,27 +185,30 @@ const fetchTitle = computed(() => {
   align-items: center;
   gap: 3px;
   background: none;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--color-foreground-muted);
   padding: 2px 6px;
-  border-radius: 2px;
+  border-radius: 3px;
   font-size: 11px;
+  opacity: 0.7;
 }
 
 .auto-fetch-toggle:hover {
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
+  background: var(--color-surface-hover);
+  color: var(--color-foreground);
+  opacity: 1;
 }
 
 .auto-fetch-toggle.active {
-  color: white;
+  color: var(--color-primary);
+  opacity: 1;
 }
 
 .auto-fetch-toggle.busy svg {
-  color: #ffe066;
+  color: var(--color-warning);
 }
 
 .auto-fetch-toggle.error svg {
-  color: #ff8080;
+  color: var(--color-error);
 }
 
 .auto-fetch-min {
