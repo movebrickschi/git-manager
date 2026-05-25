@@ -50,6 +50,7 @@ const ALLOWED_CHANNELS = new Set<string>([
   "commit_files",
   "push_remote",
   "get_unpushed_commits",
+  "get_behind_count",
   "pull_remote",
   "fetch_remote",
   "fetch_all",
