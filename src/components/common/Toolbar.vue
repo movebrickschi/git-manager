@@ -18,7 +18,8 @@ defineProps<{
   gap: 2px;
   padding: 4px 8px;
   background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: none;
+  box-shadow: 0 1px 0 var(--color-border);
   flex-shrink: 0;
   min-height: 32px;
 }
