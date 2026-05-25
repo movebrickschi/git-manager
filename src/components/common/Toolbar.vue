@@ -1,11 +1,12 @@
 <script setup lang="ts">
 defineProps<{
   compact?: boolean;
+  draggable?: boolean;
 }>();
 </script>
 
 <template>
-  <div class="toolbar" :class="{ compact }">
+  <div class="toolbar" :class="{ compact, 'app-drag': draggable }">
     <slot />
   </div>
 </template>
@@ -20,6 +21,19 @@ defineProps<{
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
   min-height: 32px;
+}
+
+.toolbar.app-drag {
+  -webkit-app-region: drag;
+}
+
+.toolbar.app-drag :deep(button),
+.toolbar.app-drag :deep(input),
+.toolbar.app-drag :deep(a),
+.toolbar.app-drag :deep(.repo-tab),
+.toolbar.app-drag :deep(.add-repo-btn),
+.toolbar.app-drag :deep(.add-repo-wrapper) {
+  -webkit-app-region: no-drag;
 }
 
 .toolbar.compact {

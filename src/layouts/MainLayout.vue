@@ -179,7 +179,7 @@ onUnmounted(() => {
 <template>
   <div class="main-layout">
     <!-- Top toolbar -->
-    <Toolbar>
+    <Toolbar draggable>
       <div class="repo-tabs">
         <div
           v-for="(repo, i) in repoStore.repos"

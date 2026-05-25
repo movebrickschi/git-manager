@@ -47,6 +47,13 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: "Git Manager",
+    backgroundColor: "#252526",
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+      color: "#252526",
+      symbolColor: "#cccccc",
+      height: 36,
+    },
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
