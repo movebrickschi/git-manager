@@ -22,6 +22,7 @@ import { submoduleService } from "./services/submodule.service.js";
 import { rebaseService } from "./services/rebase.service.js";
 
 export type {
+  AheadBehind,
   BlameInfo,
   BlameLine,
   BranchInfo,

@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { ref, watch, computed } from "vue";
+import { ref, watch, computed, defineAsyncComponent } from "vue";
 import { commands } from "@/utils/commands";
 import type { CommitInfo, FileStatus, PushOptions } from "@/utils/commands";
 import { formatTimestamp } from "@/utils/format";
+import DivergenceDialog from "./DivergenceDialog.vue";
+
+const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/ThreeWayMerge.vue"));
 
 const props = defineProps<{
   visible: boolean;
@@ -30,6 +33,17 @@ const optForceWithLease = ref(false);
 const optForce = ref(false);
 const optSetUpstream = ref(false);
 const optPushTags = ref(false);
+
+// Divergence state
+const showDivergence = ref(false);
+const divergenceBehind = ref(0);
+const divergenceAhead = ref(0);
+
+// Conflict resolution state
+const showConflictResolver = ref(false);
+const conflictFiles = ref<string[]>([]);
+const conflictFirstFile = ref("");
+const pendingPushAfterResolve = ref(false);
 
 // force 与 force-with-lease 互斥
 watch(optForce, (v) => {
@@ -76,19 +90,7 @@ async function selectCommit(commit: CommitInfo) {
   }
 }
 
-async function handlePush() {
-  // --force 需要二次确认（不可撤销，可能覆盖他人提交）
-  if (optForce.value) {
-    const ok = window.confirm(
-      `⚠ 你勾选了 --force（强制推送）。\n\n` +
-        `这会**强行覆盖远端 history**，如果其他协作者已经基于旧 ref 提交，\n` +
-        `他们的工作可能会被你覆盖、不可撤销。\n\n` +
-        `推荐改用 --force-with-lease（远端被他人改动时会安全失败）。\n\n` +
-        `仍要使用 --force 推送 ${branchName.value || "(当前分支)"} 到 ${remoteName.value} ？`
-    );
-    if (!ok) return;
-  }
-
+async function doPush() {
   const options: PushOptions = {};
   if (optForceWithLease.value) options.forceWithLease = true;
   if (optForce.value) options.force = true;
@@ -109,7 +111,135 @@ async function handlePush() {
   }
 }
 
+async function handlePush() {
+  if (optForce.value) {
+    const ok = window.confirm(
+      `⚠ 你勾选了 --force（强制推送）。\n\n` +
+        `这会**强行覆盖远端 history**，如果其他协作者已经基于旧 ref 提交，\n` +
+        `他们的工作可能会被你覆盖、不可撤销。\n\n` +
+        `推荐改用 --force-with-lease（远端被他人改动时会安全失败）。\n\n` +
+        `仍要使用 --force 推送 ${branchName.value || "(当前分支)"} 到 ${remoteName.value} ？`
+    );
+    if (!ok) return;
+    await doPush();
+    return;
+  }
+
+  if (optForceWithLease.value) {
+    await doPush();
+    return;
+  }
+
+  // Proactive divergence detection
+  pushing.value = true;
+  try {
+    await commands.fetch(props.repoPath, remoteName.value);
+    const branch = branchName.value || "HEAD";
+    const { ahead, behind } = await commands.getBehindCount(
+      props.repoPath,
+      remoteName.value,
+      branch
+    );
+
+    if (behind > 0) {
+      divergenceAhead.value = ahead;
+      divergenceBehind.value = behind;
+      pushing.value = false;
+      showDivergence.value = true;
+      return;
+    }
+
+    await doPush();
+  } catch (e) {
+    pushing.value = false;
+    throw e;
+  }
+}
+
+async function handleDivergenceRebase() {
+  showDivergence.value = false;
+  pushing.value = true;
+  try {
+    const result = await commands.pull(props.repoPath, remoteName.value, true);
+    if (result.conflicts && result.conflicts.length > 0) {
+      pushing.value = false;
+      openConflictResolver(result.conflicts);
+      return;
+    }
+    if (!result.success) {
+      pushing.value = false;
+      throw new Error(result.message);
+    }
+    await doPush();
+  } catch (e) {
+    pushing.value = false;
+    throw e;
+  }
+}
+
+async function handleDivergenceMerge() {
+  showDivergence.value = false;
+  pushing.value = true;
+  try {
+    const result = await commands.pull(props.repoPath, remoteName.value, false);
+    if (result.conflicts && result.conflicts.length > 0) {
+      pushing.value = false;
+      openConflictResolver(result.conflicts);
+      return;
+    }
+    if (!result.success) {
+      pushing.value = false;
+      throw new Error(result.message);
+    }
+    await doPush();
+  } catch (e) {
+    pushing.value = false;
+    throw e;
+  }
+}
+
+async function handleDivergenceForce() {
+  showDivergence.value = false;
+  optForceWithLease.value = true;
+  await doPush();
+}
+
+function handleDivergenceCancel() {
+  showDivergence.value = false;
+}
+
+function openConflictResolver(files: string[]) {
+  if (files.length === 0) return;
+  conflictFiles.value = files;
+  conflictFirstFile.value = files[0]!;
+  pendingPushAfterResolve.value = true;
+  showConflictResolver.value = true;
+}
+
+async function onConflictResolved() {
+  showConflictResolver.value = false;
+  if (pendingPushAfterResolve.value) {
+    pendingPushAfterResolve.value = false;
+    pushing.value = true;
+    try {
+      const mergeState = await commands.getMergeState(props.repoPath);
+      if (mergeState.state !== "none") {
+        await commands.continueOperation(props.repoPath, mergeState.state);
+      }
+      await doPush();
+    } catch (e) {
+      pushing.value = false;
+      throw e;
+    }
+  }
+}
+
 function handleClose() {
+  if (showConflictResolver.value) {
+    showConflictResolver.value = false;
+    pendingPushAfterResolve.value = false;
+    return;
+  }
   emit("close");
 }
 
@@ -130,15 +260,57 @@ function fileStatusLabel(status: FileStatus["status"]) {
 watch(
   () => props.visible,
   (v) => {
-    if (v) loadCommits();
+    if (v) {
+      showDivergence.value = false;
+      showConflictResolver.value = false;
+      pendingPushAfterResolve.value = false;
+      loadCommits();
+    }
   },
   { immediate: true }
 );
 </script>
 
 <template>
+  <!-- Divergence Dialog -->
+  <DivergenceDialog
+    :visible="showDivergence"
+    :behind="divergenceBehind"
+    :ahead="divergenceAhead"
+    :remote="remoteName"
+    :branch="branchName"
+    @rebase="handleDivergenceRebase"
+    @merge="handleDivergenceMerge"
+    @force="handleDivergenceForce"
+    @cancel="handleDivergenceCancel"
+  />
+
+  <!-- Conflict Resolver -->
   <Teleport to="body">
-    <div v-if="visible" class="push-overlay" @click.self="handleClose">
+    <div v-if="showConflictResolver" class="conflict-modal-overlay">
+      <div class="conflict-modal-panel">
+        <div class="conflict-modal-header">
+          <span>解决合并冲突后将自动推送</span>
+          <button class="conflict-close-btn" @click="handleClose">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="conflict-modal-body">
+          <ThreeWayMerge
+            :file-path="conflictFirstFile"
+            :conflict-files="conflictFiles"
+            @resolved="onConflictResolved"
+          />
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <Teleport to="body">
+    <div v-if="visible && !showConflictResolver" class="push-overlay" @click.self="handleClose">
       <div class="push-dialog">
         <!-- Header -->
         <div class="push-header">
@@ -620,5 +792,61 @@ watch(
 .push-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Conflict modal */
+.conflict-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 9200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.conflict-modal-panel {
+  width: 95vw;
+  height: 85vh;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.conflict-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-foreground);
+}
+
+.conflict-close-btn {
+  background: none;
+  border: none;
+  color: var(--color-foreground-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+}
+
+.conflict-close-btn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-foreground);
+}
+
+.conflict-modal-body {
+  flex: 1;
+  overflow: hidden;
 }
 </style>

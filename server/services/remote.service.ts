@@ -1,4 +1,4 @@
-import type { CommitInfo, MergeResult, PushOptions, RemoteInfo } from "../git-service.js";
+import type { AheadBehind, CommitInfo, MergeResult, PushOptions, RemoteInfo } from "../git-service.js";
 import {
   errStr,
   getConflictFiles,
@@ -141,6 +141,29 @@ export const remoteService = {
     }
 
     return { success: true, conflicts: [], message: "Pull completed" };
+  },
+
+  async getBehindCount(
+    repoPath: string,
+    remote: string,
+    branch: string
+  ): Promise<AheadBehind> {
+    const git = getGit(repoPath);
+    try {
+      const raw = await git.raw([
+        "rev-list",
+        "--left-right",
+        "--count",
+        `HEAD...${remote}/${branch}`,
+      ]);
+      const [aheadStr, behindStr] = raw.trim().split(/\s+/);
+      return {
+        ahead: parseInt(aheadStr ?? "0", 10) || 0,
+        behind: parseInt(behindStr ?? "0", 10) || 0,
+      };
+    } catch {
+      return { ahead: 0, behind: 0 };
+    }
   },
 
   async fetch(repoPath: string, remote?: string): Promise<void> {

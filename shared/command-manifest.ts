@@ -41,6 +41,7 @@ export const COMMANDS = [
   { method: "commitFiles", ipc: "commit_files", http: "/commit-files", bodyKeys: ["repoPath", "filePaths", "message"] },
   { method: "push", ipc: "push_remote", http: "/push", bodyKeys: ["repoPath", "remote", "branch", "options"] },
   { method: "getUnpushedCommits", ipc: "get_unpushed_commits", http: "/unpushed-commits", bodyKeys: ["repoPath", "remote", "branch"] },
+  { method: "getBehindCount", ipc: "get_behind_count", http: "/behind-count", bodyKeys: ["repoPath", "remote", "branch"] },
   { method: "pull", ipc: "pull_remote", http: "/pull", bodyKeys: ["repoPath", "remote", "rebase"] },
   { method: "fetch", ipc: "fetch_remote", http: "/fetch", bodyKeys: ["repoPath", "remote"] },
   { method: "fetchAll", ipc: "fetch_all", http: "/fetch/all", bodyKeys: ["repoPath"] },

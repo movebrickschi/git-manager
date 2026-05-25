@@ -236,6 +236,11 @@ export interface ConflictFile {
   baseContent: string;
 }
 
+export interface AheadBehind {
+  ahead: number;
+  behind: number;
+}
+
 export interface RemoteInfo {
   name: string;
   url: string;
@@ -322,6 +327,7 @@ export interface Commands {
     branch?: string
   ): Promise<CommitInfo[]>;
   pull(repoPath: string, remote?: string, rebase?: boolean): Promise<MergeResult>;
+  getBehindCount(repoPath: string, remote: string, branch: string): Promise<AheadBehind>;
   fetch(repoPath: string, remote?: string): Promise<void>;
   fetchAll(repoPath: string): Promise<void>;
   fetchBranch(repoPath: string, remote: string, branchName: string): Promise<void>;

@@ -3,6 +3,7 @@ import { createWebAdapter, createWebPlatform } from "./web-adapter";
 import type { Commands, Platform } from "./types";
 
 export type {
+  AheadBehind,
   RepoOpenResult,
   CommitInfo,
   RefInfo,
