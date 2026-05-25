@@ -1236,11 +1236,26 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
       </div>
 
       <!-- Remote branches -->
-      <div v-if="showRemote" class="branch-group">
-        <div class="group-header" @click="showRemote = !showRemote">
-          <span>REMOTE</span>
-          <span class="count">{{ filteredRemote.length }}</span>
+      <div class="branch-group">
+        <div class="group-header">
+          <span class="group-toggle" @click="showRemote = !showRemote">
+            <svg
+              class="chevron"
+              :class="{ 'chevron-open': showRemote }"
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            <span>REMOTE</span>
+            <span class="count">{{ filteredRemote.length }}</span>
+          </span>
         </div>
+        <template v-if="showRemote">
         <template v-for="node in remoteFlatNodes" :key="node.key">
           <!-- Folder (remote name or path prefix) -->
           <div
@@ -1331,12 +1346,25 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
             <span class="branch-name">{{ node.displayName }}</span>
           </div>
         </template>
+        </template>
       </div>
 
       <!-- Tags -->
-      <div v-if="showTags" class="branch-group">
+      <div class="branch-group">
         <div class="group-header tags-header">
           <span class="group-toggle" @click="showTags = !showTags">
+            <svg
+              class="chevron"
+              :class="{ 'chevron-open': showTags }"
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
             <span>TAGS</span>
             <span class="count">{{ filteredTags.length }}</span>
           </span>
@@ -1348,36 +1376,50 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
             +
           </button>
         </div>
-        <div
-          v-for="tag in filteredTags"
-          :key="tag"
-          class="branch-item"
-          @contextmenu.prevent="showTagContextMenu($event, tag)"
-        >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="var(--color-branch-tag)"
-            stroke-width="2"
+        <template v-if="showTags">
+          <div
+            v-for="tag in filteredTags"
+            :key="tag"
+            class="branch-item"
+            @contextmenu.prevent="showTagContextMenu($event, tag)"
           >
-            <path
-              d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"
-            />
-            <line x1="7" y1="7" x2="7.01" y2="7" />
-          </svg>
-          <span class="branch-name">{{ tag }}</span>
-        </div>
-        <div v-if="filteredTags.length === 0" class="tag-empty-hint">
-          暂无标签 · 点 + 创建
-        </div>
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--color-branch-tag)"
+              stroke-width="2"
+            >
+              <path
+                d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"
+              />
+              <line x1="7" y1="7" x2="7.01" y2="7" />
+            </svg>
+            <span class="branch-name">{{ tag }}</span>
+          </div>
+          <div v-if="filteredTags.length === 0" class="tag-empty-hint">
+            暂无标签 · 点 + 创建
+          </div>
+        </template>
       </div>
 
       <!-- Submodules -->
       <div v-if="branchStore.submodules.length > 0 || branchStore.submodulesLoading" class="branch-group">
         <div class="group-header submodules-header">
           <span class="group-toggle" @click="showSubmodules = !showSubmodules">
+            <svg
+              class="chevron"
+              :class="{ 'chevron-open': showSubmodules }"
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
             <span>SUBMODULES</span>
             <span class="count">{{ branchStore.submodules.length }}</span>
           </span>
