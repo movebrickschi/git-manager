@@ -7,6 +7,9 @@
   --color-surface-active: #343849;
   --color-border: rgba(255, 255, 255, 0.05);
   --color-border-strong: rgba(255, 255, 255, 0.1);
+  --color-splitter: rgba(255, 255, 255, 0.05);
+  --color-splitter-hover: color-mix(in srgb, var(--color-primary) 35%, transparent);
+  --color-splitter-active: var(--color-primary);
   --color-foreground: #d1d5e0;
   --color-foreground-muted: #7b82a0;
   --color-foreground-bright: #eef0f6;
@@ -63,6 +66,9 @@
   --color-surface-active: #e3eaf5;
   --color-border: rgba(0, 0, 0, 0.08);
   --color-border-strong: rgba(0, 0, 0, 0.15);
+  --color-splitter: #e5e7eb;
+  --color-splitter-hover: color-mix(in srgb, var(--color-primary) 22%, #e5e7eb);
+  --color-splitter-active: color-mix(in srgb, var(--color-primary) 38%, #e5e7eb);
   --color-foreground: #1f2937;
   --color-foreground-muted: #6b7280;
   --color-foreground-bright: #0f172a;
@@ -177,8 +183,9 @@ pre,
 
 .splitpanes.default-theme .splitpanes__splitter,
 .default-theme.splitpanes .splitpanes__splitter {
-  background-color: transparent !important;
-  border: none !important;
+  position: relative;
+  background-color: var(--color-splitter) !important;
+  border: 0 !important;
   margin: 0 !important;
   transition: background-color var(--transition-fast);
 }
@@ -192,24 +199,27 @@ pre,
 
 .default-theme.splitpanes--vertical > .splitpanes__splitter,
 .default-theme .splitpanes--vertical > .splitpanes__splitter,
+.splitpanes.default-theme.splitpanes--vertical > .splitpanes__splitter,
 .splitpanes--vertical > .splitpanes__splitter {
-  width: 3px !important;
-  min-width: 3px !important;
+  width: 1px !important;
+  min-width: 1px !important;
 }
 
 .default-theme.splitpanes--horizontal > .splitpanes__splitter,
 .default-theme .splitpanes--horizontal > .splitpanes__splitter,
+.splitpanes.default-theme.splitpanes--horizontal > .splitpanes__splitter,
 .splitpanes--horizontal > .splitpanes__splitter {
-  height: 3px !important;
-  min-height: 3px !important;
+  height: 1px !important;
+  min-height: 1px !important;
 }
 
 .splitpanes.default-theme .splitpanes__splitter:hover,
 .default-theme.splitpanes .splitpanes__splitter:hover {
-  background-color: color-mix(in srgb, var(--color-primary) 35%, transparent) !important;
+  background-color: var(--color-splitter-hover) !important;
 }
 
 .splitpanes.default-theme.splitpanes--dragging > .splitpanes__splitter,
+.default-theme.splitpanes.splitpanes--dragging > .splitpanes__splitter,
 .default-theme.splitpanes .splitpanes--dragging > .splitpanes__splitter {
-  background-color: var(--color-primary) !important;
+  background-color: var(--color-splitter-active) !important;
 }
