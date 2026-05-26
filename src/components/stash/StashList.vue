@@ -113,9 +113,9 @@ async function saveStash() {
     saveMessage.value = "";
     showSaveDialog.value = false;
     await loadStashes();
-    showToast("已创建 Stash");
+    showToast("已创建搁置");
   } catch (e: any) {
-    showToast(`Stash 失败: ${e.message}`);
+    showToast(`搁置失败: ${e.message}`);
   }
 }
 
@@ -124,9 +124,9 @@ async function applyStash(stash: StashEntry) {
   try {
     await commands.stashApply(repoStore.activeRepo.path, stash.index);
     await loadStashes();
-    showToast(`已应用 stash@{${stash.index}}`);
+    showToast(`已应用: ${stashDisplayName(stash.message)}`);
   } catch (e: any) {
-    showToast(`Apply 失败: ${e.message}`);
+    showToast(`应用失败: ${e.message}`);
   }
 }
 
@@ -135,9 +135,9 @@ async function popStash(stash: StashEntry) {
   try {
     await commands.stashPop(repoStore.activeRepo.path, stash.index);
     await loadStashes();
-    showToast(`已弹出 stash@{${stash.index}}`);
+    showToast(`已弹出: ${stashDisplayName(stash.message)}`);
   } catch (e: any) {
-    showToast(`Pop 失败: ${e.message}`);
+    showToast(`弹出失败: ${e.message}`);
   }
 }
 
@@ -146,15 +146,15 @@ async function dropStash(stash: StashEntry) {
   try {
     await commands.stashDrop(repoStore.activeRepo.path, stash.index);
     await loadStashes();
-    showToast(`已删除 stash@{${stash.index}}`);
+    showToast(`已删除: ${stashDisplayName(stash.message)}`);
   } catch (e: any) {
-    showToast(`Drop 失败: ${e.message}`);
+    showToast(`删除失败: ${e.message}`);
   }
 }
 
 function openRenameDialog(stash: StashEntry) {
   renameTarget.value = stash;
-  renameMessage.value = stash.message;
+  renameMessage.value = stashDisplayName(stash.message);
   showRenameDialog.value = true;
 }
 
@@ -166,7 +166,7 @@ async function confirmRename() {
     await commands.stashRename(repoStore.activeRepo.path, renameTarget.value.index, newMsg);
     showRenameDialog.value = false;
     await loadStashes();
-    showToast("已重命名 Stash");
+    showToast("已重命名");
   } catch (e: any) {
     showToast(`重命名失败: ${e.message}`);
   }
@@ -175,12 +175,12 @@ async function confirmRename() {
 function showContextMenuForStash(event: MouseEvent, stash: StashEntry) {
   contextStash.value = stash;
   contextMenuItems.value = [
-    { label: "Apply", action: () => applyStash(stash) },
-    { label: "Pop（应用并删除）", action: () => popStash(stash) },
+    { label: "应用", action: () => applyStash(stash) },
+    { label: "弹出（应用并删除）", action: () => popStash(stash) },
     { separator: true, label: "" },
     { label: "重命名", action: () => openRenameDialog(stash) },
     { separator: true, label: "" },
-    { label: "Drop（删除）", action: () => dropStash(stash) },
+    { label: "删除", action: () => dropStash(stash) },
   ];
   contextMenuRef.value?.show(event);
 }
@@ -202,6 +202,11 @@ function getStatusLetter(status: FileStatus["status"]): string {
     default:
       return "?";
   }
+}
+
+function stashDisplayName(message: string): string {
+  const m = message.replace(/^(?:WIP )?[Oo]n [^:]+:\s*/, "");
+  return m || message;
 }
 
 function getStatusClass(status: FileStatus["status"]): string {
@@ -234,7 +239,7 @@ function getStatusClass(status: FileStatus["status"]): string {
             <span class="panel-title">搁置</span>
             <span v-if="stashes.length > 0" class="panel-count">{{ stashes.length }}</span>
             <div class="header-actions">
-              <button class="action-btn" title="新建 Stash" @click="showSaveDialog = true">
+              <button class="action-btn" title="新建搁置" @click="showSaveDialog = true">
                 <svg
                   width="13"
                   height="13"
@@ -265,7 +270,7 @@ function getStatusClass(status: FileStatus["status"]): string {
 
           <div class="stash-list">
             <div v-if="loading" class="state-hint">加载中...</div>
-            <div v-else-if="stashes.length === 0" class="state-hint">无 Stash 记录</div>
+            <div v-else-if="stashes.length === 0" class="state-hint">无搁置记录</div>
             <div
               v-for="stash in stashes"
               :key="stash.index"
@@ -275,14 +280,13 @@ function getStatusClass(status: FileStatus["status"]): string {
               @contextmenu.prevent="showContextMenuForStash($event, stash)"
             >
               <div class="stash-top">
-                <span class="stash-ref">stash@{{ "{" }}{{ stash.index }}{{ "}" }}</span>
+                <span class="stash-name" @dblclick.stop="openRenameDialog(stash)" title="双击重命名">{{ stashDisplayName(stash.message) }}</span>
                 <span class="stash-time">{{ formatTimestamp(stash.time) }}</span>
               </div>
-              <div class="stash-message" @dblclick.stop="openRenameDialog(stash)" title="双击重命名">{{ stash.message }}</div>
               <div class="stash-btn-row">
-                <button class="stash-btn" @click.stop="applyStash(stash)">Apply</button>
-                <button class="stash-btn" @click.stop="popStash(stash)">Pop</button>
-                <button class="stash-btn danger" @click.stop="dropStash(stash)">Drop</button>
+                <button class="stash-btn" @click.stop="applyStash(stash)">应用</button>
+                <button class="stash-btn" @click.stop="popStash(stash)">弹出</button>
+                <button class="stash-btn danger" @click.stop="dropStash(stash)">删除</button>
               </div>
             </div>
           </div>
@@ -294,12 +298,12 @@ function getStatusClass(status: FileStatus["status"]): string {
         <div class="files-panel">
           <div class="panel-header">
             <span class="panel-title">
-              {{ selectedStash ? "stash@{" + selectedStash.index + "} 文件" : "文件" }}
+              {{ selectedStash ? stashDisplayName(selectedStash.message) + " 文件" : "文件" }}
             </span>
             <span v-if="stashFiles.length > 0" class="panel-count">{{ stashFiles.length }}</span>
           </div>
           <div class="file-list">
-            <div v-if="!selectedStash" class="state-hint">选择一个 Stash 查看文件</div>
+            <div v-if="!selectedStash" class="state-hint">选择一个搁置查看文件</div>
             <div v-else-if="filesLoading" class="state-hint">加载中...</div>
             <div v-else-if="stashFiles.length === 0" class="state-hint">无文件</div>
             <div
@@ -339,14 +343,14 @@ function getStatusClass(status: FileStatus["status"]): string {
       <div v-if="showSaveDialog" class="modal-overlay" @click.self="showSaveDialog = false">
         <div class="modal-dialog">
           <div class="modal-header">
-            <span class="modal-title">新建 Stash</span>
+            <span class="modal-title">新建搁置</span>
             <button class="modal-close" @click="showSaveDialog = false">✕</button>
           </div>
           <div class="modal-body">
             <input
               v-model="saveMessage"
               class="modal-input"
-              placeholder="Stash 描述（可选）"
+              placeholder="搁置描述（可选）"
               @keydown.enter="saveStash"
             />
             <label class="modal-checkbox">
@@ -356,7 +360,7 @@ function getStatusClass(status: FileStatus["status"]): string {
           </div>
           <div class="modal-footer">
             <button class="modal-btn" @click="showSaveDialog = false">取消</button>
-            <button class="modal-btn primary" @click="saveStash">Stash</button>
+            <button class="modal-btn primary" @click="saveStash">搁置</button>
           </div>
         </div>
       </div>
@@ -367,14 +371,14 @@ function getStatusClass(status: FileStatus["status"]): string {
       <div v-if="showRenameDialog" class="modal-overlay" @click.self="showRenameDialog = false">
         <div class="modal-dialog">
           <div class="modal-header">
-            <span class="modal-title">重命名 Stash</span>
+            <span class="modal-title">重命名</span>
             <button class="modal-close" @click="showRenameDialog = false">✕</button>
           </div>
           <div class="modal-body">
             <input
               v-model="renameMessage"
               class="modal-input"
-              placeholder="新的 Stash 描述"
+              placeholder="新的描述"
               @keydown.enter="confirmRename"
             />
           </div>
@@ -507,25 +511,21 @@ function getStatusClass(status: FileStatus["status"]): string {
   margin-bottom: 3px;
 }
 
-.stash-ref {
-  font-family: var(--font-mono, monospace);
-  font-size: 11px;
-  color: var(--color-primary);
-  font-weight: 600;
+.stash-name {
+  font-size: 12px;
+  color: var(--color-foreground);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+  cursor: text;
 }
 
 .stash-time {
   font-size: 10px;
   color: var(--color-foreground-muted);
-}
-
-.stash-message {
-  font-size: 12px;
-  color: var(--color-foreground);
-  margin-bottom: 5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .stash-btn-row {

@@ -1,3 +1,5 @@
+import { promises as fs } from "fs";
+import * as path from "path";
 import type { DiffResultModel, FileStatus, StashEntry } from "../git-service.js";
 import { getGit, parseDiffOutput, parseNameStatus } from "./_helpers.js";
 
@@ -43,9 +45,22 @@ export const stashService = {
 
   async stashRename(repoPath: string, index: number, newMessage: string): Promise<void> {
     const git = getGit(repoPath);
-    const commitHash = (await git.raw(["rev-parse", `stash@{${index}}`])).trim();
-    await git.raw(["stash", "drop", `stash@{${index}}`]);
-    await git.raw(["stash", "store", "-m", newMessage, commitHash]);
+    const gitDir = (await git.raw(["rev-parse", "--git-dir"])).trim();
+    const reflogPath = path.resolve(repoPath, gitDir, "logs", "refs", "stash");
+
+    const content = await fs.readFile(reflogPath, "utf-8");
+    const lines = content.trimEnd().split("\n");
+    const lineIndex = lines.length - 1 - index;
+    if (lineIndex < 0 || lineIndex >= lines.length) {
+      throw new Error(`Invalid stash index ${index}`);
+    }
+
+    const tabPos = lines[lineIndex]!.indexOf("\t");
+    if (tabPos === -1) throw new Error("Corrupted stash reflog entry");
+
+    lines[lineIndex] = lines[lineIndex]!.substring(0, tabPos + 1) + newMessage;
+
+    await fs.writeFile(reflogPath, lines.join("\n") + "\n", "utf-8");
   },
 
   async getStashFiles(repoPath: string, index: number): Promise<FileStatus[]> {

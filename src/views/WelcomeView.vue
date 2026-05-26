@@ -107,7 +107,6 @@ async function cloneRepo() {
           <line x1="6" y1="9" x2="6" y2="21" />
         </svg>
         <h1>Git Manager</h1>
-        <p class="welcome-subtitle">IDEA-Style Git 管理工具</p>
       </div>
 
       <div v-if="errorMsg" class="welcome-error">
@@ -172,8 +171,10 @@ async function cloneRepo() {
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
           </svg>
           <span class="recent-repo-text">
-            <span class="recent-repo-name">{{ repoName(repo.path) }}</span>
-            <span v-if="repo.branch" class="recent-repo-branch">[{{ repo.branch }}]</span>
+            <span class="recent-repo-headline">
+              <span class="recent-repo-name">{{ repoName(repo.path) }}</span>
+              <span v-if="repo.branch" class="recent-repo-branch">[{{ repo.branch }}]</span>
+            </span>
             <span class="recent-repo-path">{{ repo.path }}</span>
           </span>
         </button>
@@ -366,6 +367,13 @@ async function cloneRepo() {
   gap: 1px;
 }
 
+.recent-repo-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
 .recent-repo-name {
   overflow: hidden;
   color: var(--color-foreground-bright);
@@ -376,8 +384,8 @@ async function cloneRepo() {
 
 .recent-repo-branch {
   color: var(--color-foreground-muted);
+  font-size: 12px;
   font-weight: 400;
-  margin-left: 4px;
   flex-shrink: 0;
 }
 
