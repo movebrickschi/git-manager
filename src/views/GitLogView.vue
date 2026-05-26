@@ -61,6 +61,7 @@ onMounted(async () => {
 watch(
   () => repoStore.activeRepo?.path,
   async () => {
+    logStore.filter.branch = null;
     if (repoStore.activeRepo) {
       await Promise.all([branchStore.loadBranches(), commitStore.loadStatus()]);
     }
