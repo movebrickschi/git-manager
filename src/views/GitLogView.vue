@@ -50,7 +50,11 @@ const mergeConflictFiles = ref<string[]>([]);
 
 onMounted(() => {
   if (repoStore.activeRepo) {
-    void logStore.loadCommits(true);
+    if (activeTab.value === "log") {
+      void logStore.loadCommits(true);
+    } else {
+      logStore.needsReload = true;
+    }
     void branchStore.loadBranches();
     void commitStore.loadStatus();
   }
@@ -69,6 +73,12 @@ watch(
     }
   }
 );
+
+watch(activeTab, (tab) => {
+  if (tab === "log") {
+    logStore.ensureLoaded();
+  }
+});
 
 function onChangedFilesSource(source: "commit" | "working") {
   changedFilesSource.value = source;

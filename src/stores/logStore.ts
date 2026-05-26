@@ -120,16 +120,27 @@ export const useLogStore = defineStore("log", () => {
     selectedCommitId.value = null;
   }
 
+  const needsReload = ref(false);
+
   watch(
     () => repoStore.activeRepo?.path,
     () => {
-      // 仓库切换时立即 abort 上一仓库未完成的 getLog，避免旧结果污染新仓库 commits
       cancelFetchLog("repo switched");
+      commits.value = [];
+      selectedCommitId.value = null;
+      selectedCommitIds.value = [];
       if (repoStore.activeRepo) {
-        loadCommits(true);
+        needsReload.value = true;
       }
     }
   );
+
+  function ensureLoaded() {
+    if (needsReload.value && repoStore.activeRepo) {
+      needsReload.value = false;
+      loadCommits(true);
+    }
+  }
 
   return {
     commits,
@@ -139,7 +150,9 @@ export const useLogStore = defineStore("log", () => {
     loading,
     hasMore,
     filter,
+    needsReload,
     loadCommits,
+    ensureLoaded,
     cancelFetchLog,
     selectCommit,
     clearSelection,

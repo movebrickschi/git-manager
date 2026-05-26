@@ -72,14 +72,26 @@ export const useBranchStore = defineStore("branch", () => {
 
   const repoStore = useRepoStore();
 
+  const branchCache = new Map<string, { local: BranchInfo[]; remote: BranchInfo[]; tags: string[] }>();
+
   async function loadBranches() {
     if (!repoStore.activeRepo) return;
+    const repoPath = repoStore.activeRepo.path;
+
+    const cached = branchCache.get(repoPath);
+    if (cached) {
+      localBranches.value = cached.local;
+      remoteBranches.value = cached.remote;
+      tags.value = cached.tags;
+    }
+
     loading.value = true;
     try {
-      const result = await commands.getBranches(repoStore.activeRepo.path);
+      const result = await commands.getBranches(repoPath);
       localBranches.value = result.local;
       remoteBranches.value = result.remote;
       tags.value = result.tags;
+      branchCache.set(repoPath, { local: result.local, remote: result.remote, tags: result.tags });
     } finally {
       loading.value = false;
     }
