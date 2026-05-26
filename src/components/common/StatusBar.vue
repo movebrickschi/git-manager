@@ -75,6 +75,7 @@ const fetchTitle = computed(() => {
         <Transition name="progress-capsule">
           <span v-if="ui.progressActive" class="progress-capsule">
             <span class="progress-capsule-fill" />
+            <span class="progress-capsule-spinner" />
             <span class="progress-capsule-label">{{ ui.progressLabel }}</span>
           </span>
         </Transition>
@@ -177,15 +178,17 @@ const fetchTitle = computed(() => {
 .progress-capsule {
   display: inline-flex;
   align-items: center;
+  gap: 5px;
   position: relative;
-  height: 16px;
-  min-width: 80px;
-  padding: 0 8px;
-  border-radius: 8px;
-  background: var(--color-surface-active);
+  height: 14px;
+  padding: 0 8px 0 4px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
   overflow: hidden;
   font-size: 10px;
-  color: var(--color-foreground-muted);
+  color: var(--color-primary);
+  letter-spacing: 0.2px;
 }
 
 .progress-capsule-fill {
@@ -193,22 +196,35 @@ const fetchTitle = computed(() => {
   top: 0;
   bottom: 0;
   left: 0;
-  width: 40%;
-  background: var(--color-primary);
-  opacity: 0.3;
-  border-radius: 8px;
-  animation: capsule-slide 1.4s ease-in-out infinite;
+  width: 35%;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-primary) 25%, transparent), transparent);
+  animation: capsule-slide 1.6s ease-in-out infinite;
+}
+
+.progress-capsule-spinner {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: capsule-spin 0.8s linear infinite;
+  flex-shrink: 0;
 }
 
 .progress-capsule-label {
   position: relative;
   z-index: 1;
   white-space: nowrap;
+  font-weight: 500;
 }
 
 @keyframes capsule-slide {
-  0% { left: -40%; }
+  0% { left: -35%; }
   100% { left: 100%; }
+}
+
+@keyframes capsule-spin {
+  to { transform: rotate(360deg); }
 }
 
 .progress-capsule-enter-active,
