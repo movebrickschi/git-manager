@@ -1,4 +1,5 @@
 import { onMounted, onUnmounted, ref, watch } from "vue";
+import { useBranchStore } from "@/stores/branchStore";
 import { useRepoStore } from "@/stores/repoStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { commands } from "@/utils/commands";
@@ -23,6 +24,7 @@ let timer: ReturnType<typeof setInterval> | null = null;
 let mountCount = 0;
 
 async function tick() {
+  const branchStore = useBranchStore();
   const repoStore = useRepoStore();
   if (document.visibilityState !== "visible") return;
   if (isFetching.value) return;
@@ -37,6 +39,7 @@ async function tick() {
         lastErrors.value.set(repo.path, String(e?.message ?? e));
       }
     }
+    await branchStore.loadBranches();
     lastFetchAt.value = Date.now();
   } finally {
     isFetching.value = false;

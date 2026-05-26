@@ -3,6 +3,7 @@ import { ref } from "vue";
 
 const LS_AUTO_FETCH = "gm.autoFetchEnabled";
 const LS_AUTO_FETCH_INTERVAL = "gm.autoFetchIntervalMinutes";
+const LS_FETCH_ON_OPEN = "gm.fetchOnOpen";
 
 function loadAutoFetchEnabled(): boolean {
   try {
@@ -20,6 +21,14 @@ function loadAutoFetchInterval(): number {
   }
 }
 
+function loadFetchOnOpen(): boolean {
+  try {
+    return localStorage.getItem(LS_FETCH_ON_OPEN) !== "0";
+  } catch {
+    return true;
+  }
+}
+
 export const useSettingsStore = defineStore("settings", () => {
   const theme = ref<"dark" | "light">("dark");
   const diffMode = ref<"side-by-side" | "unified">("side-by-side");
@@ -31,6 +40,7 @@ export const useSettingsStore = defineStore("settings", () => {
   const highlightCurrentBranch = ref(true);
   const autoFetchEnabled = ref(loadAutoFetchEnabled());
   const autoFetchIntervalMinutes = ref(loadAutoFetchInterval());
+  const fetchOnOpen = ref(loadFetchOnOpen());
 
   function toggleTheme() {
     theme.value = theme.value === "dark" ? "light" : "dark";
@@ -55,6 +65,15 @@ export const useSettingsStore = defineStore("settings", () => {
     }
   }
 
+  function setFetchOnOpen(v: boolean) {
+    fetchOnOpen.value = v;
+    try {
+      localStorage.setItem(LS_FETCH_ON_OPEN, v ? "1" : "0");
+    } catch {
+      /* ignore quota */
+    }
+  }
+
   return {
     theme,
     diffMode,
@@ -66,8 +85,10 @@ export const useSettingsStore = defineStore("settings", () => {
     highlightCurrentBranch,
     autoFetchEnabled,
     autoFetchIntervalMinutes,
+    fetchOnOpen,
     toggleTheme,
     setAutoFetchEnabled,
     setAutoFetchIntervalMinutes,
+    setFetchOnOpen,
   };
 });

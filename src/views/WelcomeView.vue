@@ -57,11 +57,11 @@ async function openManualPath() {
   }
 }
 
-async function openRecentRepo(path: string) {
+async function openRecentRepo(repoPath: string) {
   errorMsg.value = "";
   loading.value = true;
   try {
-    await repoStore.openRepo(path);
+    await repoStore.openRepo(repoPath);
     router.push("/repo");
   } catch (e: any) {
     errorMsg.value = e.message || "打开仓库失败";
@@ -164,10 +164,11 @@ async function cloneRepo() {
         </div>
         <button
           v-for="repo in recentRepos"
-          :key="repo"
+          :key="repo.path"
           class="recent-repo-item"
           :disabled="loading"
-          @click="openRecentRepo(repo)"
+          :title="repo.path"
+          @click="openRecentRepo(repo.path)"
         >
           <svg
             width="16"
@@ -180,8 +181,9 @@ async function cloneRepo() {
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
           </svg>
           <span class="recent-repo-text">
-            <span class="recent-repo-name">{{ repoName(repo) }}</span>
-            <span class="recent-repo-path">{{ repo }}</span>
+            <span class="recent-repo-name">{{ repoName(repo.path) }}</span>
+            <span v-if="repo.branch" class="recent-repo-branch">[{{ repo.branch }}]</span>
+            <span class="recent-repo-path">{{ repo.path }}</span>
           </span>
         </button>
       </div>
@@ -377,6 +379,13 @@ async function cloneRepo() {
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.recent-repo-branch {
+  color: var(--color-foreground-muted);
+  font-weight: 400;
+  margin-left: 4px;
+  flex-shrink: 0;
 }
 
 .recent-repo-path {

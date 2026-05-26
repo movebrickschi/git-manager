@@ -122,6 +122,7 @@ ipcMain.handle("titlebar:set-theme", (_e, isDark: boolean) => {
     symbolColor: isDark ? "#d1d5e0" : "#1f2937",
     height: 36,
   });
+  mainWindow.setBackgroundColor(isDark ? "#1a1b23" : "#f8f9fc");
 });
 
 ipcMain.handle("dialog:openDirectory", async () => {

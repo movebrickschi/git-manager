@@ -52,6 +52,61 @@ const repoStore = useRepoStore();
 const showAddMenu = ref(false);
 const addMenuRef = ref<HTMLElement | null>(null);
 
+// 最近打开 · 二级浮层
+const showRecentSubmenu = ref(false);
+let recentSubmenuCloseTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearRecentSubmenuTimer() {
+  if (recentSubmenuCloseTimer) {
+    clearTimeout(recentSubmenuCloseTimer);
+    recentSubmenuCloseTimer = null;
+  }
+}
+
+function openRecentSubmenu() {
+  clearRecentSubmenuTimer();
+  showRecentSubmenu.value = true;
+}
+
+function scheduleCloseRecentSubmenu() {
+  clearRecentSubmenuTimer();
+  recentSubmenuCloseTimer = setTimeout(() => {
+    showRecentSubmenu.value = false;
+  }, 160);
+}
+
+function repoBasename(p: string) {
+  return p.split(/[\\/]/).filter(Boolean).pop() ?? p;
+}
+
+async function openRecentRepo(repoPath: string) {
+  showRecentSubmenu.value = false;
+  showAddMenu.value = false;
+  loading.value = true;
+  try {
+    await repoStore.openRepo(repoPath);
+    router.push("/repo");
+  } catch (e: any) {
+    toastKind.value = "err";
+    showToast(e?.message || `打开仓库失败：${repoPath}`);
+  } finally {
+    loading.value = false;
+  }
+}
+
+function clearRecent() {
+  repoStore.clearRecentRepos();
+  showRecentSubmenu.value = false;
+  showAddMenu.value = false;
+}
+
+watch(showAddMenu, (open) => {
+  if (!open) {
+    clearRecentSubmenuTimer();
+    showRecentSubmenu.value = false;
+  }
+});
+
 // Apply Patch
 const patchFileInput = ref<HTMLInputElement | null>(null);
 const applyPatchBusy = ref(false);
@@ -278,6 +333,100 @@ onUnmounted(() => {
             </svg>
             {{ applyPatchBusy ? "Apply Patch 中..." : "Apply Patch..." }}
           </button>
+
+          <div class="add-menu-divider" />
+
+          <div
+            class="add-menu-submenu-anchor"
+            @mouseenter="openRecentSubmenu"
+            @mouseleave="scheduleCloseRecentSubmenu"
+          >
+            <button
+              class="add-menu-item add-menu-item--has-submenu"
+              :disabled="repoStore.recentRepos.length === 0"
+              :title="
+                repoStore.recentRepos.length === 0 ? '暂无最近打开记录' : '查看最近打开的仓库'
+              "
+              @click.stop="
+                repoStore.recentRepos.length > 0 &&
+                  (showRecentSubmenu = !showRecentSubmenu)
+              "
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <polyline points="12 7 12 12 15 14" />
+              </svg>
+              <span class="add-menu-item-label">最近打开</span>
+              <svg
+                v-if="repoStore.recentRepos.length > 0"
+                class="add-menu-chevron"
+                width="10"
+                height="10"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+              >
+                <polyline points="9 6 15 12 9 18" />
+              </svg>
+            </button>
+
+            <div
+              v-if="showRecentSubmenu && repoStore.recentRepos.length > 0"
+              class="recent-submenu"
+              @mouseenter="openRecentSubmenu"
+              @mouseleave="scheduleCloseRecentSubmenu"
+            >
+              <button
+                v-for="repo in repoStore.recentRepos"
+                :key="repo.path"
+                class="recent-submenu-item"
+                :title="repo.path"
+                @click="openRecentRepo(repo.path)"
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+                  />
+                </svg>
+                <span class="recent-submenu-label">
+                  {{ repoBasename(repo.path) }}
+                  <span v-if="repo.branch" class="recent-submenu-branch">[{{ repo.branch }}]</span>
+                </span>
+              </button>
+              <div class="add-menu-divider" />
+              <button class="recent-submenu-clear" @click="clearRecent">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <polyline points="3 6 5 6 21 6" />
+                  <path
+                    d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+                  />
+                </svg>
+                清空历史
+              </button>
+            </div>
+          </div>
         </div>
       </div>
       <input
@@ -551,6 +700,98 @@ onUnmounted(() => {
 
 .add-menu-item:hover {
   background: var(--color-surface-hover);
+}
+
+.add-menu-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 0;
+}
+
+.add-menu-submenu-anchor {
+  position: relative;
+}
+
+.add-menu-item--has-submenu {
+  justify-content: flex-start;
+}
+
+.add-menu-item-label {
+  flex: 1;
+  text-align: left;
+}
+
+.add-menu-chevron {
+  color: var(--color-foreground-muted);
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+.recent-submenu {
+  position: absolute;
+  top: -4px;
+  left: calc(100% + 2px);
+  min-width: 260px;
+  max-width: 360px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 501;
+}
+
+.recent-submenu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  background: transparent;
+  color: var(--color-foreground);
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: left;
+}
+
+.recent-submenu-item:hover {
+  background: var(--color-surface-hover);
+}
+
+.recent-submenu-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-foreground-bright);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-submenu-branch {
+  color: var(--color-foreground-muted);
+  font-weight: 400;
+  margin-left: 4px;
+}
+
+.recent-submenu-clear {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  background: transparent;
+  color: var(--color-foreground-muted);
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: left;
+}
+
+.recent-submenu-clear:hover {
+  background: color-mix(in srgb, #e06c75 14%, transparent);
+  color: #e06c75;
 }
 
 /* 弹框样式 */
