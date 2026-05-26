@@ -112,7 +112,7 @@ async function handleCherryPick() {
   try {
     const result = await commands.cherryPick(repoStore.activeRepo.path, commit.id);
     if (result.success) {
-      await logStore.loadCommits(true);
+      await Promise.all([logStore.loadCommits(true), branchStore.loadBranches()]);
       showToast(`Cherry-pick 成功：${commit.shortId}`);
     } else {
       showToast(`Cherry-pick 产生冲突，请手动解决：${result.conflicts.join(", ")}`);
@@ -132,7 +132,7 @@ function handleCheckoutRevision() {
     if (!repoStore.activeRepo) return;
     try {
       await commands.checkoutBranch(repoStore.activeRepo.path, commit.id);
-      await logStore.loadCommits(true);
+      await Promise.all([logStore.loadCommits(true), branchStore.loadBranches()]);
       showToast(`已切换到 ${commit.shortId}`);
     } catch (e: any) {
       showToast(`Checkout 失败：${e.message}`);
@@ -152,7 +152,7 @@ function handleRevertCommit() {
     try {
       const result = await commands.revertCommit(repoStore.activeRepo.path, commit.id);
       if (result.success) {
-        await logStore.loadCommits(true);
+        await Promise.all([logStore.loadCommits(true), branchStore.loadBranches()]);
         showToast(`已成功 Revert ${commit.shortId}`);
       } else {
         showToast(`Revert 产生冲突，请手动解决：${result.conflicts.join(", ")}`);
@@ -177,7 +177,7 @@ async function doReset() {
   showResetDialog.value = false;
   try {
     await commands.resetToCommit(repoStore.activeRepo.path, commit.id, resetMode.value);
-    await logStore.loadCommits(true);
+    await Promise.all([logStore.loadCommits(true), branchStore.loadBranches()]);
     showToast(`已 Reset（${resetMode.value}）到 ${commit.shortId}`);
   } catch (e: any) {
     showToast(`Reset 失败：${e.message}`);
@@ -219,7 +219,7 @@ async function handleSquashCommits() {
   try {
     await commands.squashCommits(repoStore.activeRepo.path, count, message);
     logStore.clearSelection();
-    await logStore.loadCommits(true);
+    await Promise.all([logStore.loadCommits(true), branchStore.loadBranches()]);
     showToast(`已合并 ${count} 个 commit`);
   } catch (e: any) {
     showToast(`Squash 失败：${e.message}`);

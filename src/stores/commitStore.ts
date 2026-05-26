@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, watch } from "vue";
 import { useRepoStore } from "./repoStore";
+import { useBranchStore } from "./branchStore";
 import { commands } from "@/utils/commands";
 import type { FileStatus, StatusResult } from "@/utils/commands";
 import { errMsg } from "@/utils/error";
@@ -18,6 +19,7 @@ function isAbortError(e: unknown): boolean {
 }
 
 export const useCommitStore = defineStore("commit", () => {
+  const branchStore = useBranchStore();
   const stagedFiles = ref<FileStatus[]>([]);
   const unstagedFiles = ref<FileStatus[]>([]);
   const untrackedFiles = ref<FileStatus[]>([]);
@@ -150,7 +152,7 @@ export const useCommitStore = defineStore("commit", () => {
     if (messageHistory.value.length > 20) messageHistory.value.pop();
     commitMessage.value = "";
     isAmend.value = false;
-    await loadStatus();
+    await Promise.all([loadStatus(), branchStore.loadBranches()]);
   }
 
   /** 仅提交指定 N 个文件（pathspec），不影响其它 staged 内容；返回新 commit 短 id。 */
@@ -163,7 +165,7 @@ export const useCommitStore = defineStore("commit", () => {
     );
     messageHistory.value.unshift(message.trim());
     if (messageHistory.value.length > 20) messageHistory.value.pop();
-    await loadStatus();
+    await Promise.all([loadStatus(), branchStore.loadBranches()]);
     return head;
   }
 

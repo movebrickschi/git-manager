@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, onMounted, ref, watch } from "vue";
 import { Pane, Splitpanes } from "splitpanes";
 import { onClickOutside } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
+import { useBranchStore } from "@/stores/branchStore";
 import { useCommitStore } from "@/stores/commitStore";
 import { useFilterStore } from "@/stores/filterStore";
 import { useRepoStore } from "@/stores/repoStore";
@@ -32,6 +33,7 @@ const { t } = useI18n();
 
 const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/ThreeWayMerge.vue"));
 
+const branchStore = useBranchStore();
 const commitStore = useCommitStore();
 const repoStore = useRepoStore();
 const filterStore = useFilterStore();
@@ -463,7 +465,7 @@ async function doQuickCommit(): Promise<void> {
         await commands.stageFile(repoStore.activeRepo.path, contextFile.value.path);
       }
       await commands.commit(repoStore.activeRepo.path, msg, false);
-      await commitStore.loadStatus();
+      await Promise.all([commitStore.loadStatus(), branchStore.loadBranches()]);
       showToast("提交成功");
     }
     showCommitDialog.value = false;

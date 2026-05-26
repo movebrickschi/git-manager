@@ -1,6 +1,24 @@
 import type { BranchInfo, BranchesResult, MergeResult } from "../git-service.js";
 import { errStr, getConflictFiles, getGit, parseBranchVerboseLabel } from "./_helpers.js";
 
+async function getLocalBranchTracking(
+  git: ReturnType<typeof getGit>,
+  branchName: string
+): Promise<{ upstream: string | null; aheadBehind: [number, number] | null }> {
+  try {
+    const upstream = (await git.raw(["rev-parse", "--abbrev-ref", `${branchName}@{upstream}`])).trim();
+    if (!upstream) return { upstream: null, aheadBehind: null };
+    const counts = (await git.raw(["rev-list", "--left-right", "--count", `${branchName}...${upstream}`]))
+      .trim()
+      .split(/\s+/);
+    const ahead = Number(counts[0] ?? 0) || 0;
+    const behind = Number(counts[1] ?? 0) || 0;
+    return { upstream, aheadBehind: ahead || behind ? [ahead, behind] : null };
+  } catch {
+    return { upstream: null, aheadBehind: null };
+  }
+}
+
 export const branchService = {
   async getBranches(repoPath: string): Promise<BranchesResult> {
     const git = getGit(repoPath);
@@ -18,11 +36,12 @@ export const branchService = {
             subject: data.label.trim(),
           }
         : parseBranchVerboseLabel(data.label);
+      const tracking = isRemote ? parsed : await getLocalBranchTracking(git, shortName);
       const info: BranchInfo = {
         name: shortName,
         isHead: data.current,
-        upstream: parsed.upstream,
-        aheadBehind: parsed.aheadBehind,
+        upstream: tracking.upstream ?? parsed.upstream,
+        aheadBehind: tracking.aheadBehind ?? parsed.aheadBehind,
         lastCommitId: data.commit,
         lastCommitSummary: parsed.subject,
         lastCommitTime: 0,
