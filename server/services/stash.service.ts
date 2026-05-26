@@ -4,7 +4,7 @@ import { getGit, parseDiffOutput, parseNameStatus } from "./_helpers.js";
 export const stashService = {
   async getStashList(repoPath: string): Promise<StashEntry[]> {
     const git = getGit(repoPath);
-    const raw = await git.raw(["stash", "list", "--format=%H%n%at%n%s"]);
+    const raw = await git.raw(["stash", "list", "--format=%H%n%at%n%gs"]);
     if (!raw.trim()) return [];
     const lines = raw.trim().split("\n");
     const entries: StashEntry[] = [];
