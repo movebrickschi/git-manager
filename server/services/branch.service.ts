@@ -154,7 +154,9 @@ export const branchService = {
     try {
       await git.checkout(name);
     } catch (e: unknown) {
-      await git.raw(["stash", "pop"]).catch(() => {});
+      await git.raw(["stash", "pop", "--index"]).catch(() => {
+        git.raw(["stash", "pop"]).catch(() => {});
+      });
       return {
         success: false,
         conflicts: [],
@@ -162,7 +164,7 @@ export const branchService = {
       };
     }
     try {
-      await git.raw(["stash", "pop"]);
+      await git.raw(["stash", "pop", "--index"]);
       return { success: true, conflicts: [], message: `已切换到 '${name}' 并恢复本地修改` };
     } catch (e: unknown) {
       const conflicts = await getConflictFiles(repoPath);

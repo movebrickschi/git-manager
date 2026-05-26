@@ -99,9 +99,9 @@ export const remoteService = {
       }
       if (autoStashed) {
         try {
-          await git.raw(["stash", "pop"]);
+          await git.raw(["stash", "pop", "--index"]);
         } catch {
-          // pop 失败也无所谓，stash 还在 list 中，下方提示用户
+          try { await git.raw(["stash", "pop"]); } catch { /* stash still in list */ }
         }
       }
       return {
@@ -113,7 +113,7 @@ export const remoteService = {
 
     if (autoStashed) {
       try {
-        await git.raw(["stash", "pop"]);
+        await git.raw(["stash", "pop", "--index"]);
         return {
           success: true,
           conflicts: [],
