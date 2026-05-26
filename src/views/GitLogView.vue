@@ -48,22 +48,24 @@ const showMerge = ref(false);
 const mergeFilePath = ref("");
 const mergeConflictFiles = ref<string[]>([]);
 
-onMounted(async () => {
+onMounted(() => {
   if (repoStore.activeRepo) {
-    await Promise.all([
-      logStore.loadCommits(true),
-      branchStore.loadBranches(),
-      commitStore.loadStatus(),
-    ]);
+    void logStore.loadCommits(true);
+    void branchStore.loadBranches();
+    void commitStore.loadStatus();
   }
 });
 
 watch(
   () => repoStore.activeRepo?.path,
-  async () => {
+  () => {
     logStore.filter.branch = null;
+    selectedFile.value = null;
+    diffResult.value = null;
+    showDiffViewer.value = false;
     if (repoStore.activeRepo) {
-      await Promise.all([branchStore.loadBranches(), commitStore.loadStatus()]);
+      void branchStore.loadBranches();
+      void commitStore.loadStatus();
     }
   }
 );
