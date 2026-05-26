@@ -3,9 +3,11 @@ import { computed, nextTick, ref } from "vue";
 import { useRepoStore } from "@/stores/repoStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAutoFetch } from "@/composables/useAutoFetch";
+import { useUiStore } from "@/stores/uiStore";
 
 const repoStore = useRepoStore();
 const settings = useSettingsStore();
+const ui = useUiStore();
 const { isFetching, lastFetchAt, lastErrors, triggerFetch } = useAutoFetch();
 const showIntervalEditor = ref(false);
 const intervalInput = ref(String(settings.autoFetchIntervalMinutes));
@@ -50,7 +52,8 @@ const fetchTitle = computed(() => {
 </script>
 
 <template>
-  <div class="status-bar">
+  <div class="status-bar-wrapper">
+    <div class="status-bar">
     <div class="status-bar-left">
       <template v-if="repoStore.activeRepo">
         <span class="status-item branch-indicator">
@@ -69,6 +72,12 @@ const fetchTitle = computed(() => {
           </svg>
           {{ repoStore.activeRepo.currentBranch }}
         </span>
+        <Transition name="progress-capsule">
+          <span v-if="ui.progressActive" class="progress-capsule">
+            <span class="progress-capsule-fill" />
+            <span class="progress-capsule-label">{{ ui.progressLabel }}</span>
+          </span>
+        </Transition>
         <span class="status-item repo-path">{{ repoStore.activeRepo.path }}</span>
       </template>
       <span v-else class="status-item">未打开仓库</span>
@@ -150,9 +159,69 @@ const fetchTitle = computed(() => {
       </button>
     </div>
   </div>
+  </div>
+
+  <Teleport to="body">
+    <Transition name="toast">
+      <div v-if="ui.toastVisible" class="global-toast">{{ ui.toastMessage }}</div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
+.status-bar-wrapper {
+  flex-shrink: 0;
+  position: relative;
+}
+
+.progress-capsule {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  height: 16px;
+  min-width: 80px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: var(--color-surface-active);
+  overflow: hidden;
+  font-size: 10px;
+  color: var(--color-foreground-muted);
+}
+
+.progress-capsule-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  background: var(--color-primary);
+  opacity: 0.3;
+  border-radius: 8px;
+  animation: capsule-slide 1.4s ease-in-out infinite;
+}
+
+.progress-capsule-label {
+  position: relative;
+  z-index: 1;
+  white-space: nowrap;
+}
+
+@keyframes capsule-slide {
+  0% { left: -40%; }
+  100% { left: 100%; }
+}
+
+.progress-capsule-enter-active,
+.progress-capsule-leave-active {
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.progress-capsule-enter-from,
+.progress-capsule-leave-to {
+  opacity: 0;
+  transform: scaleX(0.8);
+}
+
 .status-bar {
   display: flex;
   align-items: center;
@@ -164,6 +233,33 @@ const fetchTitle = computed(() => {
   font-size: 12px;
   flex-shrink: 0;
   box-shadow: 0 -1px 0 var(--color-border);
+}
+
+.global-toast {
+  position: fixed;
+  bottom: 36px;
+  right: 16px;
+  background: var(--color-surface-active);
+  border: 1px solid var(--color-border);
+  color: var(--color-foreground);
+  font-size: 12px;
+  padding: 8px 16px;
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  z-index: 9999;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.toast-enter-active,
+.toast-leave-active {
+  transition: opacity 0.25s, transform 0.25s;
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
 }
 
 .status-bar-left,

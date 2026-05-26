@@ -11,6 +11,7 @@ import type { BranchInfo, Submodule } from "@/utils/commands";
 import { commands } from "@/utils/commands";
 import { translateGitError } from "@/utils/git-error";
 import { SHORTCUTS, useKeyboardShortcuts } from "@/utils/keyboard";
+import { useUiStore } from "@/stores/uiStore";
 const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/ThreeWayMerge.vue"));
 import PushDialog from "@/components/common/PushDialog.vue";
 import CreateTagDialog from "@/components/common/CreateTagDialog.vue";
@@ -27,6 +28,7 @@ function friendlyErr(input: unknown): string {
 const branchStore = useBranchStore();
 const logStore = useLogStore();
 const repoStore = useRepoStore();
+const ui = useUiStore();
 
 const props = defineProps<{
   activeTab: "log" | "commit" | "stash" | "report";
@@ -245,6 +247,7 @@ async function handleFetch() {
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
+  ui.startProgress("Fetch 中…");
   try {
     if (selectedSidebarBranch.value?.kind === "remote") {
       const parsed = parseRemoteRef(selectedSidebarBranch.value.name);
@@ -257,10 +260,12 @@ async function handleFetch() {
       await commands.fetchAll(path);
     }
     await refreshAfterGitOp();
+    ui.showToast("Fetch 完成");
   } catch (e: unknown) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
+    ui.stopProgress();
   }
 }
 
@@ -270,6 +275,7 @@ async function handlePull() {
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
+  ui.startProgress("拉取中…");
   try {
     const head = headBranch.value;
     let remote: string | undefined;
@@ -284,11 +290,14 @@ async function handlePull() {
       openConflictDialog(result.conflicts);
     } else if (!result.success) {
       actionError.value = friendlyErr(result.message);
+    } else {
+      ui.showToast("拉取完成，所有文件都处于最新状态");
     }
   } catch (e: unknown) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
+    ui.stopProgress();
   }
 }
 
@@ -338,6 +347,7 @@ async function pullForLocalBranch(branch: BranchInfo) {
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
+  ui.startProgress(`拉取 ${branch.name}…`);
   try {
     if (!branch.isHead) {
       await branchStore.checkoutBranch(branch.name);
@@ -356,11 +366,14 @@ async function pullForLocalBranch(branch: BranchInfo) {
       openConflictDialog(result.conflicts);
     } else if (!result.success) {
       actionError.value = friendlyErr(result.message);
+    } else {
+      ui.showToast(`${branch.name} 已是最新状态`);
     }
   } catch (e: unknown) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
+    ui.stopProgress();
   }
 }
 
@@ -379,6 +392,7 @@ async function updateBranchWithoutCheckout(branch: BranchInfo) {
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
+  ui.startProgress(`更新 ${branch.name}…`);
   try {
     if (branch.isHead) {
       const remote = await resolveDefaultRemote();
@@ -387,6 +401,8 @@ async function updateBranchWithoutCheckout(branch: BranchInfo) {
         openConflictDialog(result.conflicts);
       } else if (!result.success) {
         actionError.value = friendlyErr(result.message);
+      } else {
+        ui.showToast(`${branch.name} 已是最新状态`);
       }
     } else {
       let remote: string | undefined;
@@ -396,12 +412,14 @@ async function updateBranchWithoutCheckout(branch: BranchInfo) {
       }
       if (!remote) remote = await resolveDefaultRemote();
       await commands.fetchBranch(path, remote, branch.name);
+      ui.showToast(`${branch.name} 更新完成`);
     }
     await refreshAfterGitOp();
   } catch (e: unknown) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
+    ui.stopProgress();
   }
 }
 
