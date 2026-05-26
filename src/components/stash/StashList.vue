@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from "vue";
 import { Splitpanes, Pane } from "splitpanes";
+import "splitpanes/dist/splitpanes.css";
 import { useRepoStore } from "@/stores/repoStore";
 import Toolbar from "@/components/common/Toolbar.vue";
 import ToolbarButton from "@/components/common/ToolbarButton.vue";
@@ -231,9 +232,9 @@ function getStatusClass(status: FileStatus["status"]): string {
 
 <template>
   <div class="stash-layout">
-    <Splitpanes class="default-theme" style="height: 100%">
+    <Splitpanes style="height: 100%">
       <!-- 左栏：Stash 列表 -->
-      <Pane :size="28" :min-size="18" :max-size="45">
+      <Pane :size="28">
         <div class="stash-panel">
           <div class="panel-header">
             <span class="panel-title">搁置</span>
@@ -294,7 +295,7 @@ function getStatusClass(status: FileStatus["status"]): string {
       </Pane>
 
       <!-- 中栏：Stash 内的文件列表 -->
-      <Pane :size="25" :min-size="15" :max-size="40">
+      <Pane :size="25">
         <div class="files-panel">
           <div class="panel-header">
             <span class="panel-title">
@@ -323,7 +324,7 @@ function getStatusClass(status: FileStatus["status"]): string {
       </Pane>
 
       <!-- 右栏：Diff 预览 -->
-      <Pane :size="47" :min-size="25">
+      <Pane :size="47">
         <div class="diff-panel">
           <div class="panel-header">
             <span class="panel-title">{{ selectedFile ? selectedFile.path : "Diff" }}</span>
@@ -409,6 +410,7 @@ function getStatusClass(status: FileStatus["status"]): string {
   background: var(--color-surface);
 }
 
+
 /* ---- 公共面板样式 ---- */
 .stash-panel,
 .files-panel,
@@ -417,11 +419,8 @@ function getStatusClass(status: FileStatus["status"]): string {
   display: flex;
   flex-direction: column;
   background: var(--color-surface);
-  border-right: 1px solid var(--color-border);
-}
-
-.diff-panel {
-  border-right: none;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .panel-header {
@@ -432,6 +431,8 @@ function getStatusClass(status: FileStatus["status"]): string {
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
   min-height: 30px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .panel-title {
@@ -494,6 +495,7 @@ function getStatusClass(status: FileStatus["status"]): string {
   padding: 7px 8px;
   border-bottom: 1px solid var(--color-border);
   cursor: pointer;
+  min-width: 0;
 }
 
 .stash-item:hover {
@@ -509,6 +511,7 @@ function getStatusClass(status: FileStatus["status"]): string {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 3px;
+  min-width: 0;
 }
 
 .stash-name {
@@ -759,4 +762,36 @@ function getStatusClass(status: FileStatus["status"]): string {
   transform: translateX(-50%) translateY(8px);
 }
 
+</style>
+
+<style>
+.stash-layout .splitpanes__pane {
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+
+.stash-layout .splitpanes__splitter {
+  width: 6px !important;
+  min-width: 6px !important;
+  background: var(--color-border) !important;
+  cursor: col-resize !important;
+  position: relative !important;
+  z-index: 10 !important;
+  border: none !important;
+}
+
+.stash-layout .splitpanes__splitter::before {
+  content: "" !important;
+  position: absolute !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  left: -8px !important;
+  right: -8px !important;
+  z-index: 1 !important;
+}
+
+.stash-layout .splitpanes__splitter:hover,
+.stash-layout .splitpanes__splitter:active {
+  background: var(--color-primary) !important;
+}
 </style>

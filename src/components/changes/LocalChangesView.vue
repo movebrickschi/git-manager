@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref, watch } from "vue";
 import { Pane, Splitpanes } from "splitpanes";
+import "splitpanes/dist/splitpanes.css";
 import { onClickOutside } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { useBranchStore } from "@/stores/branchStore";
