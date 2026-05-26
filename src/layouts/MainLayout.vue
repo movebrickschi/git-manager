@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
+import OpeningRepositoryOverlay from "@/components/common/OpeningRepositoryOverlay.vue";
 import StatusBar from "@/components/common/StatusBar.vue";
 import Toolbar from "@/components/common/Toolbar.vue";
 import KeyboardShortcutsDialog from "@/components/common/KeyboardShortcutsDialog.vue";
@@ -79,20 +80,6 @@ function repoBasename(p: string) {
   return p.split(/[\\/]/).filter(Boolean).pop() ?? p;
 }
 
-async function openRecentRepo(repoPath: string) {
-  showRecentSubmenu.value = false;
-  showAddMenu.value = false;
-  loading.value = true;
-  try {
-    await repoStore.openRepo(repoPath);
-    router.push("/repo");
-  } catch (e: any) {
-    toastKind.value = "err";
-    showToast(e?.message || `打开仓库失败：${repoPath}`);
-  } finally {
-    loading.value = false;
-  }
-}
 
 function clearRecent() {
   repoStore.clearRecentRepos();
@@ -152,6 +139,7 @@ const showManualInput = ref(false);
 const manualPath = ref("");
 const errorMsg = ref("");
 const loading = ref(false);
+const openingRepoPath = ref("");
 
 // 克隆仓库弹框
 const showCloneDialog = ref(false);
@@ -160,40 +148,53 @@ const clonePath = ref("");
 const cloneLoading = ref(false);
 const cloneError = ref("");
 
+async function openRepoWithFeedback(path: string, errorTarget: "dialog" | "toast" = "toast") {
+  errorMsg.value = "";
+  showRecentSubmenu.value = false;
+  showAddMenu.value = false;
+  loading.value = true;
+  openingRepoPath.value = path;
+  try {
+    await repoStore.openRepo(path);
+    router.push("/repo");
+  } catch (e: any) {
+    const message = e?.message || `打开仓库失败：${path}`;
+    if (errorTarget === "dialog") {
+      errorMsg.value = message;
+    } else {
+      toastKind.value = "err";
+      showToast(message);
+    }
+  } finally {
+    loading.value = false;
+    openingRepoPath.value = "";
+  }
+}
+
+async function openRecentRepo(repoPath: string) {
+  await openRepoWithFeedback(repoPath);
+}
+
 async function openFolder() {
   showAddMenu.value = false;
   errorMsg.value = "";
-  try {
-    if (platform.isElectron) {
-      const selected = await platform.selectDirectory();
-      if (selected) {
-        loading.value = true;
-        await repoStore.openRepo(selected);
-        router.push("/repo");
-      }
-    } else {
-      showManualInput.value = true;
+  if (platform.isElectron) {
+    const selected = await platform.selectDirectory();
+    if (selected) {
+      await openRepoWithFeedback(selected);
     }
-  } catch (e: any) {
-    errorMsg.value = e.message || "打开仓库失败";
-  } finally {
-    loading.value = false;
+  } else {
+    showManualInput.value = true;
   }
 }
 
 async function openManualPath() {
-  if (!manualPath.value.trim()) return;
-  errorMsg.value = "";
-  loading.value = true;
-  try {
-    await repoStore.openRepo(manualPath.value.trim());
+  const path = manualPath.value.trim();
+  if (!path) return;
+  await openRepoWithFeedback(path, "dialog");
+  if (!errorMsg.value) {
     showManualInput.value = false;
     manualPath.value = "";
-    router.push("/repo");
-  } catch (e: any) {
-    errorMsg.value = e.message || "打开仓库失败";
-  } finally {
-    loading.value = false;
   }
 }
 
@@ -208,12 +209,14 @@ async function cloneRepo() {
   cloneError.value = "";
   cloneLoading.value = true;
   try {
-    await commands.cloneRepo(cloneUrl.value.trim(), clonePath.value.trim());
-    await repoStore.openRepo(clonePath.value.trim());
-    showCloneDialog.value = false;
-    cloneUrl.value = "";
-    clonePath.value = "";
-    router.push("/repo");
+    const path = clonePath.value.trim();
+    await commands.cloneRepo(cloneUrl.value.trim(), path);
+    await openRepoWithFeedback(path, "dialog");
+    if (!errorMsg.value) {
+      showCloneDialog.value = false;
+      cloneUrl.value = "";
+      clonePath.value = "";
+    }
   } catch (e: any) {
     cloneError.value = e.message || "克隆失败";
   } finally {
@@ -513,6 +516,7 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+    <OpeningRepositoryOverlay :visible="loading" :repo-name="openingRepoPath" />
     <KeyboardShortcutsDialog v-if="showShortcutsDialog" @close="showShortcutsDialog = false" />
     <CheckoutChoiceDialog
       :visible="branchStore.checkoutDialog.visible"

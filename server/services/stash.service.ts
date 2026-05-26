@@ -41,6 +41,13 @@ export const stashService = {
     await git.raw(["stash", "drop", `stash@{${index}}`]);
   },
 
+  async stashRename(repoPath: string, index: number, newMessage: string): Promise<void> {
+    const git = getGit(repoPath);
+    const commitHash = (await git.raw(["rev-parse", `stash@{${index}}`])).trim();
+    await git.raw(["stash", "drop", `stash@{${index}}`]);
+    await git.raw(["stash", "store", "-m", newMessage, commitHash]);
+  },
+
   async getStashFiles(repoPath: string, index: number): Promise<FileStatus[]> {
     const git = getGit(repoPath);
     const raw = await git.raw(["stash", "show", "--name-status", `stash@{${index}}`]);

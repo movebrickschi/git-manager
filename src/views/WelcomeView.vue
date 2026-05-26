@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import OpeningRepositoryOverlay from "@/components/common/OpeningRepositoryOverlay.vue";
 import { useRepoStore } from "@/stores/repoStore";
 import { commands, platform } from "@/utils/commands";
 
@@ -16,58 +17,51 @@ const manualPath = ref("");
 const showManualInput = ref(false);
 const errorMsg = ref("");
 const loading = ref(false);
+const openingRepoPath = ref("");
 
 onMounted(() => {
   repoStore.syncOpenReposToRecent();
 });
 
-async function openFolder() {
+async function openRepoWithFeedback(path: string) {
   errorMsg.value = "";
+  loading.value = true;
+  openingRepoPath.value = path;
   try {
-    if (platform.isElectron) {
-      const selected = await platform.selectDirectory();
-      if (selected) {
-        loading.value = true;
-        await repoStore.openRepo(selected);
-        router.push("/repo");
-      }
-    } else {
-      showManualInput.value = true;
-    }
+    await repoStore.openRepo(path);
+    router.push("/repo");
   } catch (e: any) {
     errorMsg.value = e.message || "打开仓库失败";
   } finally {
     loading.value = false;
+    openingRepoPath.value = "";
+  }
+}
+
+async function openFolder() {
+  errorMsg.value = "";
+  if (platform.isElectron) {
+    const selected = await platform.selectDirectory();
+    if (selected) {
+      await openRepoWithFeedback(selected);
+    }
+  } else {
+    showManualInput.value = true;
   }
 }
 
 async function openManualPath() {
-  if (!manualPath.value.trim()) return;
-  errorMsg.value = "";
-  loading.value = true;
-  try {
-    await repoStore.openRepo(manualPath.value.trim());
+  const path = manualPath.value.trim();
+  if (!path) return;
+  await openRepoWithFeedback(path);
+  if (!errorMsg.value) {
     showManualInput.value = false;
     manualPath.value = "";
-    router.push("/repo");
-  } catch (e: any) {
-    errorMsg.value = e.message || "打开仓库失败";
-  } finally {
-    loading.value = false;
   }
 }
 
 async function openRecentRepo(repoPath: string) {
-  errorMsg.value = "";
-  loading.value = true;
-  try {
-    await repoStore.openRepo(repoPath);
-    router.push("/repo");
-  } catch (e: any) {
-    errorMsg.value = e.message || "打开仓库失败";
-  } finally {
-    loading.value = false;
-  }
+  await openRepoWithFeedback(repoPath);
 }
 
 function repoName(path: string) {
@@ -79,12 +73,14 @@ async function cloneRepo() {
   cloneError.value = "";
   cloneLoading.value = true;
   try {
-    await commands.cloneRepo(cloneUrl.value.trim(), clonePath.value.trim());
-    await repoStore.openRepo(clonePath.value.trim());
-    showCloneDialog.value = false;
-    cloneUrl.value = "";
-    clonePath.value = "";
-    router.push("/repo");
+    const path = clonePath.value.trim();
+    await commands.cloneRepo(cloneUrl.value.trim(), path);
+    await openRepoWithFeedback(path);
+    if (!errorMsg.value) {
+      showCloneDialog.value = false;
+      cloneUrl.value = "";
+      clonePath.value = "";
+    }
   } catch (e: any) {
     cloneError.value = e.message || "克隆失败";
   } finally {
@@ -118,11 +114,6 @@ async function cloneRepo() {
         <span class="welcome-error__icon">⚠</span>
         <span class="welcome-error__text">{{ errorMsg }}</span>
         <button class="welcome-error__close" @click="errorMsg = ''">✕</button>
-      </div>
-
-      <div v-if="loading" class="welcome-loading">
-        <span class="welcome-loading__spinner"></span>
-        <span>打开仓库中…</span>
       </div>
 
       <div class="welcome-actions">
@@ -188,6 +179,8 @@ async function cloneRepo() {
         </button>
       </div>
     </div>
+
+    <OpeningRepositoryOverlay :visible="loading" :repo-name="openingRepoPath" />
 
     <!-- Manual path dialog (Web mode) -->
     <div v-if="showManualInput" class="dialog-overlay" @click.self="showManualInput = false">

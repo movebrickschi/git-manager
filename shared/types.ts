@@ -337,6 +337,7 @@ export interface Commands {
   stashApply(repoPath: string, index: number): Promise<void>;
   stashPop(repoPath: string, index: number): Promise<void>;
   stashDrop(repoPath: string, index: number): Promise<void>;
+  stashRename(repoPath: string, index: number, newMessage: string): Promise<void>;
   getStashFiles(repoPath: string, index: number): Promise<FileStatus[]>;
   getStashFileDiff(
     repoPath: string,

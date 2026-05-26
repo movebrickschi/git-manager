@@ -15,6 +15,8 @@ export default {
     delete: "删除",
     save: "保存",
     loading: "加载中...",
+    opening_repo: "正在打开仓库…",
+    opening_repo_hint: "正在读取仓库信息，请稍候",
     error: "错误",
     success: "成功",
     retry: "重试",

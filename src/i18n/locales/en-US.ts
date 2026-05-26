@@ -6,6 +6,8 @@ export default {
     delete: "Delete",
     save: "Save",
     loading: "Loading...",
+    opening_repo: "Opening repository…",
+    opening_repo_hint: "Reading repository information, please wait",
     error: "Error",
     success: "Success",
     retry: "Retry",

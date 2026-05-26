@@ -28,6 +28,10 @@ const showSaveDialog = ref(false);
 const saveMessage = ref("");
 const includeUntracked = ref(true);
 
+const showRenameDialog = ref(false);
+const renameMessage = ref("");
+const renameTarget = ref<StashEntry | null>(null);
+
 const contextMenuRef = ref<InstanceType<typeof ContextMenu>>();
 const contextStash = ref<StashEntry | null>(null);
 const contextMenuItems = ref<MenuItem[]>([]);
@@ -148,11 +152,33 @@ async function dropStash(stash: StashEntry) {
   }
 }
 
+function openRenameDialog(stash: StashEntry) {
+  renameTarget.value = stash;
+  renameMessage.value = stash.message;
+  showRenameDialog.value = true;
+}
+
+async function confirmRename() {
+  if (!repoStore.activeRepo || !renameTarget.value) return;
+  const newMsg = renameMessage.value.trim();
+  if (!newMsg) return;
+  try {
+    await commands.stashRename(repoStore.activeRepo.path, renameTarget.value.index, newMsg);
+    showRenameDialog.value = false;
+    await loadStashes();
+    showToast("已重命名 Stash");
+  } catch (e: any) {
+    showToast(`重命名失败: ${e.message}`);
+  }
+}
+
 function showContextMenuForStash(event: MouseEvent, stash: StashEntry) {
   contextStash.value = stash;
   contextMenuItems.value = [
     { label: "Apply", action: () => applyStash(stash) },
     { label: "Pop（应用并删除）", action: () => popStash(stash) },
+    { separator: true, label: "" },
+    { label: "重命名", action: () => openRenameDialog(stash) },
     { separator: true, label: "" },
     { label: "Drop（删除）", action: () => dropStash(stash) },
   ];
@@ -252,7 +278,7 @@ function getStatusClass(status: FileStatus["status"]): string {
                 <span class="stash-ref">stash@{{ "{" }}{{ stash.index }}{{ "}" }}</span>
                 <span class="stash-time">{{ formatTimestamp(stash.time) }}</span>
               </div>
-              <div class="stash-message">{{ stash.message }}</div>
+              <div class="stash-message" @dblclick.stop="openRenameDialog(stash)" title="双击重命名">{{ stash.message }}</div>
               <div class="stash-btn-row">
                 <button class="stash-btn" @click.stop="applyStash(stash)">Apply</button>
                 <button class="stash-btn" @click.stop="popStash(stash)">Pop</button>
@@ -331,6 +357,30 @@ function getStatusClass(status: FileStatus["status"]): string {
           <div class="modal-footer">
             <button class="modal-btn" @click="showSaveDialog = false">取消</button>
             <button class="modal-btn primary" @click="saveStash">Stash</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 重命名 Stash 对话框 -->
+    <Teleport to="body">
+      <div v-if="showRenameDialog" class="modal-overlay" @click.self="showRenameDialog = false">
+        <div class="modal-dialog">
+          <div class="modal-header">
+            <span class="modal-title">重命名 Stash</span>
+            <button class="modal-close" @click="showRenameDialog = false">✕</button>
+          </div>
+          <div class="modal-body">
+            <input
+              v-model="renameMessage"
+              class="modal-input"
+              placeholder="新的 Stash 描述"
+              @keydown.enter="confirmRename"
+            />
+          </div>
+          <div class="modal-footer">
+            <button class="modal-btn" @click="showRenameDialog = false">取消</button>
+            <button class="modal-btn primary" @click="confirmRename" :disabled="!renameMessage.trim()">确定</button>
           </div>
         </div>
       </div>

@@ -1,0 +1,8 @@
+[mcp_servers.skills-mcp]
+args = [
+    "-y",
+    "skills-mcp",
+    "-s",
+    'C:\Users\Administrator\.cursor\skills',
+]
+command = "npx"

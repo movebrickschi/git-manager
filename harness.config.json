@@ -1,0 +1,51 @@
+{
+  "version": "1.0",
+  "project": {
+    "name": "git-manager",
+    "type": "frontend-spa",
+    "stack": "node-typescript",
+    "mode": "solo",
+    "maturity_target": "L1"
+  },
+  "modules": {
+    "people": {
+      "branch_strategy": "trunk",
+      "pr_max_lines": 400
+    },
+    "process": {
+      "gate_review_enabled": false,
+      "emergency_channel_enabled": true
+    },
+    "quality": {
+      "coverage_baseline": 0,
+      "local_check_max_seconds": 5
+    },
+    "release": {
+      "semver": false,
+      "changelog": false
+    },
+    "security": {
+      "secret_scan": true,
+      "sca_on_pr": false
+    },
+    "knowledge": {
+      "feature_board": true,
+      "adr_required_for": [
+        "架构变更"
+      ]
+    }
+  },
+  "ai_agent": {
+    "enabled": true,
+    "auto_commit_max_lines": 50,
+    "auto_change_files_limit": 1,
+    "require_human_review_for": [
+      "api_change",
+      "db_migration",
+      "security",
+      "secret"
+    ],
+    "trace_required": true
+  },
+  "$schema": "harness://config/schema"
+}
