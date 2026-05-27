@@ -243,10 +243,28 @@ function filterFiles(files: FileStatus[]): { visible: FileStatus[]; hidden: numb
   return { visible, hidden };
 }
 
+const conflictedFiles = computed<FileStatus[]>(() => {
+  const all = [...commitStore.stagedFiles, ...commitStore.unstagedFiles];
+  const seen = new Set<string>();
+  const result: FileStatus[] = [];
+  for (const f of all) {
+    if (f.status !== "conflicted") continue;
+    if (seen.has(f.path)) continue;
+    seen.add(f.path);
+    result.push(f);
+  }
+  return result;
+});
+
+const conflictedPathSet = computed(() => new Set(conflictedFiles.value.map((f) => f.path)));
+
 const sections = computed<SectionData[]>(() => {
+  const excludeConflicted = (files: FileStatus[]) =>
+    files.filter((f) => !conflictedPathSet.value.has(f.path));
+
   const raw = [
-    { key: "staged" as const, title: "已暂存", files: commitStore.stagedFiles },
-    { key: "unstaged" as const, title: "未暂存", files: commitStore.unstagedFiles },
+    { key: "staged" as const, title: "已暂存", files: excludeConflicted(commitStore.stagedFiles) },
+    { key: "unstaged" as const, title: "未暂存", files: excludeConflicted(commitStore.unstagedFiles) },
     { key: "untracked" as const, title: "未跟踪", files: commitStore.untrackedFiles },
   ];
   return raw.map((s) => {
@@ -255,7 +273,10 @@ const sections = computed<SectionData[]>(() => {
   });
 });
 
-const totalCount = computed(() => sections.value.reduce((sum, s) => sum + s.files.length, 0));
+const totalCount = computed(
+  () =>
+    sections.value.reduce((sum, s) => sum + s.files.length, 0) + conflictedFiles.value.length
+);
 const totalHiddenCount = computed(() =>
   sections.value.reduce((sum, s) => sum + s.hiddenCount, 0)
 );
@@ -808,12 +829,27 @@ onMounted(async () => {
 watch(
   () => repoStore.activeRepo?.path,
   async () => {
-    if (!repoStore.activeRepo) return;
-    loading.value = true;
     errorMessage.value = null;
     selectedFile.value = null;
     diffResult.value = null;
+    quickCommitMessage.value = "";
+    quickCommitPaths.value = null;
+    quickCommitLoading.value = false;
+    showCommitDialog.value = false;
+    showDiffDialog.value = false;
+    diffDialogResult.value = null;
+    diffDialogFilePath.value = "";
+    diffDialogLoading.value = false;
+    showPushDialog.value = false;
+    showMergeDialog.value = false;
+    mergeFilePath.value = "";
+    mergeConflictFiles.value = [];
+    showAiMenu.value = false;
+    showAiSettings.value = false;
+    showAiOverwriteConfirm.value = false;
     clearSelection();
+    if (!repoStore.activeRepo) return;
+    loading.value = true;
     try {
       await commitStore.loadStatus();
       await refreshMergeState();
@@ -858,6 +894,40 @@ watch(
             <div v-else-if="loading" class="state-hint">加载中...</div>
             <div v-else-if="totalCount === 0" class="state-hint">工作区无变更</div>
             <template v-else>
+              <div v-if="conflictedFiles.length > 0" class="conflict-section">
+                <div class="conflict-header">
+                  <span class="conflict-icon">⚠</span>
+                  <span class="conflict-title">合并冲突</span>
+                  <span class="conflict-count">{{ conflictedFiles.length }}</span>
+                  <button
+                    type="button"
+                    class="conflict-resolve-btn"
+                    title="打开三路合并编辑器解决全部冲突文件"
+                    @click="openMergeDialog(conflictedFiles[0]!.path)"
+                  >
+                    解决
+                  </button>
+                </div>
+                <div
+                  v-for="file in conflictedFiles"
+                  :key="'conflict:' + file.path"
+                  class="conflict-file-item"
+                  :title="`点击解决 ${file.path} 的合并冲突`"
+                  @click="openMergeDialog(file.path)"
+                  @contextmenu.prevent="
+                    onContextMenu($event, file, {
+                      key: 'unstaged',
+                      title: '合并冲突',
+                      files: conflictedFiles,
+                      hiddenCount: 0,
+                    })
+                  "
+                >
+                  <span class="conflict-file-marker">!</span>
+                  <span class="conflict-file-path">{{ file.path }}</span>
+                  <span class="conflict-file-action">解决</span>
+                </div>
+              </div>
               <FileSection
                 v-for="section in sections"
                 :key="section.key"
@@ -875,21 +945,19 @@ watch(
             </template>
           </div>
 
-          <div
-            class="commit-resize-handle"
-            :class="{ active: isResizingCommit }"
-            role="separator"
-            aria-orientation="horizontal"
-            :aria-valuenow="commitTextareaHeight"
-            :aria-valuemin="COMMIT_HEIGHT_MIN"
-            :aria-valuemax="COMMIT_HEIGHT_MAX"
-            title="拖动调整提交框高度 · 双击重置"
-            @mousedown="startResizeCommit"
-            @dblclick="resetCommitHeight"
-          >
-            <span class="commit-resize-grip" aria-hidden="true" />
-          </div>
           <div class="commit-area">
+            <div
+              class="commit-resize-handle"
+              :class="{ active: isResizingCommit }"
+              role="separator"
+              aria-orientation="horizontal"
+              :aria-valuenow="commitTextareaHeight"
+              :aria-valuemin="COMMIT_HEIGHT_MIN"
+              :aria-valuemax="COMMIT_HEIGHT_MAX"
+              title="按住拖动调整高度 · 双击复位"
+              @mousedown="startResizeCommit"
+              @dblclick="resetCommitHeight"
+            />
             <textarea
               v-model="commitStore.commitMessage"
               class="commit-textarea"
@@ -915,9 +983,9 @@ watch(
               </button>
             </div>
             <div class="commit-actions">
-              <label class="amend-label">
+              <label class="amend-label" :title="$t('changes.amend_tooltip')">
                 <input type="checkbox" v-model="commitStore.isAmend" />
-                <span>Amend</span>
+                <span>{{ $t("changes.amend") }}</span>
               </label>
               <div ref="aiGroupRef" class="ai-btn-group">
                 <button
@@ -1178,12 +1246,109 @@ watch(
   font-size: 12px;
 }
 
+.conflict-section {
+  border-bottom: 1px solid var(--color-border);
+  background: rgba(220, 50, 50, 0.06);
+}
+
+.conflict-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #c04040;
+  background: rgba(220, 50, 50, 0.1);
+  border-bottom: 1px solid rgba(220, 50, 50, 0.25);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.conflict-icon {
+  font-size: 12px;
+}
+
+.conflict-title {
+  flex: 1;
+}
+
+.conflict-count {
+  font-size: 10px;
+  font-weight: 400;
+  background: rgba(220, 50, 50, 0.18);
+  color: #c04040;
+  padding: 0 5px;
+  border-radius: 8px;
+}
+
+.conflict-resolve-btn {
+  border: 1px solid #c04040;
+  background: transparent;
+  color: #c04040;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.conflict-resolve-btn:hover {
+  background: #c04040;
+  color: #fff;
+}
+
+.conflict-file-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 22px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--color-foreground);
+}
+
+.conflict-file-item:hover {
+  background: rgba(220, 50, 50, 0.12);
+}
+
+.conflict-file-marker {
+  width: 14px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #c04040;
+  flex-shrink: 0;
+}
+
+.conflict-file-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conflict-file-action {
+  font-size: 11px;
+  color: #c04040;
+  text-decoration: underline;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.conflict-file-item:hover .conflict-file-action {
+  opacity: 1;
+}
+
 .commit-area {
   flex-shrink: 0;
   padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  position: relative;
 }
 
 .commit-textarea {
@@ -1197,6 +1362,7 @@ watch(
   border: 1px solid var(--color-border);
   color: var(--color-foreground);
   box-sizing: border-box;
+  transition: border-color 0.15s;
 }
 
 .commit-textarea:focus {
@@ -1204,40 +1370,31 @@ watch(
   border-color: var(--color-primary);
 }
 
+/* Invisible hit strip sitting on top of the textarea's top edge.
+   Lets the user grab the textarea border directly to resize, with no
+   visible standalone handle bar above it.
+   - 7px tall, sitting -3px above the textarea so it overlaps the border
+   - Always transparent — visual feedback is the textarea border colour change
+   - cursor: ns-resize whenever the pointer is over the strip */
 .commit-resize-handle {
-  height: 8px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: absolute;
+  top: 5px;            /* commit-area has 8px padding; -3px from textarea top */
+  left: 8px;
+  right: 8px;
+  height: 7px;
   cursor: ns-resize;
-  border-top: 1px solid var(--color-border);
   background: transparent;
-  transition: background-color 0.15s;
+  z-index: 5;
   user-select: none;
 }
 
-.commit-resize-handle:hover,
-.commit-resize-handle.active {
-  background: var(--color-surface-hover);
-}
-
-.commit-resize-grip {
-  width: 40px;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--color-foreground-muted);
-  opacity: 0.35;
-  transition:
-    background-color 0.15s,
-    opacity 0.15s;
-  pointer-events: none;
-}
-
-.commit-resize-handle:hover .commit-resize-grip,
-.commit-resize-handle.active .commit-resize-grip {
-  opacity: 0.9;
-  background: var(--color-primary);
+/* When the user hovers or drags the strip, highlight the textarea border
+   so the affordance is "you're about to resize this textarea". */
+.commit-resize-handle:hover ~ .commit-textarea,
+.commit-resize-handle.active ~ .commit-textarea {
+  border-top-color: var(--color-primary);
+  border-top-width: 2px;
+  padding-top: 5px;    /* compensate so total textarea height stays the same */
 }
 
 .commit-actions {
@@ -1516,26 +1673,66 @@ watch(
 }
 
 .merge-dialog-panel {
-  width: 100%;
-  height: 100%;
+  width: 90vw;
+  height: 85vh;
+  min-width: 600px;
+  min-height: 400px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 60px);
   background: var(--color-surface);
   border-radius: 8px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--color-border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  resize: both;
 }
 
 .merge-dialog-header {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 8px 14px;
+  padding-right: 44px;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   font-size: 13px;
   font-weight: 500;
   flex-shrink: 0;
+}
+
+.merge-dialog-header > span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.merge-dialog-header .modal-close {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-border);
+  color: var(--color-foreground);
+  font-size: 13px;
+  padding: 0;
+  line-height: 1;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.merge-dialog-header .modal-close:hover {
+  background: #c04040;
+  color: #fff;
+  border-color: #c04040;
 }
 
 .merge-dialog-body {

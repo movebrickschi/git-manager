@@ -38,7 +38,9 @@ export default {
     commit_placeholder: "Enter commit message...",
     commit_btn: "Commit",
     commit_and_push: "Commit & Push",
-    amend: "Amend last commit",
+    amend: "Amend",
+    amend_tooltip:
+      "Amend last commit (git commit --amend): merges this commit into the previous one instead of creating a new commit. Useful for: adding files you forgot to stage, or fixing the previous commit message. Note: if the previous commit was already pushed, you'll need to force-push after amending.",
     discard: "Discard Changes",
     stage_all: "Stage All",
     unstage_all: "Unstage All",

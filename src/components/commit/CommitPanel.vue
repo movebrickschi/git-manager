@@ -272,9 +272,9 @@ function onPushCancelled() {
         @keydown="onTextareaKeydown"
       />
       <div class="commit-options">
-        <label class="amend-checkbox">
+        <label class="amend-checkbox" :title="$t('changes.amend_tooltip')">
           <input type="checkbox" v-model="commitStore.isAmend" />
-          <span>Amend</span>
+          <span>{{ $t("changes.amend") }}</span>
         </label>
       </div>
       <div

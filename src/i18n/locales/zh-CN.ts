@@ -47,7 +47,9 @@ export default {
     commit_placeholder: "输入提交信息...",
     commit_btn: "提交",
     commit_and_push: "提交并推送",
-    amend: "修正上次提交",
+    amend: "修订",
+    amend_tooltip:
+      "修订上次提交（git commit --amend）：勾选后,本次提交将合并到上一次 commit,不产生新 commit 记录。常用于:补充忘记暂存的文件、修改上次提交的说明文字。注意:若上一次 commit 已 push 到远程,修订后推送时需要 force push。",
     discard: "放弃更改",
     stage_all: "全部暂存",
     unstage_all: "全部取消暂存",

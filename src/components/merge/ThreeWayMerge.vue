@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
+import { Splitpanes, Pane } from "splitpanes";
+import "splitpanes/dist/splitpanes.css";
 import { useRepoStore } from "@/stores/repoStore";
 import { commands } from "@/utils/commands";
 import type * as MonacoNS from "monaco-editor";
@@ -51,23 +53,67 @@ const conflict = ref<{
   theirsContent: string;
   baseContent: string;
 } | null>(null);
-const rawContent = ref(""); // working-tree file with conflict markers
-const resultContent = ref(""); // editable merged result
+
+// IDEA-style 3-way merge model:
+// - originalRaw: the raw conflict file as written by git (immutable for the lifetime of one file)
+//                Source of truth for left/right panels — never mutated by accept/discard actions.
+// - hunkStates:  per-hunk decision — TWO independent booleans (one per side).
+//                Acting on the left side never mutates the right side and vice versa.
+// - resultContent: the editable merge result for the Monaco editor.
+//                  Recomputed whenever hunkStates changes; user may also edit it freely.
+//
+// State combinations and what the center pane shows:
+//   ours=F, theirs=F → unresolved (keep original <<<<<<<...>>>>>>> markers)
+//   ours=T, theirs=F → only the ours block
+//   ours=F, theirs=T → only the theirs block
+//   ours=T, theirs=T → ours + theirs concatenated (Accept Both)
+interface HunkSideState {
+  ours: boolean;
+  theirs: boolean;
+}
+
+// Git rewrites ours/theirs semantics depending on the operation. This struct
+// captures what the markers actually mean for the user, so the UI can label
+// the panels accurately and tell them which side holds *their own* code.
+type MergeScenario =
+  | "merge"
+  | "rebase"
+  | "stash-pop"
+  | "cherry-pick"
+  | "revert"
+  | "unknown";
+
+interface MergeContext {
+  scenario: MergeScenario;
+  scenarioLabel: string; // user-facing description like "git stash pop / rebase"
+  oursLabel: string;
+  theirsLabel: string;
+  oursTooltip: string;
+  theirsTooltip: string;
+  yoursOn: "ours" | "theirs" | "unknown"; // which side holds the user's local code
+  headerTag: string; // raw text after the first '<<<<<<<'
+  footerTag: string; // raw text after the last '>>>>>>>'
+}
+
+const originalRaw = ref(""); // raw git conflict content; immutable for current file
+const resultContent = ref(""); // editable merged result shown in Monaco
+const hunkStates = ref<HunkSideState[]>([]); // index-aligned with hunks
 const loading = ref(false);
 const saving = ref(false);
 const resolvedFiles = ref<string[]>([]);
 
-// Conflict hunks parsed from rawContent
+// Conflict hunks parsed from originalRaw (the immutable source).
+// resultStartLine is the 1-based line number inside originalRaw.
 interface ConflictHunk {
   index: number;
   oursLines: string[];
   theirsLines: string[];
-  resultStartLine: number; // 1-based line number in resultContent where hunk starts
+  resultStartLine: number;
 }
 const hunks = ref<ConflictHunk[]>([]);
 const currentHunkIndex = ref(0);
 
-// Segments for rendering side panels
+// Segments for rendering side panels (always derived from originalRaw → constant view).
 interface ContextSegment {
   type: "context";
   lines: string[];
@@ -85,7 +131,8 @@ const editorContainer = ref<HTMLElement | null>(null);
 let monacoEditor: MonacoNS.editor.IStandaloneCodeEditor | null = null;
 let decorations: string[] = [];
 
-// Panel refs for synchronized scrolling (reserved for future use)
+// Panel refs used by prev/next navigation to keep left/center/right panes
+// scrolled to the same hunk (IDEA-style).
 const leftPanel = ref<HTMLElement | null>(null);
 const rightPanel = ref<HTMLElement | null>(null);
 
@@ -93,9 +140,10 @@ const rightPanel = ref<HTMLElement | null>(null);
 // Computed
 // ---------------------------------------------------------------------------
 
-// Parse rawContent into context + hunk segments for side-panel rendering
+// IDEA-style: segments are always derived from originalRaw, so resolving/accepting
+// a hunk never causes the left/right panels to lose rows.
 const segments = computed<MergeSegment[]>(() => {
-  const raw = rawContent.value;
+  const raw = originalRaw.value;
   if (!raw) return [];
   const lines = raw.split("\n");
   const result: MergeSegment[] = [];
@@ -126,14 +174,14 @@ const segments = computed<MergeSegment[]>(() => {
         lineNo++;
       }
       i++;
-      lineNo++; // skip =======
+      lineNo++;
       while (i < lines.length && !lines[i]!.startsWith(">>>>>>>")) {
         theirsLines.push(lines[i]!);
         i++;
         lineNo++;
       }
       i++;
-      lineNo++; // skip >>>>>>>
+      lineNo++;
       result.push({ type: "hunk", index: hunkIdx++, oursLines, theirsLines });
       ctxStartLineNo = lineNo;
     } else {
@@ -160,10 +208,174 @@ const hasConflicts = computed(() => hunks.value.length > 0);
 
 const currentHunk = computed(() => hunks.value[currentHunkIndex.value] ?? null);
 
+// Unresolved count = max(hunks where neither side was accepted,
+//                        raw '<<<<<<<' markers in resultContent).
+// The first reflects button-driven decisions; the second catches manual edits in
+// Monaco where the user may have added/removed conflict markers by hand.
 const totalUnresolved = computed(() => {
-  if (!resultContent.value) return 0;
-  return (resultContent.value.match(/^<{7}/m) ?? []).length;
+  const fromStates = hunkStates.value.filter((s) => !s.ours && !s.theirs).length;
+  const fromRaw = resultContent.value
+    ? (resultContent.value.match(/^<{7}/gm) ?? []).length
+    : 0;
+  return Math.max(fromStates, fromRaw);
 });
+
+function stateOf(index: number): HunkSideState {
+  return hunkStates.value[index] ?? { ours: false, theirs: false };
+}
+
+function isUnresolved(index: number): boolean {
+  const s = stateOf(index);
+  return !s.ours && !s.theirs;
+}
+
+// Inspect originalRaw to figure out what git operation produced this conflict
+// and which side holds the user's own (local, unstaged or stashed) code.
+// See https://git-scm.com/docs/git-merge#_how_conflicts_are_presented for
+// canonical ours/theirs semantics across operations.
+function detectMergeContext(raw: string): MergeContext {
+  const firstHeader = raw.match(/^<{7}\s*(.*)$/m);
+  const allFooters = [...raw.matchAll(/^>{7}\s*(.*)$/gm)];
+  const lastFooter = allFooters.length > 0 ? allFooters[allFooters.length - 1] : null;
+  const headerTag = (firstHeader?.[1] ?? "").trim();
+  const footerTag = (lastFooter?.[1] ?? "").trim();
+
+  // Helper: is a string a git SHA (7+ hex chars)?
+  const isSha = (s: string) => /^[0-9a-f]{7,40}$/i.test(s);
+
+  // Pattern matching (order matters: more specific first)
+  // 1) stash pop / apply: Updated upstream + Stashed changes
+  if (/^Updated upstream$/i.test(headerTag) && /^Stashed changes$/i.test(footerTag)) {
+    return {
+      scenario: "stash-pop",
+      scenarioLabel: "git stash pop / apply",
+      oursLabel: "Ours · 当前 worktree（pull 后的远端）",
+      theirsLabel: "Theirs · 你 stash 起来的本地修改",
+      oursTooltip:
+        "stash pop 场景：左侧 = 你 worktree 现有的内容（通常是 git pull 拉下的远端最新版）",
+      theirsTooltip:
+        "stash pop 场景：右侧 = 你之前 git stash 起来的本地未提交修改（这就是你写的代码）",
+      yoursOn: "theirs",
+      headerTag,
+      footerTag,
+    };
+  }
+
+  // 2) merge / pull (non-rebase): <<<<<<< HEAD ... >>>>>>> <branch-or-sha>
+  if (/^HEAD$/i.test(headerTag) || /^HEAD\b/.test(headerTag)) {
+    const otherSide = footerTag || "incoming";
+    return {
+      scenario: "merge",
+      scenarioLabel: "git merge / git pull (non-rebase)",
+      oursLabel: `Ours · HEAD（你当前的分支）`,
+      theirsLabel: `Theirs · ${otherSide}（要合入的分支）`,
+      oursTooltip: "merge / pull 场景：左侧 = 你当前分支已有的提交（这就是你写的代码）",
+      theirsTooltip: `merge / pull 场景：右侧 = 要被合并进来的对方分支（${otherSide}）`,
+      yoursOn: "ours",
+      headerTag,
+      footerTag,
+    };
+  }
+
+  // 3) rebase: header is a commit SHA (the upstream tip), footer is your local
+  //    branch / commit being replayed.
+  if (isSha(headerTag)) {
+    return {
+      scenario: "rebase",
+      scenarioLabel: "git rebase / pull --rebase",
+      oursLabel: `Ours · ${headerTag}（被 rebase 到的目标分支）`,
+      theirsLabel: `Theirs · ${footerTag || "你的本地提交"}（你的提交被 replay 到此处）`,
+      oursTooltip:
+        "rebase 场景：左侧 = 你被 rebase 到的目标（远端 upstream）— 注意这不是你写的代码",
+      theirsTooltip:
+        "rebase 场景：右侧 = 你的本地提交（git 把它 replay 到 upstream 之上）— 这才是你写的代码",
+      yoursOn: "theirs",
+      headerTag,
+      footerTag,
+    };
+  }
+
+  // 4) cherry-pick: <<<<<<< HEAD ... >>>>>>> <message of cherry-picked commit>
+  //    Handled by the merge branch above (header == HEAD). The literal "ours"/"theirs"
+  //    convention here is the merge-tool style:
+  if (/^ours$/i.test(headerTag) && /^theirs$/i.test(footerTag)) {
+    return {
+      scenario: "cherry-pick",
+      scenarioLabel: "git cherry-pick (或自定义 merge driver)",
+      oursLabel: "Ours · 当前分支",
+      theirsLabel: "Theirs · 被引入的 commit",
+      oursTooltip: "cherry-pick 场景：左侧 = 你当前分支（你写的代码）",
+      theirsTooltip: "cherry-pick 场景：右侧 = 被 cherry-pick 进来的 commit",
+      yoursOn: "ours",
+      headerTag,
+      footerTag,
+    };
+  }
+
+  // 5) Fallback — show raw markers so power-users can still figure it out.
+  return {
+    scenario: "unknown",
+    scenarioLabel: "未知操作（无法识别冲突标记）",
+    oursLabel: headerTag ? `Ours · ${headerTag}` : "Ours · 左侧",
+    theirsLabel: footerTag ? `Theirs · ${footerTag}` : "Theirs · 右侧",
+    oursTooltip: "无法识别 git 操作类型，请根据冲突标记后缀自行判断",
+    theirsTooltip: "无法识别 git 操作类型，请根据冲突标记后缀自行判断",
+    yoursOn: "unknown",
+    headerTag,
+    footerTag,
+  };
+}
+
+const mergeContext = computed<MergeContext>(() => detectMergeContext(originalRaw.value));
+
+// Build the merged file from originalRaw + hunkStates.
+// Unresolved hunks keep their original <<<<<<<...>>>>>>> markers so git still
+// recognizes the file as conflicted until everything is resolved.
+function recomputeResult(): string {
+  const raw = originalRaw.value;
+  if (!raw) return "";
+  const lines = raw.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  let hunkIdx = 0;
+  while (i < lines.length) {
+    const line = lines[i]!;
+    if (line.startsWith("<<<<<<<")) {
+      const headerLine = line;
+      const oursStart = i + 1;
+      let sep = oursStart;
+      while (sep < lines.length && !lines[sep]!.startsWith("=======")) sep++;
+      const theirsStart = sep + 1;
+      let end = theirsStart;
+      while (end < lines.length && !lines[end]!.startsWith(">>>>>>>")) end++;
+      const oursLines = lines.slice(oursStart, sep);
+      const theirsLines = lines.slice(theirsStart, end);
+      const footerLine = end < lines.length ? lines[end]! : ">>>>>>>";
+
+      const state = stateOf(hunkIdx);
+      hunkIdx++;
+      if (state.ours && state.theirs) {
+        out.push(...oursLines, ...theirsLines);
+      } else if (state.ours) {
+        out.push(...oursLines);
+      } else if (state.theirs) {
+        out.push(...theirsLines);
+      } else {
+        // neither side accepted yet — keep original markers verbatim
+        out.push(headerLine);
+        out.push(...oursLines);
+        if (sep < lines.length) out.push(lines[sep]!);
+        out.push(...theirsLines);
+        out.push(footerLine);
+      }
+      i = end + 1;
+    } else {
+      out.push(line);
+      i++;
+    }
+  }
+  return out.join("\n");
+}
 
 // ---------------------------------------------------------------------------
 // Conflict marker parsing
@@ -216,6 +428,7 @@ async function loadFile(filePath: string) {
   if (!repoStore.activeRepo) return;
   loading.value = true;
   hunks.value = [];
+  hunkStates.value = [];
   currentHunkIndex.value = 0;
   try {
     const [conflictData, raw] = await Promise.all([
@@ -223,14 +436,15 @@ async function loadFile(filePath: string) {
       commands.getWorkingFileContent(repoStore.activeRepo.path, filePath),
     ]);
     conflict.value = conflictData;
-    rawContent.value = raw;
-    resultContent.value = raw;
+    originalRaw.value = raw;
     hunks.value = parseConflictHunks(raw);
+    hunkStates.value = hunks.value.map(() => ({ ours: false, theirs: false }));
+    resultContent.value = recomputeResult();
     currentHunkIndex.value = 0;
 
     await nextTick();
     if (monacoEditor) {
-      monacoEditor.setValue(raw);
+      monacoEditor.setValue(resultContent.value);
       updateDecorations();
       if (hunks.value.length > 0) {
         scrollEditorToHunk(0);
@@ -300,9 +514,11 @@ async function initMonaco() {
     folding: false,
   });
 
+  // Manual edits in the center pane should NOT clobber hunkStates — but they DO
+  // count for the "unresolved badge" via the regex fallback in totalUnresolved.
+  // The left/right panels still read from originalRaw, so they remain stable.
   monacoEditor.onDidChangeModelContent(() => {
     resultContent.value = monacoEditor!.getValue();
-    hunks.value = parseConflictHunks(resultContent.value);
   });
 
   updateDecorations();
@@ -354,10 +570,93 @@ function updateDecorations() {
   decorations = monacoEditor.deltaDecorations(decorations, newDecorations);
 }
 
+// Compute the 1-based line number of a hunk inside the *current* result content.
+// Works regardless of hunk state — replays the same walk as recomputeResult()
+// and stops at the requested hunk so we always know where to scroll the center
+// pane, even for hunks that no longer carry '<<<<<<<' markers.
+function findHunkLineInResult(targetIndex: number): number | null {
+  const raw = originalRaw.value;
+  if (!raw) return null;
+  const lines = raw.split("\n");
+  let i = 0;
+  let hunkIdx = 0;
+  let outLine = 1;
+  while (i < lines.length) {
+    const line = lines[i]!;
+    if (line.startsWith("<<<<<<<")) {
+      if (hunkIdx === targetIndex) return outLine;
+      const oursStart = i + 1;
+      let sep = oursStart;
+      while (sep < lines.length && !lines[sep]!.startsWith("=======")) sep++;
+      const theirsStart = sep + 1;
+      let end = theirsStart;
+      while (end < lines.length && !lines[end]!.startsWith(">>>>>>>")) end++;
+      const oursLen = sep - oursStart;
+      const theirsLen = end - theirsStart;
+      const state = stateOf(hunkIdx);
+      let consumed: number;
+      if (state.ours && state.theirs) consumed = oursLen + theirsLen;
+      else if (state.ours) consumed = oursLen;
+      else if (state.theirs) consumed = theirsLen;
+      else consumed = 1 + oursLen + 1 + theirsLen + 1;
+      outLine += consumed;
+      hunkIdx++;
+      i = end + 1;
+    } else {
+      outLine++;
+      i++;
+    }
+  }
+  return null;
+}
+
+// Scroll one side panel so the requested hunk's action-bar sits near the top.
+// Side panels keep their full original content even after accept/discard, so
+// every hunk is always present and addressable via `[data-hunk-index]`.
+// Uses getBoundingClientRect so we don't depend on `.side-panel` being a
+// positioned ancestor (`offsetTop` would otherwise resolve against `<body>`).
+// Returns true when the hunk node was found and the scroll was applied —
+// caller uses this to retry on the next animation frame when the v-for
+// hasn't rendered the row yet (large files only).
+function scrollSidePanelToHunk(panel: HTMLElement | null, index: number): boolean {
+  if (!panel) return false;
+  const node = panel.querySelector<HTMLElement>(`[data-hunk-index="${index}"]`);
+  if (!node) return false;
+  const panelRect = panel.getBoundingClientRect();
+  const nodeRect = node.getBoundingClientRect();
+  const top = panel.scrollTop + (nodeRect.top - panelRect.top) - 12;
+  // Instant scroll keeps left/right in lockstep with Monaco's revealLineInCenter
+  // (Monaco does not animate). Smooth here desyncs the three panes visually.
+  panel.scrollTop = Math.max(0, top);
+  return true;
+}
+
+// IDEA-style synchronized navigation: clicking prev/next moves left, center,
+// and right panes to the same hunk so the user never has to hunt for it.
+// The center pane follows even for already-accepted hunks (no '<<<' markers
+// left) by mapping the hunk index to its line in the current result content.
+//
+// All three panes use *instant* positioning so they stay locked together —
+// smooth scrolling caused desync between Monaco (instant) and side panels
+// (animated), which read as "laggy / not aligned".
 function scrollEditorToHunk(index: number) {
-  if (!monacoEditor || !hunks.value[index]) return;
-  const hunk = hunks.value[index]!;
-  monacoEditor.revealLineInCenter(hunk.resultStartLine);
+  if (!hunks.value[index]) return;
+  if (monacoEditor) {
+    const line = findHunkLineInResult(index);
+    if (line != null) monacoEditor.revealLineInCenter(line);
+  }
+  // First attempt synchronously — fast path for files small enough that the
+  // v-for has already laid out by the time the user clicks prev/next.
+  const leftOk = scrollSidePanelToHunk(leftPanel.value, index);
+  const rightOk = scrollSidePanelToHunk(rightPanel.value, index);
+  if (leftOk && rightOk) return;
+  // Fallback for files where the hunk node hasn't been rendered yet (e.g. the
+  // very first call right after loadFile completes on a 10k-line file).
+  if (typeof requestAnimationFrame !== "function") return;
+  requestAnimationFrame(() => {
+    scrollSidePanelToHunk(leftPanel.value, index);
+    scrollSidePanelToHunk(rightPanel.value, index);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -378,111 +677,93 @@ function nextHunk() {
 }
 
 // ---------------------------------------------------------------------------
-// Accept hunk helpers
+// Accept / discard — IDEA model with INDEPENDENT side states.
+// Actions on one side never touch the other side.
 // ---------------------------------------------------------------------------
-function replaceHunkInEditor(hunk: ConflictHunk, replacement: string[]) {
-  if (!monacoEditor) return;
-  const model = monacoEditor.getModel();
-  if (!model) return;
+function setSideState(index: number, side: "ours" | "theirs", value: boolean) {
+  if (index < 0 || index >= hunks.value.length) return;
+  const arr = hunkStates.value.map((s, i) =>
+    i === index ? { ...s, [side]: value } : s
+  );
+  hunkStates.value = arr;
+  syncResultToEditor();
+}
 
-  const lines = monacoEditor.getValue().split("\n");
-  let hunkStart = -1;
-  let hunkEnd = -1;
-  let inOurs = false;
-  let inTheirs = false;
-  let foundHunkCount = 0;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
-    if (line.startsWith("<<<<<<<")) {
-      if (foundHunkCount === hunk.index) {
-        hunkStart = i;
-        inOurs = true;
-      }
-      foundHunkCount++;
-    } else if (line.startsWith("=======") && inOurs) {
-      inOurs = false;
-      inTheirs = true;
-    } else if (line.startsWith(">>>>>>>") && inTheirs) {
-      hunkEnd = i;
-      break;
-    }
-  }
-
-  if (hunkStart === -1 || hunkEnd === -1) return;
-
-  const startLine = hunkStart + 1; // 1-based
-  const endLine = hunkEnd + 1;
-  const endCol = (lines[hunkEnd] ?? "").length + 1;
-
-  if (!monaco) return;
-  monacoEditor.executeEdits("accept-hunk", [
-    {
-      range: new monaco.Range(startLine, 1, endLine, endCol),
-      text: replacement.join("\n"),
-    },
-  ]);
-
-  resultContent.value = monacoEditor.getValue();
-  hunks.value = parseConflictHunks(resultContent.value);
-  // stay at same index or clamp
-  if (currentHunkIndex.value >= hunks.value.length) {
-    currentHunkIndex.value = Math.max(0, hunks.value.length - 1);
+function syncResultToEditor() {
+  const recomputed = recomputeResult();
+  resultContent.value = recomputed;
+  if (monacoEditor && monacoEditor.getValue() !== recomputed) {
+    // Preserve cursor as best as we can; setValue resets selection but that's
+    // acceptable for accept/discard actions.
+    monacoEditor.setValue(recomputed);
   }
   updateDecorations();
+}
+
+// Per-side toggle button: clicking "accept this side" toggles only that side.
+// Clicking again on the same side cancels just that side's acceptance.
+function toggleSide(index: number, side: "ours" | "theirs") {
+  if (!hunks.value[index]) return;
+  currentHunkIndex.value = index;
+  const current = stateOf(index)[side];
+  setSideState(index, side, !current);
+}
+
+// Explicit "discard this side" — clears that side's acceptance but never affects
+// the opposite side. Equivalent to setSideState(index, side, false).
+function discardSide(index: number, side: "ours" | "theirs") {
+  if (!hunks.value[index]) return;
+  currentHunkIndex.value = index;
+  setSideState(index, side, false);
 }
 
 function acceptOurs() {
   if (!currentHunk.value) return;
-  replaceHunkInEditor(currentHunk.value, currentHunk.value.oursLines);
+  toggleSide(currentHunk.value.index, "ours");
 }
 
 function acceptTheirs() {
   if (!currentHunk.value) return;
-  replaceHunkInEditor(currentHunk.value, currentHunk.value.theirsLines);
+  toggleSide(currentHunk.value.index, "theirs");
 }
 
+// "Accept both" sets both sides to true; clicking again clears both.
 function acceptBoth() {
   if (!currentHunk.value) return;
-  replaceHunkInEditor(currentHunk.value, [
-    ...currentHunk.value.oursLines,
-    ...currentHunk.value.theirsLines,
-  ]);
+  const idx = currentHunk.value.index;
+  const s = stateOf(idx);
+  const both = s.ours && s.theirs;
+  const arr = hunkStates.value.map((st, i) =>
+    i === idx ? { ours: !both, theirs: !both } : st
+  );
+  hunkStates.value = arr;
+  syncResultToEditor();
 }
 
-function resolveHunk(index: number, action: "ours" | "theirs" | "both" | "discard") {
-  const hunk = hunks.value[index];
-  if (!hunk) return;
-  // Temporarily set currentHunkIndex so replaceHunkInEditor targets correct hunk
-  currentHunkIndex.value = index;
-  const replacement =
-    action === "ours"
-      ? hunk.oursLines
-      : action === "theirs"
-        ? hunk.theirsLines
-        : action === "both"
-          ? [...hunk.oursLines, ...hunk.theirsLines]
-          : []; // discard → empty
-  replaceHunkInEditor(hunk, replacement);
-}
-
-// Toolbar-level shortcuts (accept all hunks at once)
+// Toolbar-level: bulk accept all hunks on one side (additive — does NOT clear
+// the opposite side, so users that already accepted some on the other side
+// effectively get an "accept both" outcome on those hunks).
 function acceptAllOurs() {
-  if (!conflict.value) return;
-  const val = conflict.value.oursContent;
-  resultContent.value = val;
-  monacoEditor?.setValue(val);
-  hunks.value = parseConflictHunks(val);
-  updateDecorations();
+  if (hunks.value.length === 0) return;
+  hunkStates.value = hunkStates.value.map((s) => ({ ...s, ours: true }));
+  syncResultToEditor();
 }
 
 function acceptAllTheirs() {
-  if (!conflict.value) return;
-  const val = conflict.value.theirsContent;
-  resultContent.value = val;
-  monacoEditor?.setValue(val);
-  hunks.value = parseConflictHunks(val);
-  updateDecorations();
+  if (hunks.value.length === 0) return;
+  hunkStates.value = hunkStates.value.map((s) => ({ ...s, theirs: true }));
+  syncResultToEditor();
+}
+
+function resetAll() {
+  if (hunks.value.length === 0) return;
+  hunkStates.value = hunks.value.map(() => ({ ours: false, theirs: false }));
+  syncResultToEditor();
+}
+
+function sideBadgeText(index: number, side: "ours" | "theirs"): string {
+  const s = stateOf(index)[side];
+  return s ? "本侧已采用" : "本侧未采用";
 }
 
 // ---------------------------------------------------------------------------
@@ -523,6 +804,12 @@ async function switchFile(filePath: string) {
     const lang = detectLanguage(filePath);
     monaco.editor.setModelLanguage(monacoEditor.getModel()!, lang);
   }
+}
+
+function onPanelResize() {
+  requestAnimationFrame(() => {
+    monacoEditor?.layout();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -597,6 +884,26 @@ onBeforeUnmount(() => {
       </div>
 
       <template v-else-if="conflict">
+        <!-- Scenario banner: explains git operation + where the user's own code lives -->
+        <div
+          v-if="hasConflicts && mergeContext.scenario !== 'unknown'"
+          class="scenario-banner"
+          :class="`scenario-${mergeContext.scenario}`"
+        >
+          <span class="scenario-tag">{{ mergeContext.scenarioLabel }}</span>
+          <span class="scenario-text">
+            <template v-if="mergeContext.yoursOn === 'ours'">
+              你写的代码在 <strong>左栏</strong>
+            </template>
+            <template v-else-if="mergeContext.yoursOn === 'theirs'">
+              你写的代码在 <strong>右栏</strong>（{{ mergeContext.scenarioLabel }} 时 git 会把 ours/theirs 反转）
+            </template>
+            <template v-else>
+              无法自动判定哪一侧是你的代码 — 请按冲突标记后缀自行判断
+            </template>
+          </span>
+        </div>
+
         <!-- Toolbar -->
         <div class="merge-toolbar">
           <!-- File path -->
@@ -604,11 +911,27 @@ onBeforeUnmount(() => {
           <div class="toolbar-sep" />
 
           <!-- Accept all shortcuts -->
-          <button class="tbtn tbtn-green" title="接受所有 Ours（本地）" @click="acceptAllOurs">
+          <button
+            class="tbtn tbtn-green"
+            title="接受所有左侧（Ours / HEAD）— Pull/Merge 时是你当前分支的版本；Rebase 时是被 rebase 到的目标分支"
+            @click="acceptAllOurs"
+          >
             全部接受左侧
           </button>
-          <button class="tbtn tbtn-blue" title="接受所有 Theirs（传入）" @click="acceptAllTheirs">
+          <button
+            class="tbtn tbtn-blue"
+            title="接受所有右侧（Theirs / Incoming）— Pull/Merge 时是远端要合入的版本；Rebase 时是你被 rebase 的本地提交"
+            @click="acceptAllTheirs"
+          >
             全部接受右侧
+          </button>
+          <button
+            class="tbtn"
+            title="所有冲突块恢复到未解决状态（左右栏不会变化，只是中栏重新出现所有冲突标记）"
+            :disabled="hunks.length === 0"
+            @click="resetAll"
+          >
+            全部重置
           </button>
           <div class="toolbar-sep" />
 
@@ -678,25 +1001,25 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <!-- Column headers -->
-        <div class="panel-headers">
-          <div class="panel-head yours">
-            <span>Yours（本地）</span>
-            <span class="head-lines">{{ hunks.length }} 处冲突</span>
-          </div>
-          <div class="panel-head result">
-            <span>合并结果（可编辑）</span>
-          </div>
-          <div class="panel-head theirs">
-            <span>Theirs（传入）</span>
-            <span class="head-lines">{{ hunks.length }} 处冲突</span>
-          </div>
-        </div>
-
-        <!-- Three panels -->
-        <div class="merge-panels">
+        <!-- Three panels (resizable via Splitpanes) -->
+        <Splitpanes class="default-theme merge-panels" @resize="onPanelResize">
           <!-- Left: Yours (read-only, segment-based) -->
-          <div ref="leftPanel" class="side-panel">
+          <Pane :size="33" :min-size="15">
+          <div class="pane-wrapper">
+            <div
+              class="panel-head yours"
+              :title="mergeContext.oursTooltip"
+            >
+              <span>← {{ mergeContext.oursLabel }}</span>
+              <span
+                v-if="mergeContext.yoursOn === 'ours'"
+                class="yours-badge"
+                title="你写的代码在这一栏"
+              >你的代码</span>
+              <span class="head-lines">{{ hunks.length }} 处冲突</span>
+            </div>
+            <div ref="leftPanel" class="side-panel">
+            <div class="side-panel-inner">
             <template
               v-for="seg in segments"
               :key="seg.type === 'hunk' ? 'lh' + seg.index : 'lc' + seg.startLineNo"
@@ -712,23 +1035,44 @@ onBeforeUnmount(() => {
                   <span class="line-text">{{ line }}</span>
                 </div>
               </template>
-              <!-- Hunk: ours lines with action buttons -->
+              <!-- Hunk: ours lines with action buttons + state badge -->
               <template v-else-if="seg.type === 'hunk'">
-                <div class="hunk-action-bar hunk-action-bar--ours">
-                  <button class="hunk-btn hunk-btn--ours" @click="resolveHunk(seg.index, 'ours')">
-                    ← 接受此处
+                <div
+                  class="hunk-action-bar hunk-action-bar--ours"
+                  :class="{ 'side-accepted': stateOf(seg.index).ours }"
+                  :data-hunk-index="seg.index"
+                >
+                  <button
+                    class="hunk-btn hunk-btn--ours"
+                    :class="{ active: stateOf(seg.index).ours }"
+                    :title="
+                      stateOf(seg.index).ours
+                        ? '本侧已采用 — 点击取消本侧采用（不影响右侧）'
+                        : '采用左侧 → 把这段加入到中栏结果（不影响右侧）'
+                    "
+                    @click="toggleSide(seg.index, 'ours')"
+                  >
+                    {{ stateOf(seg.index).ours ? '✓ 本侧已采用' : '← 采用此处' }}
                   </button>
                   <button
                     class="hunk-btn hunk-btn--discard"
-                    @click="resolveHunk(seg.index, 'discard')"
+                    :disabled="!stateOf(seg.index).ours"
+                    :title="
+                      stateOf(seg.index).ours
+                        ? '取消本侧采用 — 把这段从中栏结果移除（不影响右侧）'
+                        : '本侧未被采用，无需丢弃'
+                    "
+                    @click="discardSide(seg.index, 'ours')"
                   >
-                    丢弃
+                    丢弃本侧
                   </button>
+                  <span class="hunk-state-badge">{{ sideBadgeText(seg.index, 'ours') }}</span>
                 </div>
                 <div
                   v-for="(line, i) in seg.oursLines"
                   :key="'lo' + seg.index + '_' + i"
                   class="code-line ours-line"
+                  :class="{ 'line-accepted': stateOf(seg.index).ours }"
                 >
                   <span class="line-no">{{ i + 1 }}</span>
                   <span class="line-text">{{ line }}</span>
@@ -739,15 +1083,40 @@ onBeforeUnmount(() => {
                 </div>
               </template>
             </template>
+            </div>
+            </div>
           </div>
+          </Pane>
 
           <!-- Center: Monaco Editor -->
-          <div class="editor-panel">
-            <div ref="editorContainer" class="monaco-container" />
+          <Pane :size="34" :min-size="20">
+          <div class="pane-wrapper">
+            <div class="panel-head result">
+              <span>合并结果（可编辑 · 支持复制粘贴）</span>
+            </div>
+            <div class="editor-panel">
+              <div ref="editorContainer" class="monaco-container" />
+            </div>
           </div>
+          </Pane>
 
           <!-- Right: Theirs (read-only, segment-based) -->
-          <div ref="rightPanel" class="side-panel">
+          <Pane :size="33" :min-size="15">
+          <div class="pane-wrapper">
+            <div
+              class="panel-head theirs"
+              :title="mergeContext.theirsTooltip"
+            >
+              <span>{{ mergeContext.theirsLabel }} →</span>
+              <span
+                v-if="mergeContext.yoursOn === 'theirs'"
+                class="yours-badge"
+                title="你写的代码在这一栏"
+              >你的代码</span>
+              <span class="head-lines">{{ hunks.length }} 处冲突</span>
+            </div>
+            <div ref="rightPanel" class="side-panel">
+            <div class="side-panel-inner">
             <template
               v-for="seg in segments"
               :key="seg.type === 'hunk' ? 'rh' + seg.index : 'rc' + seg.startLineNo"
@@ -763,26 +1132,44 @@ onBeforeUnmount(() => {
                   <span class="line-text">{{ line }}</span>
                 </div>
               </template>
-              <!-- Hunk: theirs lines with action buttons -->
+              <!-- Hunk: theirs lines with action buttons + state badge -->
               <template v-else-if="seg.type === 'hunk'">
-                <div class="hunk-action-bar hunk-action-bar--theirs">
+                <div
+                  class="hunk-action-bar hunk-action-bar--theirs"
+                  :class="{ 'side-accepted': stateOf(seg.index).theirs }"
+                  :data-hunk-index="seg.index"
+                >
                   <button
                     class="hunk-btn hunk-btn--theirs"
-                    @click="resolveHunk(seg.index, 'theirs')"
+                    :class="{ active: stateOf(seg.index).theirs }"
+                    :title="
+                      stateOf(seg.index).theirs
+                        ? '本侧已采用 — 点击取消本侧采用（不影响左侧）'
+                        : '采用右侧 → 把这段加入到中栏结果（不影响左侧）'
+                    "
+                    @click="toggleSide(seg.index, 'theirs')"
                   >
-                    接受此处 →
+                    {{ stateOf(seg.index).theirs ? '✓ 本侧已采用' : '采用此处 →' }}
                   </button>
                   <button
                     class="hunk-btn hunk-btn--discard"
-                    @click="resolveHunk(seg.index, 'discard')"
+                    :disabled="!stateOf(seg.index).theirs"
+                    :title="
+                      stateOf(seg.index).theirs
+                        ? '取消本侧采用 — 把这段从中栏结果移除（不影响左侧）'
+                        : '本侧未被采用，无需丢弃'
+                    "
+                    @click="discardSide(seg.index, 'theirs')"
                   >
-                    丢弃
+                    丢弃本侧
                   </button>
+                  <span class="hunk-state-badge">{{ sideBadgeText(seg.index, 'theirs') }}</span>
                 </div>
                 <div
                   v-for="(line, i) in seg.theirsLines"
                   :key="'rt' + seg.index + '_' + i"
                   class="code-line theirs-line"
+                  :class="{ 'line-accepted': stateOf(seg.index).theirs }"
                 >
                   <span class="line-no">{{ i + 1 }}</span>
                   <span class="line-text">{{ line }}</span>
@@ -796,8 +1183,11 @@ onBeforeUnmount(() => {
                 </div>
               </template>
             </template>
+            </div>
+            </div>
           </div>
-        </div>
+          </Pane>
+        </Splitpanes>
       </template>
     </div>
   </div>
@@ -921,6 +1311,59 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 
+/* ---- Scenario banner ---- */
+.scenario-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.scenario-banner.scenario-merge {
+  background: color-mix(in srgb, #2d9a2d 12%, var(--color-surface));
+  color: #7dd87d;
+}
+
+.scenario-banner.scenario-rebase,
+.scenario-banner.scenario-stash-pop {
+  background: color-mix(in srgb, #d97a1c 18%, var(--color-surface));
+  color: #f0b265;
+}
+
+.scenario-banner.scenario-cherry-pick {
+  background: color-mix(in srgb, #b56fd9 14%, var(--color-surface));
+  color: #d3a3f0;
+}
+
+.scenario-tag {
+  font-weight: 700;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: color-mix(in srgb, currentColor 20%, transparent);
+  letter-spacing: 0.3px;
+}
+
+.scenario-text strong {
+  font-weight: 700;
+  color: #ffd964;
+  padding: 0 2px;
+}
+
+.yours-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: #ffd964;
+  color: #2a1a00;
+  margin-left: 6px;
+  letter-spacing: 0.3px;
+}
+
 /* ---- Toolbar ---- */
 .merge-toolbar {
   display: flex;
@@ -1031,26 +1474,25 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
-/* ---- Column headers ---- */
-.panel-headers {
+/* ---- Column headers (now inside each Pane) ---- */
+.pane-wrapper {
   display: flex;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--color-border);
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
 }
 
 .panel-head {
-  flex: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   padding: 4px 10px;
   font-size: 11px;
   font-weight: 600;
-  border-right: 1px solid var(--color-border);
-}
-
-.panel-head:last-child {
-  border-right: none;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
 
 .panel-head.yours {
@@ -1077,39 +1519,53 @@ onBeforeUnmount(() => {
 /* ---- Panels ---- */
 .merge-panels {
   flex: 1;
-  display: flex;
   overflow: hidden;
   min-height: 0;
 }
 
 .side-panel {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: auto;
-  border-right: 1px solid var(--color-border);
+  height: 100%;
+  width: 100%;
+  overflow: auto;
   font-size: 12px;
   font-family: var(--font-mono);
   line-height: 20px;
   background: var(--color-background);
+  user-select: text;
+  cursor: text;
+}
+
+.side-panel-inner {
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  min-width: 100%;
+}
+
+.side-panel ::selection {
+  background: var(--color-primary, #007acc);
+  color: #fff;
 }
 
 .editor-panel {
-  flex: 1.4;
   display: flex;
   flex-direction: column;
+  height: 100%;
+  width: 100%;
   overflow: hidden;
-  border-right: 1px solid var(--color-border);
 }
 
 .monaco-container {
   flex: 1;
   height: 100%;
+  user-select: text;
 }
 
 .code-line {
   display: flex;
   min-height: 20px;
   line-height: 20px;
+  flex-shrink: 0;
 }
 
 .code-line.ours-line {
@@ -1118,6 +1574,13 @@ onBeforeUnmount(() => {
 
 .code-line.theirs-line {
   background: color-mix(in srgb, #1e6fcc 18%, transparent);
+}
+
+/* When this side has been accepted into the merged result, brighten it.
+   The opposite side is NOT visually penalized — left/right are independent. */
+.code-line.line-accepted {
+  filter: brightness(1.25);
+  box-shadow: inset 3px 0 0 currentColor;
 }
 
 .empty-hunk-line {
@@ -1150,6 +1613,37 @@ onBeforeUnmount(() => {
 .hunk-action-bar--theirs {
   background: color-mix(in srgb, #1e6fcc 10%, var(--color-surface));
   border-left: 2px solid #1e6fcc;
+}
+
+/* When this side's accept toggle is on, brighten the action bar.
+   The opposite side is independent and not affected. */
+.hunk-action-bar--ours.side-accepted {
+  background: color-mix(in srgb, #2d9a2d 22%, var(--color-surface));
+}
+
+.hunk-action-bar--theirs.side-accepted {
+  background: color-mix(in srgb, #1e6fcc 22%, var(--color-surface));
+}
+
+.hunk-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.hunk-state-badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  opacity: 0.7;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
+}
+
+.hunk-btn.active {
+  outline: 1px solid currentColor;
+  outline-offset: -2px;
+  filter: brightness(1.15);
 }
 
 .hunk-btn {
@@ -1212,5 +1706,6 @@ onBeforeUnmount(() => {
   overflow-x: visible;
   tab-size: 4;
   padding-right: 12px;
+  user-select: text;
 }
 </style>

@@ -22,6 +22,80 @@ export const UNTRACKED_DIFF_MAX_BYTES = 1024 * 1024;
  */
 const BINARY_SNIFF_BYTES = 8 * 1024;
 
+/**
+ * 尝试把任意 Buffer 智能解码为文本。
+ *
+ * 重要性：Windows PowerShell 默认的 `>` / `Out-File` 写出来的 .txt 文件是
+ * UTF-16 LE 编码，每个 ASCII 字符后跟一个 0x00 字节。如果只看 NUL 字节就
+ * 判定二进制，所有 PowerShell 重定向产生的日志都会被前端拒绝显示，体感是
+ * "明明是 .txt 文件却说是 Binary"。
+ *
+ * 识别顺序（命中即返回，不再判定 binary）：
+ *   1. UTF-16 LE BOM (FF FE)
+ *   2. UTF-16 BE BOM (FE FF)
+ *   3. UTF-8 BOM   (EF BB BF)
+ *   4. 启发式 UTF-16 LE 无 BOM（PowerShell 默认 "Unicode" 编码即此）
+ *   5. 启发式 UTF-16 BE 无 BOM
+ *   6. NUL 检测 → 视为真二进制（图片 / 可执行文件等）
+ *   7. 否则按 UTF-8 解码
+ *
+ * 返回 `text === null` 表示真二进制，调用方应走 "Binary files differ" 路径。
+ */
+export function decodeBufferToText(buf: Buffer): { text: string | null; encoding: string } {
+  if (buf.length === 0) return { text: "", encoding: "empty" };
+
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) {
+    return { text: buf.subarray(2).toString("utf16le"), encoding: "utf-16le-bom" };
+  }
+  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+    return { text: swapBytesAndDecodeUtf16(buf, 2), encoding: "utf-16be-bom" };
+  }
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+    return { text: buf.subarray(3).toString("utf8"), encoding: "utf-8-bom" };
+  }
+
+  const sniff = Math.min(buf.length, 256);
+  if (sniff >= 4) {
+    let zerosAtOdd = 0;
+    let zerosAtEven = 0;
+    let nonZero = 0;
+    for (let i = 0; i < sniff; i++) {
+      if (buf[i] === 0) {
+        if (i & 1) zerosAtOdd++;
+        else zerosAtEven++;
+      } else {
+        nonZero++;
+      }
+    }
+    const quarter = Math.floor(sniff / 4);
+    if (zerosAtOdd >= quarter && zerosAtEven === 0 && nonZero > 0) {
+      return { text: buf.toString("utf16le"), encoding: "utf-16le-guess" };
+    }
+    if (zerosAtEven >= quarter && zerosAtOdd === 0 && nonZero > 0) {
+      return { text: swapBytesAndDecodeUtf16(buf, 0), encoding: "utf-16be-guess" };
+    }
+  }
+
+  const sniffEnd = Math.min(buf.length, BINARY_SNIFF_BYTES);
+  for (let i = 0; i < sniffEnd; i++) {
+    if (buf[i] === 0) return { text: null, encoding: "binary" };
+  }
+
+  return { text: buf.toString("utf8"), encoding: "utf-8" };
+}
+
+function swapBytesAndDecodeUtf16(buf: Buffer, start: number): string {
+  const len = buf.length - start;
+  const evenLen = len - (len % 2);
+  if (evenLen <= 0) return "";
+  const swapped = Buffer.alloc(evenLen);
+  for (let i = 0; i < evenLen; i += 2) {
+    swapped[i] = buf[start + i + 1] ?? 0;
+    swapped[i + 1] = buf[start + i] ?? 0;
+  }
+  return swapped.toString("utf16le");
+}
+
 const NON_RETRYABLE_PATTERNS = [
   /authentication/i,
   /permission denied/i,
@@ -285,19 +359,17 @@ export async function buildUntrackedDiff(
     return parseDiffOutput("", filePath);
   }
 
-  const sniffEnd = Math.min(buf.length, BINARY_SNIFF_BYTES);
-  for (let i = 0; i < sniffEnd; i++) {
-    if (buf[i] === 0) {
-      const synthetic = [
-        `diff --git a/${filePath} b/${filePath}`,
-        `new file mode 100644`,
-        `Binary files /dev/null and b/${filePath} differ`,
-      ].join("\n");
-      return parseDiffOutput(synthetic, filePath);
-    }
+  const { text } = decodeBufferToText(buf);
+  if (text === null) {
+    const synthetic = [
+      `diff --git a/${filePath} b/${filePath}`,
+      `new file mode 100644`,
+      `Binary files /dev/null and b/${filePath} differ`,
+    ].join("\n");
+    return parseDiffOutput(synthetic, filePath);
   }
 
-  const content = buf.toString("utf8");
+  const content = text;
   const endsWithNewline = content.endsWith("\n");
   const body = endsWithNewline ? content.slice(0, -1) : content;
   const lines = body.length === 0 ? [] : body.split("\n");
