@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
 import { useLogStore } from "@/stores/logStore";
 import { useRepoStore } from "@/stores/repoStore";
 import { useBranchStore } from "@/stores/branchStore";
@@ -485,6 +485,32 @@ onBeforeUnmount(() => {
   document.removeEventListener("click", onPopoverDocClick);
   document.removeEventListener("keydown", onPopoverDocKeydown);
 });
+
+watch(
+  () => repoStore.activeRepo?.path,
+  (newPath, oldPath) => {
+    if (newPath === oldPath) return;
+    showConfirmDialog.value = false;
+    confirmTitle.value = "";
+    confirmText.value = "";
+    pendingAction.value = null;
+    showResetDialog.value = false;
+    contextCommit.value = null;
+    toastVisible.value = false;
+    toastMessage.value = "";
+    if (toastTimer) {
+      clearTimeout(toastTimer);
+      toastTimer = null;
+    }
+    showAuthorPopover.value = false;
+    showDatePopover.value = false;
+    authorInput.value = "";
+    dateFromInput.value = "";
+    dateToInput.value = "";
+    scrollTop.value = 0;
+    if (listRef.value) listRef.value.scrollTop = 0;
+  }
+);
 
 function getRefClass(refType: string): string {
   const classes: Record<string, string> = {
