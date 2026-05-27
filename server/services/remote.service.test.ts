@@ -107,7 +107,8 @@ describe("remoteService.pull · Smart Pull", () => {
       expect.arrayContaining(["stash", "push", "--include-untracked"])
     );
     expect(mockGit.raw.mock.calls[1]?.[0]).toEqual(["pull"]);
-    expect(mockGit.raw.mock.calls[2]?.[0]).toEqual(["stash", "pop"]);
+    // stash pop 带 --index 以恢复 staging（见 5942e7e）
+    expect(mockGit.raw.mock.calls[2]?.[0]).toEqual(["stash", "pop", "--index"]);
   });
 
   it("【5】dirty tree + stash 失败 → 早返回，不调 pull", async () => {
@@ -138,7 +139,8 @@ describe("remoteService.pull · Smart Pull", () => {
     expect(r.conflicts).toEqual([]);
     expect(r.message).toMatch(/could not resolve host/);
     expect(mockGit.raw).toHaveBeenCalledTimes(3);
-    expect(mockGit.raw.mock.calls[2]?.[0]).toEqual(["stash", "pop"]);
+    // 回滚路径首选 stash pop --index 以保留原 staging；失败才 fallback 到 stash pop
+    expect(mockGit.raw.mock.calls[2]?.[0]).toEqual(["stash", "pop", "--index"]);
   });
 
   it("【7】dirty tree + stash + pull 成功 + pop 冲突 → conflicts 非空 + 提示 drop stash", async () => {

@@ -72,18 +72,21 @@ describe("logStore.loadCommits — race condition vs repo switching", () => {
     ];
     repoStore.activeRepoIndex = 0;
 
-    // 步骤 2: 主动触发首次 loadCommits（模拟挂载阶段；watch 在 store 初始化后才生效，此处显式调）
+    // 步骤 2: 主动触发首次 loadCommits（模拟挂载阶段）
     const firstLoad = logStore.loadCommits(true);
 
-    // 步骤 3: 在 RA 请求未返回前切到 B —— store 内 watch 应自动 cancelFetchLog 并触发新 loadCommits
+    // 步骤 3: 在 RA 请求未返回前切到 B —— logStore 内 watch 自动 cancelFetchLog 并清掉旧仓库 commits
     repoStore.activeRepoIndex = 1;
 
-    // 等微任务跑完，watch 同步派发 + 第二个 loadCommits 完成
-    await Promise.resolve();
+    // 等 Vue watch 异步派发完（不能在 watch 之前手动 loadCommits，否则新 controller 会被
+    // watch 内 cancelFetchLog 抹掉）
     await Promise.resolve();
     await Promise.resolve();
 
-    // 步骤 4: RA 的请求 *现在* 才返回（模拟慢请求）
+    // 步骤 4: GitLogView 在切换后通过 ensureLoaded() 触发新仓库加载（这里手动触发等价行为）
+    await logStore.loadCommits(true);
+
+    // 步骤 5: RA 的请求 *现在* 才返回（模拟慢请求），useAbortable 会让它抛 AbortError 被安静吞掉
     resolveRepoA(repoAResult);
     await firstLoad;
 
