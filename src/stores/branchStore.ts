@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { useRepoStore } from "./repoStore";
 import { commands } from "@/utils/commands";
 import type { BranchInfo, Submodule } from "@/utils/commands";
@@ -73,6 +73,25 @@ export const useBranchStore = defineStore("branch", () => {
   const repoStore = useRepoStore();
 
   const branchCache = new Map<string, { local: BranchInfo[]; remote: BranchInfo[]; tags: string[] }>();
+
+  // 切仓库时清掉跨仓库会污染/误操作的状态：
+  // - searchQuery：A 的分支搜索文字带到 B 是 UX bug
+  // - submodules：A 的 submodule 列表残留到 B 直到 loadSubmodules 完成
+  // - checkoutDialog：展开时切仓库会让 branchName 绑到 A、确认按钮触发 B 的 ops（严重）
+  // 不动 favorites：星标分支跨仓库共享（产品决策，命名常重叠如 main/develop）
+  watch(
+    () => repoStore.activeRepo?.path,
+    () => {
+      searchQuery.value = "";
+      submodules.value = [];
+      submodulesLoading.value = false;
+      if (checkoutDialog.value.visible || checkoutDialog.value.resolve) {
+        const resolver = checkoutDialog.value.resolve;
+        if (resolver) resolver("cancel");
+        closeCheckoutDialog();
+      }
+    }
+  );
 
   async function loadBranches() {
     if (!repoStore.activeRepo) return;

@@ -11,7 +11,7 @@
  *   - commands.continueOperation('rebase') / abortOperation('rebase')：操作半成态
  */
 import { defineStore } from "pinia";
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { useRepoStore } from "./repoStore";
 import { useBranchStore } from "./branchStore";
 import { commands } from "@/utils/commands";
@@ -200,6 +200,25 @@ export const useRebaseStore = defineStore("rebase", () => {
       pollTimer = null;
     }
   }
+
+  // 切仓库严重风险：dialog 里编排的是 A 的 commits / baseRef，status 显示的是 A 的 rebase 进度；
+  // 不重置会让 Continue/Abort/Start 把 A 的载荷打到 B 仓库。
+  watch(
+    () => repoStore.activeRepo?.path,
+    () => {
+      close();
+      status.value = {
+        inProgress: false,
+        total: 0,
+        done: 0,
+        currentCommitId: null,
+        currentAction: null,
+        conflictFiles: [],
+      };
+      // 立刻拉一次新仓库的 rebase 状态（若新仓库本就在 rebase 半成态，状态栏会同步显示）
+      void refreshStatus();
+    }
+  );
 
   async function continueRebase(): Promise<void> {
     if (!repoStore.activeRepo) return;
