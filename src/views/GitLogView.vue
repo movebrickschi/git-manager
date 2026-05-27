@@ -63,7 +63,7 @@ onMounted(() => {
 watch(
   () => repoStore.activeRepo?.path,
   () => {
-    logStore.filter.branch = null;
+    // logStore 内部 watch 会自行 swap per-repo 的 filter（含 branch/author/date/searchText 等）
     selectedFile.value = null;
     diffResult.value = null;
     showDiffViewer.value = false;

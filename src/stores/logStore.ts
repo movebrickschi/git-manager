@@ -25,6 +25,19 @@ export interface LogFilter {
   matchCase: boolean;
 }
 
+function defaultFilter(): LogFilter {
+  return {
+    branch: null,
+    author: null,
+    dateFrom: null,
+    dateTo: null,
+    path: null,
+    searchText: "",
+    useRegex: false,
+    matchCase: false,
+  };
+}
+
 export const useLogStore = defineStore("log", () => {
   const commits = ref<CommitInfo[]>([]);
   const graphRows = ref<GraphRow[]>([]);
@@ -35,16 +48,10 @@ export const useLogStore = defineStore("log", () => {
   const page = ref(0);
   const pageSize = 100;
 
-  const filter = ref<LogFilter>({
-    branch: null,
-    author: null,
-    dateFrom: null,
-    dateTo: null,
-    path: null,
-    searchText: "",
-    useRegex: false,
-    matchCase: false,
-  });
+  const filter = ref<LogFilter>(defaultFilter());
+
+  // 每仓库独立的 filter 快照：切换仓库时存旧/取新，避免 searchText/author/date 等被带到另一仓库
+  const filterCache = new Map<string, LogFilter>();
 
   const repoStore = useRepoStore();
 
@@ -124,12 +131,23 @@ export const useLogStore = defineStore("log", () => {
 
   watch(
     () => repoStore.activeRepo?.path,
-    () => {
+    (newPath, oldPath) => {
+      // 把旧仓库的 filter 快照入缓存（branch/author/date/searchText/path/正则等全量保留）
+      if (oldPath) {
+        filterCache.set(oldPath, { ...filter.value });
+      }
+
       cancelFetchLog("repo switched");
       commits.value = [];
+      graphRows.value = [];
       selectedCommitId.value = null;
       selectedCommitIds.value = [];
-      if (repoStore.activeRepo) {
+
+      // 恢复新仓库的 filter；新仓库或未缓存过 → 用默认值（避免跨仓库污染）
+      const restored = newPath ? filterCache.get(newPath) : undefined;
+      filter.value = restored ? { ...restored } : defaultFilter();
+
+      if (newPath) {
         needsReload.value = true;
       }
     }

@@ -59,11 +59,18 @@ export const useCommitStore = defineStore("commit", () => {
     }
   }
 
-  // 仓库切换时取消未完成的 getStatus，避免旧结果污染新仓库面板
+  // 仓库切换时取消未完成的 getStatus，并清掉跨仓库会污染/误操作的脏状态。
+  // 保留：messageHistory（跨项目复用 commit 习惯）；不在此处 loadStatus，由调用方触发。
   watch(
     () => repoStore.activeRepo?.path,
     () => {
       cancelFetchStatus("repo switched");
+      commitMessage.value = "";
+      isAmend.value = false;
+      stagedFiles.value = [];
+      unstagedFiles.value = [];
+      untrackedFiles.value = [];
+      aiError.value = null;
     }
   );
 
