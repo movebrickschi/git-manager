@@ -320,39 +320,64 @@ function closeMerge() {
 }
 
 .fullscreen-panel {
-  width: 100%;
-  height: 100%;
+  width: 90vw;
+  height: 85vh;
+  min-width: 600px;
+  min-height: 400px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 60px);
   background: var(--color-surface);
   border-radius: 8px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--color-border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  resize: both;
 }
 
 .fullscreen-header {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 8px 12px;
+  padding-right: 44px;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   font-size: 13px;
   font-weight: 500;
+  flex-shrink: 0;
+}
+
+.fullscreen-header > span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .close-btn {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 24px;
   display: flex;
   align-items: center;
-  background: none;
-  color: var(--color-foreground-muted);
-  padding: 4px;
+  justify-content: center;
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-border);
+  color: var(--color-foreground);
+  padding: 0;
   border-radius: 3px;
+  cursor: pointer;
 }
 
 .close-btn:hover {
-  background: var(--color-surface-hover);
-  color: var(--color-foreground);
+  background: #c04040;
+  border-color: #c04040;
+  color: #fff;
 }
 
 </style>

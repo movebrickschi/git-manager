@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 import { ref, watch } from "vue";
 import { useRepoStore } from "./repoStore";
 import { commands } from "@/utils/commands";
-import type { BranchInfo, Submodule } from "@/utils/commands";
+import type { BranchInfo, MergeResult, Submodule } from "@/utils/commands";
 
 /**
  * IDEA 风格切分支 dirty 决策窗口的状态机。
@@ -18,6 +18,31 @@ export interface CheckoutDialogState {
   dirtyFiles: string[];
   wouldConflict: string[];
   safe: string[];
+  pending: boolean;
+  resultMessage: string;
+  resultKind: "ok" | "err" | null;
+  resolve: ((choice: "smart" | "force" | "cancel") => void) | null;
+}
+
+/**
+ * Pull 决策弹窗状态机（仿 IDEA「Update Project」预检 + 三选项弹窗）。
+ *
+ * 弹窗打开条件（由 smartPullCurrentBranch 决定）：
+ * - 工作区有未提交修改（`dirtyFiles.length > 0`）
+ * - remote 比 local 至少多一个 commit（`remoteCommitsAhead > 0`）
+ * - 且 upstream 已配置（`upstream !== null`）
+ *
+ * 工作区干净时不弹窗，直接走 Smart Pull；已是最新时不操作，只 toast。
+ */
+export interface PullDialogState {
+  visible: boolean;
+  branchName: string;
+  upstream: string | null;
+  remoteCommitsAhead: number;
+  dirtyFiles: string[];
+  wouldConflict: string[];
+  safe: string[];
+  fetched: boolean;
   pending: boolean;
   resultMessage: string;
   resultKind: "ok" | "err" | null;
@@ -59,6 +84,21 @@ export const useBranchStore = defineStore("branch", () => {
     resolve: null,
   });
 
+  const pullDialog = ref<PullDialogState>({
+    visible: false,
+    branchName: "",
+    upstream: null,
+    remoteCommitsAhead: 0,
+    dirtyFiles: [],
+    wouldConflict: [],
+    safe: [],
+    fetched: false,
+    pending: false,
+    resultMessage: "",
+    resultKind: null,
+    resolve: null,
+  });
+
   const tabSwitchSignal = ref<TabSwitchSignal>({ tab: "log", seq: 0 });
   const globalToast = ref<GlobalToast>({ message: "", kind: "info", seq: 0 });
 
@@ -89,6 +129,11 @@ export const useBranchStore = defineStore("branch", () => {
         const resolver = checkoutDialog.value.resolve;
         if (resolver) resolver("cancel");
         closeCheckoutDialog();
+      }
+      if (pullDialog.value.visible || pullDialog.value.resolve) {
+        const resolver = pullDialog.value.resolve;
+        if (resolver) resolver("cancel");
+        closePullDialog();
       }
     }
   );
@@ -134,6 +179,120 @@ export const useBranchStore = defineStore("branch", () => {
       resultKind: null,
       resolve: null,
     };
+  }
+
+  function closePullDialog(): void {
+    pullDialog.value = {
+      visible: false,
+      branchName: "",
+      upstream: null,
+      remoteCommitsAhead: 0,
+      dirtyFiles: [],
+      wouldConflict: [],
+      safe: [],
+      fetched: false,
+      pending: false,
+      resultMessage: "",
+      resultKind: null,
+      resolve: null,
+    };
+  }
+
+  function resolvePullChoice(choice: "smart" | "force" | "cancel"): void {
+    const resolver = pullDialog.value.resolve;
+    if (resolver) {
+      resolver(choice);
+    } else if (choice === "cancel") {
+      closePullDialog();
+    }
+  }
+
+  /**
+   * IDEA 风格 Pull —— 仿 IntelliJ「Update Project」三选项体验：
+   *   1. 预检（previewPullConflicts）：fetch + status + diff HEAD..@{u}
+   *   2. 工作区干净 → 直接 Smart Pull
+   *   3. 已是最新（remote 没多 commit）→ 仅 toast 提示
+   *   4. dirty → 弹 PullChoiceDialog 给用户选 Smart / Force / Cancel
+   *   5. preview 接口失败 → 降级到旧 pull 行为（保持兼容、不阻断）
+   *
+   * 返回值：
+   *   - MergeResult：成功 / 失败 / 冲突，前端 UI 据此决定后续行为
+   *   - null：用户主动取消、或 preview 失败且降级 pull 抛错前已被前端 try/catch 捕获
+   */
+  async function smartPullCurrentBranch(opts?: {
+    branchName?: string;
+    remote?: string;
+    rebase?: boolean;
+  }): Promise<MergeResult | null> {
+    if (!repoStore.activeRepo) return null;
+    const repoPath = repoStore.activeRepo.path;
+    const headBranchName =
+      opts?.branchName ?? localBranches.value.find((b) => b.isHead)?.name ?? "HEAD";
+
+    let preview;
+    try {
+      preview = await commands.previewPullConflicts(repoPath, opts?.remote);
+    } catch {
+      try {
+        return await commands.pull(repoPath, opts?.remote, opts?.rebase ?? false);
+      } catch (e: unknown) {
+        throw e;
+      }
+    }
+
+    if (preview.upstream && preview.remoteCommitsAhead === 0 && preview.dirtyFiles.length === 0) {
+      showToast(`${headBranchName} 已是最新状态`, "ok");
+      return { success: true, conflicts: [], message: "已是最新" };
+    }
+
+    if (preview.dirtyFiles.length === 0) {
+      return await commands.pull(repoPath, opts?.remote, opts?.rebase ?? false);
+    }
+
+    const choice = await new Promise<"smart" | "force" | "cancel">((resolve) => {
+      pullDialog.value = {
+        visible: true,
+        branchName: headBranchName,
+        upstream: preview.upstream,
+        remoteCommitsAhead: preview.remoteCommitsAhead,
+        dirtyFiles: preview.dirtyFiles,
+        wouldConflict: preview.wouldConflict,
+        safe: preview.safe,
+        fetched: preview.fetched,
+        pending: false,
+        resultMessage: "",
+        resultKind: null,
+        resolve,
+      };
+    });
+
+    if (choice === "cancel") {
+      closePullDialog();
+      return null;
+    }
+
+    pullDialog.value.pending = true;
+    pullDialog.value.resolve = null;
+
+    try {
+      const result =
+        choice === "smart"
+          ? await commands.pull(repoPath, opts?.remote, opts?.rebase ?? false)
+          : await commands.forcePull(repoPath, opts?.remote, opts?.rebase ?? false);
+      if (result.success || (result.conflicts && result.conflicts.length > 0)) {
+        closePullDialog();
+        return result;
+      }
+      pullDialog.value.pending = false;
+      pullDialog.value.resultKind = "err";
+      pullDialog.value.resultMessage = result.message;
+      return result;
+    } catch (e: unknown) {
+      pullDialog.value.pending = false;
+      pullDialog.value.resultKind = "err";
+      pullDialog.value.resultMessage = e instanceof Error ? e.message : String(e);
+      return null;
+    }
   }
 
   /**
@@ -342,9 +501,12 @@ export const useBranchStore = defineStore("branch", () => {
     searchQuery,
     favorites,
     checkoutDialog,
+    pullDialog,
     tabSwitchSignal,
     globalToast,
     resolveCheckoutChoice,
+    resolvePullChoice,
+    smartPullCurrentBranch,
     requestTabSwitch,
     showToast,
     loadBranches,

@@ -53,6 +53,8 @@ const ALLOWED_CHANNELS = new Set<string>([
   "get_unpushed_commits",
   "get_behind_count",
   "pull_remote",
+  "preview_pull_conflicts",
+  "force_pull",
   "fetch_remote",
   "fetch_all",
   "fetch_branch",

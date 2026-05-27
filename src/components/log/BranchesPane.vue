@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, defineAsyncComponent } from "vue";
+import { ref, computed, onMounted, watch, defineAsyncComponent } from "vue";
 import { useBranchStore } from "@/stores/branchStore";
 import { useLogStore } from "@/stores/logStore";
 import { useRepoStore } from "@/stores/repoStore";
@@ -16,6 +16,7 @@ const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/Thre
 import PushDialog from "@/components/common/PushDialog.vue";
 import CreateTagDialog from "@/components/common/CreateTagDialog.vue";
 import ReflogDialog from "@/components/common/ReflogDialog.vue";
+import PullChoiceDialog from "@/components/common/PullChoiceDialog.vue";
 import BranchPopup from "@/components/branch/BranchPopup.vue";
 
 function friendlyErr(input: unknown): string {
@@ -196,6 +197,16 @@ onMounted(() => {
   void branchStore.loadSubmodules();
 });
 
+watch(
+  () => repoStore.activeRepo?.path,
+  (newPath, oldPath) => {
+    if (newPath === oldPath) return;
+    actionError.value = "";
+    selectedSidebarBranch.value = null;
+    searchQuery.value = "";
+  }
+);
+
 const headBranch = computed(() => branchStore.localBranches.find((b) => b.isHead) ?? null);
 
 function parseRemoteRef(fullName: string): { remote: string; branch: string } | null {
@@ -284,13 +295,20 @@ async function handlePull() {
       if (parsed) remote = parsed.remote;
     }
     if (!remote) remote = await resolveDefaultRemote();
-    const result = await commands.pull(path, remote, false);
+    const result = await branchStore.smartPullCurrentBranch({
+      branchName: head?.name,
+      remote,
+      rebase: false,
+    });
     await refreshAfterGitOp();
+    if (!result) return;
     if (result.conflicts && result.conflicts.length > 0) {
       openConflictDialog(result.conflicts);
     } else if (!result.success) {
-      actionError.value = friendlyErr(result.message);
-    } else {
+      if (!branchStore.pullDialog.visible) {
+        actionError.value = friendlyErr(result.message);
+      }
+    } else if (result.message !== "已是最新") {
       ui.showToast("拉取完成，所有文件都处于最新状态");
     }
   } catch (e: unknown) {
@@ -360,13 +378,20 @@ async function pullForLocalBranch(branch: BranchInfo) {
       if (parsed) remote = parsed.remote;
     }
     if (!remote) remote = await resolveDefaultRemote();
-    const result = await commands.pull(path, remote, false);
+    const result = await branchStore.smartPullCurrentBranch({
+      branchName: branch.name,
+      remote,
+      rebase: false,
+    });
     await refreshAfterGitOp();
+    if (!result) return;
     if (result.conflicts && result.conflicts.length > 0) {
       openConflictDialog(result.conflicts);
     } else if (!result.success) {
-      actionError.value = friendlyErr(result.message);
-    } else {
+      if (!branchStore.pullDialog.visible) {
+        actionError.value = friendlyErr(result.message);
+      }
+    } else if (result.message !== "已是最新") {
       ui.showToast(`${branch.name} 已是最新状态`);
     }
   } catch (e: unknown) {
@@ -396,12 +421,21 @@ async function updateBranchWithoutCheckout(branch: BranchInfo) {
   try {
     if (branch.isHead) {
       const remote = await resolveDefaultRemote();
-      const result = await commands.pull(path, remote, false);
+      const result = await branchStore.smartPullCurrentBranch({
+        branchName: branch.name,
+        remote,
+        rebase: false,
+      });
+      if (!result) {
+        return;
+      }
       if (result.conflicts && result.conflicts.length > 0) {
         openConflictDialog(result.conflicts);
       } else if (!result.success) {
-        actionError.value = friendlyErr(result.message);
-      } else {
+        if (!branchStore.pullDialog.visible) {
+          actionError.value = friendlyErr(result.message);
+        }
+      } else if (result.message !== "已是最新") {
         ui.showToast(`${branch.name} 已是最新状态`);
       }
     } else {
@@ -1558,6 +1592,22 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
       @close="onPushCancelled"
     />
 
+    <!-- Pull 三选项弹框（仿 IDEA Update Project） -->
+    <PullChoiceDialog
+      :visible="branchStore.pullDialog.visible"
+      :branch-name="branchStore.pullDialog.branchName"
+      :upstream="branchStore.pullDialog.upstream"
+      :remote-commits-ahead="branchStore.pullDialog.remoteCommitsAhead"
+      :dirty-files="branchStore.pullDialog.dirtyFiles"
+      :would-conflict="branchStore.pullDialog.wouldConflict"
+      :safe="branchStore.pullDialog.safe"
+      :fetched="branchStore.pullDialog.fetched"
+      :pending="branchStore.pullDialog.pending"
+      :result-message="branchStore.pullDialog.resultMessage"
+      :result-kind="branchStore.pullDialog.resultKind"
+      @choose="branchStore.resolvePullChoice"
+    />
+
     <!-- 冲突解决弹窗 -->
     <Teleport to="body">
       <div v-if="showConflictDialog" class="conflict-modal-overlay">
@@ -1847,25 +1897,63 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
 }
 
 .conflict-modal-panel {
-  width: 100%;
-  height: 100%;
+  width: 90vw;
+  height: 85vh;
+  min-width: 600px;
+  min-height: 400px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 60px);
   background: var(--color-surface);
   border-radius: 8px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--color-border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  resize: both;
 }
 
 .conflict-modal-header {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 8px 14px;
+  padding-right: 44px;
   border-bottom: 1px solid var(--color-border);
   font-size: 13px;
   font-weight: 500;
   flex-shrink: 0;
+}
+
+.conflict-modal-header > span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conflict-modal-header .conflict-close-btn {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-border);
+  color: var(--color-foreground);
+  padding: 0;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.conflict-modal-header .conflict-close-btn:hover {
+  background: #c04040;
+  border-color: #c04040;
+  color: #fff;
 }
 
 .conflict-close-btn {

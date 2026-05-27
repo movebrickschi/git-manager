@@ -43,6 +43,8 @@ export const COMMANDS = [
   { method: "getUnpushedCommits", ipc: "get_unpushed_commits", http: "/unpushed-commits", bodyKeys: ["repoPath", "remote", "branch"] },
   { method: "getBehindCount", ipc: "get_behind_count", http: "/behind-count", bodyKeys: ["repoPath", "remote", "branch"] },
   { method: "pull", ipc: "pull_remote", http: "/pull", bodyKeys: ["repoPath", "remote", "rebase"] },
+  { method: "previewPullConflicts", ipc: "preview_pull_conflicts", http: "/pull/preview", bodyKeys: ["repoPath", "remote"] },
+  { method: "forcePull", ipc: "force_pull", http: "/pull/force", bodyKeys: ["repoPath", "remote", "rebase"] },
   { method: "fetch", ipc: "fetch_remote", http: "/fetch", bodyKeys: ["repoPath", "remote"] },
   { method: "fetchAll", ipc: "fetch_all", http: "/fetch/all", bodyKeys: ["repoPath"] },
   { method: "fetchBranch", ipc: "fetch_branch", http: "/branch/fetch-update", bodyKeys: ["repoPath", "remote", "branchName"] },

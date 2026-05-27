@@ -237,3 +237,172 @@ describe("remoteService.pull · Smart Pull", () => {
     expect(mockGit.raw).toHaveBeenCalledWith(["pull", "--rebase", "origin"]);
   });
 });
+
+describe("remoteService.previewPullConflicts · IDEA-style preview", () => {
+  let mockGit: MockGit;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGit = makeMockGit();
+    vi.mocked(getGit).mockReturnValue(mockGit as never);
+  });
+
+  it("【preview-1】clean tree + upstream 配置 + remote 落后 → 空 dirty / 0 commits ahead", async () => {
+    mockGit.fetch.mockResolvedValue(undefined);
+    mockGit.status.mockResolvedValue(statusClean());
+    mockGit.raw
+      .mockResolvedValueOnce("origin/main\n")
+      .mockResolvedValueOnce("0\n");
+
+    const r = await remoteService.previewPullConflicts("/repo");
+
+    expect(r.dirtyFiles).toEqual([]);
+    expect(r.wouldConflict).toEqual([]);
+    expect(r.safe).toEqual([]);
+    expect(r.upstream).toBe("origin/main");
+    expect(r.remoteCommitsAhead).toBe(0);
+    expect(r.fetched).toBe(true);
+  });
+
+  it("【preview-2】dirty tree + remote 改了相同文件 → wouldConflict 命中", async () => {
+    mockGit.fetch.mockResolvedValue(undefined);
+    mockGit.status.mockResolvedValue({
+      files: [
+        { path: "a.ts", index: "M", working_dir: " " },
+        { path: "b.ts", index: " ", working_dir: "M" },
+        { path: "c.ts", index: "?", working_dir: "?" },
+      ],
+      conflicted: [],
+    });
+    mockGit.raw
+      .mockResolvedValueOnce("origin/main\n")
+      .mockResolvedValueOnce("3\n")
+      .mockResolvedValueOnce("a.ts\nd.ts\n");
+
+    const r = await remoteService.previewPullConflicts("/repo");
+
+    expect(new Set(r.dirtyFiles)).toEqual(new Set(["a.ts", "b.ts", "c.ts"]));
+    expect(r.wouldConflict).toEqual(["a.ts"]);
+    expect(new Set(r.safe)).toEqual(new Set(["b.ts", "c.ts"]));
+    expect(r.upstream).toBe("origin/main");
+    expect(r.remoteCommitsAhead).toBe(3);
+    expect(r.fetched).toBe(true);
+  });
+
+  it("【preview-3】fetch 失败 → fetched=false 但仍返回预测", async () => {
+    mockGit.fetch.mockRejectedValue(new Error("could not resolve host"));
+    mockGit.status.mockResolvedValue(statusDirty());
+    mockGit.raw
+      .mockResolvedValueOnce("origin/main\n")
+      .mockResolvedValueOnce("0\n");
+
+    const r = await remoteService.previewPullConflicts("/repo");
+
+    expect(r.fetched).toBe(false);
+    expect(r.dirtyFiles).toEqual(["a.ts"]);
+    expect(r.upstream).toBe("origin/main");
+  });
+
+  it("【preview-4】没配 upstream（新分支没 push 过）→ upstream=null, remoteCommitsAhead=0", async () => {
+    mockGit.fetch.mockResolvedValue(undefined);
+    mockGit.status.mockResolvedValue(statusDirty());
+    mockGit.raw.mockRejectedValueOnce(new Error("fatal: no upstream"));
+
+    const r = await remoteService.previewPullConflicts("/repo");
+
+    expect(r.upstream).toBeNull();
+    expect(r.remoteCommitsAhead).toBe(0);
+    expect(r.dirtyFiles).toEqual(["a.ts"]);
+    expect(r.wouldConflict).toEqual([]);
+    expect(r.safe).toEqual(["a.ts"]);
+  });
+
+  it("【preview-5】diff 失败 → 退化为全部 dirty 当冲突，避免误判 safe", async () => {
+    mockGit.fetch.mockResolvedValue(undefined);
+    mockGit.status.mockResolvedValue({
+      files: [
+        { path: "a.ts", index: "M", working_dir: " " },
+        { path: "b.ts", index: " ", working_dir: "M" },
+      ],
+      conflicted: [],
+    });
+    mockGit.raw
+      .mockResolvedValueOnce("origin/main\n")
+      .mockResolvedValueOnce("5\n")
+      .mockRejectedValueOnce(new Error("fatal: bad revision"));
+
+    const r = await remoteService.previewPullConflicts("/repo");
+
+    expect(new Set(r.wouldConflict)).toEqual(new Set(["a.ts", "b.ts"]));
+    expect(r.safe).toEqual([]);
+  });
+
+  it("【preview-6】remote=origin → fetch 命令带 origin", async () => {
+    mockGit.fetch.mockResolvedValue(undefined);
+    mockGit.status.mockResolvedValue(statusClean());
+    mockGit.raw
+      .mockResolvedValueOnce("origin/main\n")
+      .mockResolvedValueOnce("0\n");
+
+    await remoteService.previewPullConflicts("/repo", "origin");
+
+    expect(mockGit.fetch).toHaveBeenCalledWith("origin");
+  });
+});
+
+describe("remoteService.forcePull · 丢弃本地改动强制拉取", () => {
+  let mockGit: MockGit;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGit = makeMockGit();
+    vi.mocked(getGit).mockReturnValue(mockGit as never);
+    vi.mocked(getConflictFiles).mockResolvedValue([]);
+  });
+
+  it("【force-1】reset --hard + clean -fd + pull 全部成功 → success", async () => {
+    mockGit.raw.mockResolvedValue("");
+
+    const r = await remoteService.forcePull("/repo");
+
+    expect(r.success).toBe(true);
+    expect(r.message).toMatch(/已丢弃本地修改并完成 Pull/);
+    expect(mockGit.raw).toHaveBeenCalledTimes(3);
+    expect(mockGit.raw.mock.calls[0]?.[0]).toEqual(["reset", "--hard", "HEAD"]);
+    expect(mockGit.raw.mock.calls[1]?.[0]).toEqual(["clean", "-fd"]);
+    expect(mockGit.raw.mock.calls[2]?.[0]).toEqual(["pull"]);
+  });
+
+  it("【force-2】reset 失败 → 不继续 clean / pull", async () => {
+    mockGit.raw.mockRejectedValueOnce(new Error("permission denied"));
+
+    const r = await remoteService.forcePull("/repo");
+
+    expect(r.success).toBe(false);
+    expect(r.message).toMatch(/丢弃本地修改失败/);
+    expect(r.message).toMatch(/permission denied/);
+    expect(mockGit.raw).toHaveBeenCalledTimes(1);
+  });
+
+  it("【force-3】reset + clean OK + pull 失败 + 产生冲突 → conflicts 非空", async () => {
+    mockGit.raw
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockRejectedValueOnce(new Error("CONFLICT (content)"));
+    vi.mocked(getConflictFiles).mockResolvedValue(["x.ts"]);
+
+    const r = await remoteService.forcePull("/repo");
+
+    expect(r.success).toBe(false);
+    expect(r.conflicts).toEqual(["x.ts"]);
+    expect(r.message).toMatch(/CONFLICT/);
+  });
+
+  it("【force-4】remote=origin + rebase=true → pull 命令带 --rebase 和 origin", async () => {
+    mockGit.raw.mockResolvedValue("");
+
+    await remoteService.forcePull("/repo", "origin", true);
+
+    expect(mockGit.raw).toHaveBeenCalledWith(["pull", "--rebase", "origin"]);
+  });
+});

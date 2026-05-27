@@ -1,4 +1,4 @@
-import type { AheadBehind, CommitInfo, MergeResult, PushOptions, RemoteInfo } from "../git-service.js";
+import type { AheadBehind, CommitInfo, MergeResult, PullPreview, PushOptions, RemoteInfo } from "../git-service.js";
 import {
   errStr,
   getConflictFiles,
@@ -141,6 +141,164 @@ export const remoteService = {
     }
 
     return { success: true, conflicts: [], message: "Pull completed" };
+  },
+
+  /**
+   * Pull 预检测 —— 仿 IntelliJ IDEA「Update Project」弹窗前的状态摸底。
+   *
+   * 流程：
+   *   1. `git fetch [remote]` 把 remote tracking branch 拉到最新（关键，没 fetch
+   *      过的话 @{u} 是旧的，预测会失真）
+   *   2. `git status` 拿当前工作区 dirty 文件列表（含 staged / unstaged / untracked）
+   *   3. `git rev-parse --symbolic-full-name @{u}` 拿 upstream ref（如 origin/main）
+   *   4. `git rev-list --count HEAD..@{u}` 拿 remote 比 local 多几个 commit
+   *   5. `git diff HEAD..@{u} --name-only --no-renames` 拿 remote 改过的文件
+   *   6. dirty ∩ remoteChanged = wouldConflict（Smart Pull 时 stash pop 大概率失败）
+   *
+   * 返回值用于驱动 PullChoiceDialog 决策：
+   *   - dirtyFiles.length === 0：可以直接 pull 不用弹窗
+   *   - remoteCommitsAhead === 0：本地是最新的，不需要 pull
+   *   - wouldConflict.length > 0：警告 Smart Pull 风险，Force Pull 会丢数据
+   *
+   * 异常容错：
+   *   - fetch 失败（网络 / auth）→ fetched=false，但仍返回基于旧 tracking branch
+   *     的预测（用户应该被提示 fetch 失败）
+   *   - 没 upstream（新分支没 push 过）→ upstream=null, remoteCommitsAhead=0, 不强迫弹窗
+   *   - status 失败 → 不抛错，返回空 dirtyFiles（兜底）
+   */
+  async previewPullConflicts(repoPath: string, remote?: string): Promise<PullPreview> {
+    const git = getGit(repoPath);
+    let fetched = false;
+    try {
+      if (remote) {
+        await git.fetch(remote);
+      } else {
+        await git.fetch();
+      }
+      fetched = true;
+    } catch {
+      fetched = false;
+    }
+
+    let dirtyFiles: string[] = [];
+    try {
+      const status = await git.status();
+      const all = new Set<string>();
+      for (const f of status.files) {
+        if (f.path) all.add(f.path);
+      }
+      dirtyFiles = Array.from(all);
+    } catch {
+      dirtyFiles = [];
+    }
+
+    let upstream: string | null = null;
+    try {
+      const raw = await git.raw(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
+      upstream = raw.trim() || null;
+    } catch {
+      upstream = null;
+    }
+
+    let remoteCommitsAhead = 0;
+    if (upstream) {
+      try {
+        const raw = await git.raw(["rev-list", "--count", `HEAD..${upstream}`]);
+        remoteCommitsAhead = parseInt(raw.trim(), 10) || 0;
+      } catch {
+        remoteCommitsAhead = 0;
+      }
+    }
+
+    if (dirtyFiles.length === 0 || !upstream) {
+      return {
+        dirtyFiles,
+        wouldConflict: [],
+        safe: dirtyFiles,
+        upstream,
+        remoteCommitsAhead,
+        fetched,
+      };
+    }
+
+    let wouldConflict: string[] = [];
+    let safe: string[] = dirtyFiles;
+    try {
+      const raw = await git.raw([
+        "diff",
+        "--name-only",
+        "--no-renames",
+        `HEAD..${upstream}`,
+      ]);
+      const changed = new Set(
+        raw
+          .split("\n")
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0)
+      );
+      wouldConflict = [];
+      safe = [];
+      for (const f of dirtyFiles) {
+        if (changed.has(f)) wouldConflict.push(f);
+        else safe.push(f);
+      }
+    } catch {
+      wouldConflict = [...dirtyFiles];
+      safe = [];
+    }
+
+    return { dirtyFiles, wouldConflict, safe, upstream, remoteCommitsAhead, fetched };
+  },
+
+  /**
+   * Force Pull —— 用户在 PullChoiceDialog 明确选择「丢弃本地修改强制更新」时调用。
+   *
+   * 流程：
+   *   1. `git reset --hard HEAD`：丢弃所有 tracked 文件的未提交修改（含 staged / unstaged）
+   *   2. `git clean -fd`：删除所有 untracked 文件与空目录
+   *   3. `git pull [--rebase] [remote]`
+   *
+   * 警告：步骤 1+2 是**不可恢复**的，调用方 UI 必须先弹二次确认。
+   * 异常处理：reset / clean 失败 → 返回错误，不继续 pull；pull 失败按 MergeResult 返回。
+   */
+  async forcePull(repoPath: string, remote?: string, rebase?: boolean): Promise<MergeResult> {
+    const git = getGit(repoPath);
+    try {
+      await git.raw(["reset", "--hard", "HEAD"]);
+      await git.raw(["clean", "-fd"]);
+    } catch (e: unknown) {
+      return {
+        success: false,
+        conflicts: [],
+        message: `丢弃本地修改失败：${errStr(e) || "未知错误"}`,
+      };
+    }
+
+    try {
+      const args: string[] = ["pull"];
+      if (rebase) args.push("--rebase");
+      if (remote) args.push(remote);
+      await git.raw(args);
+    } catch (e: unknown) {
+      const conflicts = await getConflictFiles(repoPath);
+      if (conflicts.length > 0) {
+        return {
+          success: false,
+          conflicts,
+          message: errStr(e) || "Pull produced merge conflicts after force reset",
+        };
+      }
+      return {
+        success: false,
+        conflicts: [],
+        message: errStr(e) || "Force pull failed",
+      };
+    }
+    return {
+      success: true,
+      conflicts: [],
+      message: "已丢弃本地修改并完成 Pull",
+    };
   },
 
   async getBehindCount(

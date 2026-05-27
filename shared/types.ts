@@ -236,6 +236,27 @@ export interface ConflictFile {
   baseContent: string;
 }
 
+/**
+ * Pull 预检测结果（仿 IDEA「Update Project」弹窗前的状态摸底）。
+ *
+ * 字段语义：
+ * - `dirtyFiles`：当前工作区脏文件（staged + unstaged + untracked），用户在 Pull 前没提交的所有改动
+ * - `wouldConflict`：dirty ∩ remote-also-changed —— Smart Pull 时 stash pop 大概率冲突
+ * - `safe`：dirty 中未与 remote 改动撞车的文件 —— Smart Pull 时基本能无痛恢复
+ * - `upstream`：upstream 引用（如 `origin/main`），未设置 upstream 时为 null
+ * - `remoteCommitsAhead`：remote 比 local 多几个 commit；为 0 表示本地已是最新
+ * - `fetched`：true 表示 preview 期间成功 fetch 过最新远端；false 表示用户离线 / 认证失败，
+ *   预测基于上次 fetch 的旧 remote tracking branch（UI 应提示"网络异常，预测可能过期"）
+ */
+export interface PullPreview {
+  dirtyFiles: string[];
+  wouldConflict: string[];
+  safe: string[];
+  upstream: string | null;
+  remoteCommitsAhead: number;
+  fetched: boolean;
+}
+
 export interface AheadBehind {
   ahead: number;
   behind: number;
@@ -327,6 +348,8 @@ export interface Commands {
     branch?: string
   ): Promise<CommitInfo[]>;
   pull(repoPath: string, remote?: string, rebase?: boolean): Promise<MergeResult>;
+  previewPullConflicts(repoPath: string, remote?: string): Promise<PullPreview>;
+  forcePull(repoPath: string, remote?: string, rebase?: boolean): Promise<MergeResult>;
   getBehindCount(repoPath: string, remote: string, branch: string): Promise<AheadBehind>;
   fetch(repoPath: string, remote?: string): Promise<void>;
   fetchAll(repoPath: string): Promise<void>;

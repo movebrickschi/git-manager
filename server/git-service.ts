@@ -39,6 +39,7 @@ export type {
   LogFilter,
   LogResult,
   MergeResult,
+  PullPreview,
   PushOptions,
   ReflogEntry,
   RefInfo,
