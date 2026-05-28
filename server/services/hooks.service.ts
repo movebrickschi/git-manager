@@ -56,7 +56,7 @@ export const hooksService = {
   async listHooks(repoPath: string): Promise<HookInfo[]> {
     const hooksDir = path.join(repoPath, ".git", "hooks");
     const out: HookInfo[] = [];
-    let entries: string[] = [];
+    let entries: string[];
     try {
       entries = await fs.readdir(hooksDir);
     } catch {
