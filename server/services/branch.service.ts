@@ -234,6 +234,36 @@ export const branchService = {
     }
   },
 
+  /**
+   * 批量 cherry-pick 多个 commit。
+   *
+   * git 原生 `cherry-pick A B C` 行为：按顺序应用，遇到冲突暂停。这里 commits 应按
+   * **从旧到新**顺序传入（IDEA UI 选择 commit 时按时间倒序，调用方需 reverse）。
+   *
+   * 与单 commit 版本一致：成功时返回 { success: true }，失败时返回当前冲突列表。
+   */
+  async cherryPickRange(repoPath: string, commitIds: string[]): Promise<MergeResult> {
+    if (!Array.isArray(commitIds) || commitIds.length === 0) {
+      return { success: true, conflicts: [], message: "no commits to cherry-pick" };
+    }
+    const git = getGit(repoPath);
+    try {
+      await git.raw(["cherry-pick", ...commitIds]);
+      return {
+        success: true,
+        conflicts: [],
+        message: `Cherry-pick ${commitIds.length} commit(s) completed`,
+      };
+    } catch (e: unknown) {
+      const conflicts = await getConflictFiles(repoPath);
+      return {
+        success: false,
+        conflicts,
+        message: errStr(e) || `Cherry-pick failed at ${commitIds[0]}`,
+      };
+    }
+  },
+
   async revertCommit(repoPath: string, commitId: string): Promise<MergeResult> {
     const git = getGit(repoPath);
     try {

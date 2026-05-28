@@ -122,6 +122,36 @@ async function handleCherryPick() {
   }
 }
 
+/**
+ * 批量 cherry-pick · 把 logStore 中选中的多个 commit 按从旧到新顺序应用。
+ *
+ * logStore.commits 是 git log 默认按新到旧排序，所以这里需要 reverse 一遍才
+ * 符合 git cherry-pick A B C（A 最旧 → C 最新）的语义。
+ */
+async function handleCherryPickMulti() {
+  if (!repoStore.activeRepo) return;
+  const selected = new Set(logStore.selectedCommitIds);
+  // 按 commits 中顺序找出 selected 的 commit，再 reverse（旧→新）
+  const ordered = logStore.commits.filter((c) => selected.has(c.id)).reverse();
+  if (ordered.length === 0) return;
+  try {
+    const result = await commands.cherryPickRange(
+      repoStore.activeRepo.path,
+      ordered.map((c) => c.id)
+    );
+    if (result.success) {
+      await Promise.all([logStore.loadCommits(true), branchStore.loadBranches()]);
+      showToast(`已 cherry-pick ${ordered.length} 个 commit`);
+    } else {
+      showToast(
+        `Cherry-pick 在 ${ordered[0]?.shortId} 附近产生冲突：${result.conflicts.join(", ")}`
+      );
+    }
+  } catch (e: any) {
+    showToast(`批量 Cherry-pick 失败：${e.message}`);
+  }
+}
+
 // ---- Checkout Revision ----
 function handleCheckoutRevision() {
   if (!contextCommit.value) return;
@@ -313,6 +343,8 @@ function cancelConfirm() {
 
 const contextMenuItems = computed<MenuItem[]>(() => {
   if (!contextCommit.value) return [];
+  const multiCount = logStore.selectedCommitIds.length;
+  const isMulti = multiCount >= 2 && logStore.selectedCommitIds.includes(contextCommit.value.id);
   return [
     {
       label: "复制 Revision",
@@ -323,7 +355,9 @@ const contextMenuItems = computed<MenuItem[]>(() => {
       action: () => navigator.clipboard.writeText(contextCommit.value!.summary),
     },
     { separator: true, label: "" },
-    { label: "Cherry-pick", action: handleCherryPick },
+    isMulti
+      ? { label: `Cherry-pick ${multiCount} 个 commit`, action: handleCherryPickMulti }
+      : { label: "Cherry-pick", action: handleCherryPick },
     { label: "Checkout Revision", action: handleCheckoutRevision },
     { separator: true, label: "" },
     { label: "新建分支...", action: handleNewBranchFromCommit },

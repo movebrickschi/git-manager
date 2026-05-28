@@ -326,6 +326,8 @@ export interface Commands {
   mergeBranch(repoPath: string, name: string): Promise<MergeResult>;
   rebaseBranch(repoPath: string, upstream: string): Promise<MergeResult>;
   cherryPick(repoPath: string, commitId: string): Promise<MergeResult>;
+  /** 批量 cherry-pick：commitIds 须按时间从旧到新排序。 */
+  cherryPickRange(repoPath: string, commitIds: string[]): Promise<MergeResult>;
   revertCommit(repoPath: string, commitId: string): Promise<MergeResult>;
   resetToCommit(
     repoPath: string,
