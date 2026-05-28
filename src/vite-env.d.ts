@@ -1,13 +1,26 @@
 /// <reference types="vite/client" />
 
-interface Window {
-  electronAPI?: {
-    invoke(channel: string, ...args: any[]): Promise<any>;
-    selectDirectory(): Promise<string | null>;
-    revealInFolder(absPath: string): Promise<void>;
-    on?(channel: string, callback: (payload: any) => void): () => void;
-  };
+import type { TypedInvoke } from "../shared/typed-ipc";
+
+declare global {
+  interface Window {
+    electronAPI?: {
+      /** 类型化 IPC invoke：channel 字面量 → 自动推断 args/return；string 兜底 → unknown。 */
+      invoke: TypedInvoke;
+      selectDirectory(): Promise<string | null>;
+      revealInFolder(absPath: string): Promise<void>;
+      on?(channel: string, callback: (payload: any) => void): () => void;
+    };
+  }
 }
+
+declare module "*.vue" {
+  import type { DefineComponent } from "vue";
+  const component: DefineComponent<object, object, any>;
+  export default component;
+}
+
+export {};
 
 declare module "*.vue" {
   import type { DefineComponent } from "vue";
