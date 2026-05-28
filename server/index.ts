@@ -3,6 +3,7 @@ import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
 import apiRoutes from "./routes.js";
+import sseRoutes from "./routes-sse.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,6 +37,8 @@ app.use((req, res, next) => {
 });
 
 app.use("/api", apiRoutes);
+// SSE 路由独立挂载以避免被 json body parser / cors maxAge 缓存影响
+app.use("/api", sseRoutes);
 
 const distPath = path.join(__dirname, "../dist");
 app.use(express.static(distPath));
