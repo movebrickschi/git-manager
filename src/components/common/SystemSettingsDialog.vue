@@ -13,6 +13,8 @@
 import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from "vue";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useRepoStore } from "@/stores/repoStore";
+import { commands } from "@/utils/commands";
+import { parseRemoteUrl, type RemoteMeta } from "../../../shared/remote-host";
 
 const AiSettingsDialog = defineAsyncComponent(
   () => import("@/components/commit/AiSettingsDialog.vue")
@@ -35,11 +37,14 @@ type Section =
   | "fetch"
   | "worktree"
   | "ai"
+  | "integrations"
   | "about";
 
 const activeSection = ref<Section>("appearance");
 const showAiDialog = ref(false);
 const showWorktreeDialog = ref(false);
+const remoteMeta = ref<RemoteMeta | null>(null);
+const remoteLoading = ref(false);
 
 const sections: { id: Section; label: string; icon: string }[] = [
   { id: "appearance", label: "外观", icon: "🎨" },
@@ -48,8 +53,36 @@ const sections: { id: Section; label: string; icon: string }[] = [
   { id: "fetch", label: "Auto-fetch", icon: "📡" },
   { id: "worktree", label: "Worktree", icon: "🌳" },
   { id: "ai", label: "AI", icon: "✨" },
+  { id: "integrations", label: "集成", icon: "🔗" },
   { id: "about", label: "关于", icon: "ℹ️" },
 ];
+
+async function loadRemoteMeta() {
+  remoteMeta.value = null;
+  if (!repoStore.activeRepo) return;
+  remoteLoading.value = true;
+  try {
+    const remotes = await commands.getRemotes(repoStore.activeRepo.path);
+    const origin = remotes.find((r) => r.name === "origin") ?? remotes[0];
+    if (origin?.url) remoteMeta.value = parseRemoteUrl(origin.url);
+  } catch (e) {
+    console.warn("[settings] getRemotes failed:", e);
+  } finally {
+    remoteLoading.value = false;
+  }
+}
+
+watch(
+  () => [activeSection.value, repoStore.activeRepo?.path].join("|"),
+  () => {
+    if (activeSection.value === "integrations") void loadRemoteMeta();
+  }
+);
+
+function openExternal(url: string) {
+  // Electron 主进程 setWindowOpenHandler 会把 http(s) URL 转给 shell.openExternal
+  window.open(url, "_blank", "noopener,noreferrer");
+}
 
 const fetchIntervalInput = ref(String(settings.autoFetchIntervalMinutes));
 watch(
@@ -271,6 +304,41 @@ const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
             <p class="field-desc" v-else>
               当前仓库：<code>{{ repoStore.activeRepo.path }}</code>
             </p>
+          </div>
+
+          <!-- 集成 -->
+          <div v-if="activeSection === 'integrations'" class="section">
+            <h3>外部集成</h3>
+            <p>
+              根据当前仓库的 origin remote 自动识别平台（GitHub / GitLab / Bitbucket / Gitea），
+              在系统浏览器打开对应页面。完整 PR / Issue 内嵌面板暂未实现（后续会补）。
+            </p>
+            <div v-if="!repoStore.activeRepo" class="field-desc">需要先打开一个仓库。</div>
+            <div v-else-if="remoteLoading" class="field-desc">读取 remote 中…</div>
+            <div v-else-if="!remoteMeta" class="field-desc">
+              未检测到可识别的 origin remote（仓库无 remote，或 url 格式无法解析）。
+            </div>
+            <div v-else class="integrations-block">
+              <div class="about-row">
+                <span>平台</span>
+                <span>{{ remoteMeta.host }} · {{ remoteMeta.domain }}</span>
+              </div>
+              <div class="about-row">
+                <span>仓库</span>
+                <span>{{ remoteMeta.owner }} / {{ remoteMeta.repo }}</span>
+              </div>
+              <div class="integrations-actions">
+                <button class="ai-open-btn" @click="openExternal(remoteMeta.pullRequestsUrl)">
+                  🔗 打开 PR / MR 列表
+                </button>
+                <button class="ai-open-btn" @click="openExternal(remoteMeta.issuesUrl)">
+                  🐛 打开 Issue 列表
+                </button>
+                <button class="ai-open-btn" @click="openExternal(remoteMeta.homeUrl)">
+                  🏠 打开仓库主页
+                </button>
+              </div>
+            </div>
           </div>
 
           <!-- AI -->
@@ -549,6 +617,30 @@ const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
 .about-row > span:first-child {
   color: var(--color-foreground-muted);
   min-width: 80px;
+}
+
+.integrations-block {
+  margin-top: 12px;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 6px);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.integrations-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.integrations-actions .ai-open-btn {
+  flex: 1 1 200px;
+  margin-top: 0;
 }
 
 .about-row a {
