@@ -13,13 +13,41 @@
  *   3. 单仓库单 watcher，切仓库时关旧的；窗口关闭时全清
  *   4. 默认 ignored 还排除 node_modules / .DS_Store 等高噪声目录
  *
+ * chokidar 5.x 加载策略：
+ *   chokidar 5.x 是 ESM-only 包，Electron 主进程编译目标是 CommonJS，
+ *   require("chokidar") 会触发 ERR_REQUIRE_ESM。改用 dynamic `await import()`，
+ *   首次 setRepo 时按需加载并缓存模块引用，后续切仓库零开销。
+ *
  * 安全：
  *   - chokidar 自身只读，不写文件
  *   - 监听器在 setRepo(null) 或 closeAll() 后释放，避免 memory leak
  */
-import { FSWatcher, watch as chokidarWatch } from "chokidar";
 import * as path from "path";
+import type { FSWatcher } from "chokidar";
 import type { WebContents } from "electron";
+
+type ChokidarModule = typeof import("chokidar");
+
+/**
+ * TS 在 module=CommonJS 下会把字面量 `import("chokidar")` 编译为
+ * `Promise.resolve().then(() => require("chokidar"))`，对纯 ESM 包仍会触发
+ * ERR_REQUIRE_ESM。用 Function 构造器在运行时构造原生 import，绕过 tsc 改写。
+ *
+ * Node 20+（Electron 33 内置）原生支持 dynamic import ESM 模块，这是官方推荐
+ * 的"CJS 加载 ESM"模式。
+ */
+const dynamicImport = new Function(
+  "specifier",
+  "return import(specifier)"
+) as <T = unknown>(specifier: string) => Promise<T>;
+
+let chokidarModPromise: Promise<ChokidarModule> | null = null;
+function loadChokidar(): Promise<ChokidarModule> {
+  if (!chokidarModPromise) {
+    chokidarModPromise = dynamicImport<ChokidarModule>("chokidar");
+  }
+  return chokidarModPromise;
+}
 
 const DEBOUNCE_MS = 500;
 
@@ -66,7 +94,8 @@ export class RepoWatcherManager {
 
     this.currentRepo = repoPath;
     try {
-      this.watcher = chokidarWatch(repoPath, {
+      const { watch } = await loadChokidar();
+      this.watcher = watch(repoPath, {
         ignored: (file: string) => ALWAYS_IGNORED.some((re) => re.test(file)),
         ignoreInitial: true,
         persistent: true,
@@ -74,11 +103,11 @@ export class RepoWatcherManager {
         awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
       });
 
-      this.watcher.on("all", (_event, filePath: string) => {
+      this.watcher.on("all", (_event: string, filePath: string) => {
         const kind = classify(repoPath, filePath);
         this.scheduleEmit(kind);
       });
-      this.watcher.on("error", (err) => {
+      this.watcher.on("error", (err: unknown) => {
         console.warn(`[repo-watcher] error on ${repoPath}:`, err);
       });
     } catch (e) {
