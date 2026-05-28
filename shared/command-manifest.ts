@@ -27,6 +27,7 @@ export const COMMANDS = [
   { method: "rebaseBranch", ipc: "rebase_branch", http: "/branch/rebase", bodyKeys: ["repoPath", "upstream"] },
   { method: "cherryPick", ipc: "cherry_pick", http: "/cherry-pick", bodyKeys: ["repoPath", "commitId"] },
   { method: "cherryPickRange", ipc: "cherry_pick_range", http: "/cherry-pick/range", bodyKeys: ["repoPath", "commitIds"] },
+  { method: "rebaseAutosquash", ipc: "rebase_autosquash", http: "/branch/rebase-autosquash", bodyKeys: ["repoPath", "upstream"] },
   { method: "revertCommit", ipc: "revert_commit", http: "/commit/revert", bodyKeys: ["repoPath", "commitId"] },
   { method: "resetToCommit", ipc: "reset_to_commit", http: "/commit/reset", bodyKeys: ["repoPath", "commitId", "mode"] },
   { method: "squashCommits", ipc: "squash_commits", http: "/commits/squash", bodyKeys: ["repoPath", "count", "message"] },

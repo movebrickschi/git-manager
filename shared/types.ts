@@ -328,6 +328,8 @@ export interface Commands {
   cherryPick(repoPath: string, commitId: string): Promise<MergeResult>;
   /** 批量 cherry-pick：commitIds 须按时间从旧到新排序。 */
   cherryPickRange(repoPath: string, commitIds: string[]): Promise<MergeResult>;
+  /** Rebase --autosquash：自动合并 fixup!/squash! 提交，无需手动 interactive。 */
+  rebaseAutosquash(repoPath: string, upstream: string): Promise<MergeResult>;
   revertCommit(repoPath: string, commitId: string): Promise<MergeResult>;
   resetToCommit(
     repoPath: string,

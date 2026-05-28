@@ -37,6 +37,7 @@ const ALLOWED_CHANNELS = new Set<string>([
   "rebase_branch",
   "cherry_pick",
   "cherry_pick_range",
+  "rebase_autosquash",
   "revert_commit",
   "reset_to_commit",
   "squash_commits",

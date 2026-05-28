@@ -219,6 +219,41 @@ export const branchService = {
     }
   },
 
+  /**
+   * Rebase with --autosquash —— 自动合并 fixup!/squash! 提交。
+   *
+   * 行为：
+   *   git -c rebase.autosquash=true -c sequence.editor=true \
+   *       rebase --interactive --autosquash <upstream>
+   *
+   * 让 sequence.editor 设为 `true`（POSIX no-op）让 rebase --interactive 直接接受
+   * git 自动生成的 todo（已含 fixup/squash 重排），不弹编辑器。
+   *
+   * 注意：使用前调用方应确保工作区是 clean 的（dirty 会导致 rebase 失败）。
+   */
+  async rebaseAutosquash(repoPath: string, upstream: string): Promise<MergeResult> {
+    const git = getGit(repoPath);
+    try {
+      // simple-git 不直接支持 -c 参数；用 raw 透传。POSIX/Windows 都支持 `true` 命令。
+      await git.raw([
+        "-c",
+        "sequence.editor=true",
+        "rebase",
+        "--interactive",
+        "--autosquash",
+        upstream,
+      ]);
+      return { success: true, conflicts: [], message: "Autosquash rebase completed" };
+    } catch (e: unknown) {
+      const conflicts = await getConflictFiles(repoPath);
+      return {
+        success: false,
+        conflicts,
+        message: errStr(e) || "Autosquash rebase failed",
+      };
+    }
+  },
+
   async cherryPick(repoPath: string, commitId: string): Promise<MergeResult> {
     const git = getGit(repoPath);
     try {
