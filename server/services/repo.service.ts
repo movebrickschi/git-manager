@@ -43,15 +43,18 @@ export const repoService = {
     const rootGit = getGit(rootPath);
     const branchSummary = await rootGit.branch();
 
-    // detached HEAD 下 branchSummary.current 是空字符串，前端展示会留白。
-    // 改用 short sha 作为兜底显示。
+    // detached HEAD 下 branchSummary.current 的实际值因 simple-git 版本而异：
+    //  - 部分版本：返回空字符串
+    //  - 部分版本：返回 7-40 位 short/full sha
+    // 都是 detached，需要统一包装成 `(HEAD: sha)` 让前端不会把 sha 误显示为分支名。
     let currentBranch = branchSummary.current;
-    if (!currentBranch) {
+    const looksLikeBareSha = !!currentBranch && /^[a-f0-9]{7,40}$/i.test(currentBranch);
+    if (!currentBranch || looksLikeBareSha) {
       try {
         const sha = (await rootGit.revparse(["--short", "HEAD"])).trim();
         if (sha) currentBranch = `(HEAD: ${sha})`;
       } catch {
-        // unborn 仓库（无任何 commit）连 HEAD 都没有，保持空字符串
+        // unborn 仓库（无任何 commit）连 HEAD 都没有，保持原值（可能为空字符串）
       }
     }
 
