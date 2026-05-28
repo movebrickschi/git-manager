@@ -135,4 +135,32 @@ export const statusService = {
     const fullPath = safeJoin(repoPath, filePath);
     await fsp.unlink(fullPath);
   },
+
+  /**
+   * 把指定文件路径追加到仓库根的 .gitignore（IDEA "Add to .gitignore" 同款）。
+   * - 不存在时自动创建 .gitignore
+   * - 已存在同 pattern 行时跳过追加
+   * - 末尾若没换行符自动补一个，再追加
+   * - filePath 用 forward slash 归一化，与 git 内部一致
+   * - 不会自动 `git rm --cached`（已被跟踪的文件需要用户手工 unstage 或 rm cached）
+   */
+  async addToGitignore(repoPath: string, filePath: string): Promise<void> {
+    if (typeof filePath !== "string" || filePath.length === 0) {
+      throw new Error("INVALID_PATH: filePath 不能为空");
+    }
+    const norm = filePath.replace(/\\/g, "/");
+    const gi = `${repoPath}/.gitignore`;
+    let content = "";
+    try {
+      content = await fsp.readFile(gi, "utf-8");
+    } catch {
+      // ENOENT：.gitignore 不存在，content 保持空
+    }
+    const lines = content.length === 0 ? [] : content.split(/\r?\n/);
+    const seen = new Set(lines.map((l) => l.trim()));
+    if (seen.has(norm)) return; // 已存在
+    const needsTrailingNL = content.length > 0 && !content.endsWith("\n");
+    const toAppend = (needsTrailingNL ? "\n" : "") + norm + "\n";
+    await fsp.appendFile(gi, toAppend, "utf-8");
+  },
 };

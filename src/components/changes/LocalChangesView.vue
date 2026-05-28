@@ -455,6 +455,16 @@ function handleShowBlame(): void {
   showBlameDialog.value = true;
 }
 
+async function handleAddToGitignore(): Promise<void> {
+  if (!contextFile.value || !repoStore.activeRepo) return;
+  try {
+    await commands.addToGitignore(repoStore.activeRepo.path, contextFile.value.path);
+    await commitStore.loadStatus();
+  } catch (e) {
+    console.error("addToGitignore failed:", e);
+  }
+}
+
 async function handleShowDiffInDialog(): Promise<void> {
   if (!contextFile.value || !repoStore.activeRepo) return;
   diffDialogFilePath.value = contextFile.value.path;
@@ -745,6 +755,11 @@ const contextMenuItems = computed<MenuItem[]>(() => {
     label: "Annotate（逐行作者）…",
     disabled: isMulti || file.status === "untracked",
     action: handleShowBlame,
+  });
+  items.push({
+    label: "添加到 .gitignore",
+    disabled: isMulti,
+    action: handleAddToGitignore,
   });
   items.push({ separator: true, label: "" });
 

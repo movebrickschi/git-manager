@@ -338,6 +338,8 @@ export interface Commands {
   stageFilesBatch(repoPath: string, filePaths: string[]): Promise<void>;
   /** 一次性 unstage N 个文件（`git reset HEAD -- p1 p2 ... pN`）。 */
   unstageFilesBatch(repoPath: string, filePaths: string[]): Promise<void>;
+  /** 把文件路径追加到仓库根 .gitignore，自动去重 + 创建文件。 */
+  addToGitignore(repoPath: string, filePath: string): Promise<void>;
   commit(repoPath: string, message: string, amend: boolean): Promise<string>;
   commitFiles(repoPath: string, filePaths: string[], message: string): Promise<string>;
   push(

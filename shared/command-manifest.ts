@@ -39,6 +39,7 @@ export const COMMANDS = [
   { method: "unstageAll", ipc: "unstage_all", http: "/unstage/all", bodyKeys: ["repoPath"] },
   { method: "stageFilesBatch", ipc: "stage_files_batch", http: "/stage/files-batch", bodyKeys: ["repoPath", "filePaths"] },
   { method: "unstageFilesBatch", ipc: "unstage_files_batch", http: "/unstage/files-batch", bodyKeys: ["repoPath", "filePaths"] },
+  { method: "addToGitignore", ipc: "add_to_gitignore", http: "/gitignore/add", bodyKeys: ["repoPath", "filePath"] },
   { method: "commit", ipc: "commit", http: "/commit", bodyKeys: ["repoPath", "message", "amend"] },
   { method: "commitFiles", ipc: "commit_files", http: "/commit-files", bodyKeys: ["repoPath", "filePaths", "message"] },
   { method: "push", ipc: "push_remote", http: "/push", bodyKeys: ["repoPath", "remote", "branch", "options"] },

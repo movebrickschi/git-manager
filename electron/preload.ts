@@ -49,6 +49,7 @@ const ALLOWED_CHANNELS = new Set<string>([
   "unstage_all",
   "stage_files_batch",
   "unstage_files_batch",
+  "add_to_gitignore",
   "commit",
   "commit_files",
   "push_remote",
