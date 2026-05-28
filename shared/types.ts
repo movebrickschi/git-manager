@@ -292,6 +292,17 @@ export interface ProgressEvent {
   message: string;
 }
 
+export interface WorktreeInfo {
+  path: string;
+  head: string;
+  branch: string | null;
+  detached: boolean;
+  bare: boolean;
+  locked: boolean;
+  lockReason: string | null;
+  main: boolean;
+}
+
 export interface Commands {
   openRepo(path: string): Promise<RepoOpenResult>;
   getLog(repoPath: string, filter: LogFilter): Promise<LogResult>;
@@ -340,6 +351,19 @@ export interface Commands {
   unstageFilesBatch(repoPath: string, filePaths: string[]): Promise<void>;
   /** 把文件路径追加到仓库根 .gitignore，自动去重 + 创建文件。 */
   addToGitignore(repoPath: string, filePath: string): Promise<void>;
+
+  /** Worktree 管理（IDEA "Checkout in New Worktree"）。 */
+  listWorktrees(repoPath: string): Promise<WorktreeInfo[]>;
+  addWorktree(
+    repoPath: string,
+    targetPath: string,
+    branchOrCommit?: string,
+    createBranch?: string
+  ): Promise<void>;
+  removeWorktree(repoPath: string, targetPath: string, force?: boolean): Promise<void>;
+  lockWorktree(repoPath: string, targetPath: string, reason?: string): Promise<void>;
+  unlockWorktree(repoPath: string, targetPath: string): Promise<void>;
+  pruneWorktrees(repoPath: string): Promise<void>;
   commit(repoPath: string, message: string, amend: boolean): Promise<string>;
   commitFiles(repoPath: string, filePaths: string[], message: string): Promise<string>;
   push(

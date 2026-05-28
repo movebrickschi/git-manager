@@ -12,32 +12,41 @@
  */
 import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from "vue";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useRepoStore } from "@/stores/repoStore";
 
 const AiSettingsDialog = defineAsyncComponent(
   () => import("@/components/commit/AiSettingsDialog.vue")
+);
+
+const WorktreeDialog = defineAsyncComponent(
+  () => import("@/components/worktree/WorktreeDialog.vue")
 );
 
 const props = defineProps<{ visible: boolean }>();
 const emit = defineEmits<{ (e: "update:visible", v: boolean): void }>();
 
 const settings = useSettingsStore();
+const repoStore = useRepoStore();
 
 type Section =
   | "appearance"
   | "editor"
   | "watcher"
   | "fetch"
+  | "worktree"
   | "ai"
   | "about";
 
 const activeSection = ref<Section>("appearance");
 const showAiDialog = ref(false);
+const showWorktreeDialog = ref(false);
 
 const sections: { id: Section; label: string; icon: string }[] = [
   { id: "appearance", label: "外观", icon: "🎨" },
   { id: "editor", label: "编辑器", icon: "📝" },
   { id: "watcher", label: "自动刷新", icon: "🔄" },
   { id: "fetch", label: "Auto-fetch", icon: "📡" },
+  { id: "worktree", label: "Worktree", icon: "🌳" },
   { id: "ai", label: "AI", icon: "✨" },
   { id: "about", label: "关于", icon: "ℹ️" },
 ];
@@ -244,6 +253,26 @@ const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
             </div>
           </div>
 
+          <!-- Worktree -->
+          <div v-if="activeSection === 'worktree'" class="section">
+            <h3>Git Worktree</h3>
+            <p>
+              管理多工作树（IDEA "Checkout in New Worktree" 同款）。
+              一个仓库可以有多个工作树同时检出不同分支，互不影响 staging / 编辑。
+            </p>
+            <button
+              class="ai-open-btn"
+              :disabled="!repoStore.activeRepo"
+              @click="showWorktreeDialog = true"
+            >
+              🌳 打开 Worktree 管理
+            </button>
+            <p class="field-desc" v-if="!repoStore.activeRepo">需要先打开一个仓库。</p>
+            <p class="field-desc" v-else>
+              当前仓库：<code>{{ repoStore.activeRepo.path }}</code>
+            </p>
+          </div>
+
           <!-- AI -->
           <div v-if="activeSection === 'ai'" class="section">
             <h3>AI 设置</h3>
@@ -283,6 +312,13 @@ const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
       :visible="showAiDialog"
       @close="showAiDialog = false"
       @saved="showAiDialog = false"
+    />
+
+    <WorktreeDialog
+      v-if="showWorktreeDialog && repoStore.activeRepo"
+      :visible="showWorktreeDialog"
+      :repo-path="repoStore.activeRepo.path"
+      @update:visible="(v: boolean) => (showWorktreeDialog = v)"
     />
   </div>
 </template>
