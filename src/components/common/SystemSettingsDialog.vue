@@ -259,7 +259,8 @@ const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
     <AiSettingsDialog
       v-if="showAiDialog"
       :visible="showAiDialog"
-      @update:visible="(v: boolean) => (showAiDialog = v)"
+      @close="showAiDialog = false"
+      @saved="showAiDialog = false"
     />
   </div>
 </template>
@@ -272,7 +273,9 @@ const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 9000;
+  /* 比 AiSettingsDialog 的 z-index: 9000 略低；
+     AI 子弹窗本身用 fixed + 9000 会自然盖在系统设置之上。 */
+  z-index: 8500;
 }
 
 .settings-dialog {
