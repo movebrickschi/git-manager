@@ -21,6 +21,7 @@ import { patchService } from "./services/patch.service.js";
 import { submoduleService } from "./services/submodule.service.js";
 import { rebaseService } from "./services/rebase.service.js";
 import { worktreeService } from "./services/worktree.service.js";
+import { hooksService } from "./services/hooks.service.js";
 
 export type {
   AheadBehind,
@@ -64,6 +65,7 @@ export const gitService = {
   ...submoduleService,
   ...rebaseService,
   ...worktreeService,
+  ...hooksService,
 };
 
 export type GitService = typeof gitService;

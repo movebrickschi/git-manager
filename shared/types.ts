@@ -303,6 +303,13 @@ export interface WorktreeInfo {
   main: boolean;
 }
 
+export interface HookInfo {
+  name: string;
+  state: "enabled" | "disabled" | "sample-only" | "missing";
+  filePath: string | null;
+  size: number | null;
+}
+
 export interface Commands {
   openRepo(path: string): Promise<RepoOpenResult>;
   getLog(repoPath: string, filter: LogFilter): Promise<LogResult>;
@@ -368,6 +375,13 @@ export interface Commands {
   lockWorktree(repoPath: string, targetPath: string, reason?: string): Promise<void>;
   unlockWorktree(repoPath: string, targetPath: string): Promise<void>;
   pruneWorktrees(repoPath: string): Promise<void>;
+
+  /** Git Hooks 管理。 */
+  listHooks(repoPath: string): Promise<HookInfo[]>;
+  readHookContent(repoPath: string, hookName: string): Promise<string>;
+  writeHookContent(repoPath: string, hookName: string, content: string): Promise<void>;
+  enableHook(repoPath: string, hookName: string): Promise<void>;
+  disableHook(repoPath: string, hookName: string): Promise<void>;
   commit(repoPath: string, message: string, amend: boolean): Promise<string>;
   commitFiles(repoPath: string, filePaths: string[], message: string): Promise<string>;
   push(
