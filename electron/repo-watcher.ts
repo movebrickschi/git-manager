@@ -25,6 +25,7 @@
 import * as path from "path";
 import type { FSWatcher } from "chokidar";
 import type { WebContents } from "electron";
+import { makeIgnoredPredicate } from "../shared/repo-watcher-ignored";
 
 type ChokidarModule = typeof import("chokidar");
 
@@ -50,18 +51,7 @@ function loadChokidar(): Promise<ChokidarModule> {
 }
 
 const DEBOUNCE_MS = 500;
-
-const ALWAYS_IGNORED = [
-  /(^|[\\/])\.git[\\/]objects([\\/]|$)/,
-  /(^|[\\/])\.git[\\/]refs[\\/](heads|remotes|tags)([\\/]|$)/,
-  /(^|[\\/])\.git[\\/]logs([\\/]|$)/,
-  /(^|[\\/])\.git[\\/]hooks([\\/]|$)/,
-  /(^|[\\/])\.git[\\/](FETCH_HEAD|ORIG_HEAD|packed-refs)$/,
-  /(^|[\\/])node_modules([\\/]|$)/,
-  /(^|[\\/])(dist|dist-electron|dist-server|build|release)([\\/]|$)/,
-  /(^|[\\/])\.DS_Store$/,
-  /(^|[\\/])Thumbs\.db$/,
-];
+const IGNORED_PREDICATE = makeIgnoredPredicate();
 
 export interface RepoWatcherEvent {
   /** 监听变化的仓库根路径（与 setRepo 入参一致） */
@@ -96,7 +86,7 @@ export class RepoWatcherManager {
     try {
       const { watch } = await loadChokidar();
       this.watcher = watch(repoPath, {
-        ignored: (file: string) => ALWAYS_IGNORED.some((re) => re.test(file)),
+        ignored: IGNORED_PREDICATE,
         ignoreInitial: true,
         persistent: true,
         // depth: 不限，由 ignored 控制深度

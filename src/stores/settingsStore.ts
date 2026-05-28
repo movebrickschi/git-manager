@@ -4,6 +4,7 @@ import { ref } from "vue";
 const LS_AUTO_FETCH = "gm.autoFetchEnabled";
 const LS_AUTO_FETCH_INTERVAL = "gm.autoFetchIntervalMinutes";
 const LS_FETCH_ON_OPEN = "gm.fetchOnOpen";
+const LS_AUTO_REFRESH_ON_FS_CHANGE = "gm.autoRefreshOnFsChange";
 
 function loadAutoFetchEnabled(): boolean {
   try {
@@ -29,6 +30,15 @@ function loadFetchOnOpen(): boolean {
   }
 }
 
+/** 默认开启文件系统 watcher。大仓库用户可手动关闭。 */
+function loadAutoRefreshOnFsChange(): boolean {
+  try {
+    return localStorage.getItem(LS_AUTO_REFRESH_ON_FS_CHANGE) !== "0";
+  } catch {
+    return true;
+  }
+}
+
 export const useSettingsStore = defineStore("settings", () => {
   const theme = ref<"dark" | "light">("dark");
   const diffMode = ref<"side-by-side" | "unified">("side-by-side");
@@ -41,6 +51,7 @@ export const useSettingsStore = defineStore("settings", () => {
   const autoFetchEnabled = ref(loadAutoFetchEnabled());
   const autoFetchIntervalMinutes = ref(loadAutoFetchInterval());
   const fetchOnOpen = ref(loadFetchOnOpen());
+  const autoRefreshOnFsChange = ref(loadAutoRefreshOnFsChange());
 
   function toggleTheme() {
     theme.value = theme.value === "dark" ? "light" : "dark";
@@ -74,6 +85,15 @@ export const useSettingsStore = defineStore("settings", () => {
     }
   }
 
+  function setAutoRefreshOnFsChange(v: boolean) {
+    autoRefreshOnFsChange.value = v;
+    try {
+      localStorage.setItem(LS_AUTO_REFRESH_ON_FS_CHANGE, v ? "1" : "0");
+    } catch {
+      /* ignore quota */
+    }
+  }
+
   return {
     theme,
     diffMode,
@@ -86,9 +106,11 @@ export const useSettingsStore = defineStore("settings", () => {
     autoFetchEnabled,
     autoFetchIntervalMinutes,
     fetchOnOpen,
+    autoRefreshOnFsChange,
     toggleTheme,
     setAutoFetchEnabled,
     setAutoFetchIntervalMinutes,
     setFetchOnOpen,
+    setAutoRefreshOnFsChange,
   };
 });

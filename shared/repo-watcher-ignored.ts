@@ -1,0 +1,60 @@
+/**
+ * Repo Watcher Ignored Patterns · 主进程 watcher 与 SSE watcher 共用的忽略规则
+ *
+ * 设计原则：
+ *   1. `.git/` 内大量频繁写入的子路径（objects/refs/heads/logs/hooks）排除
+ *      但保留 HEAD / index / MERGE_HEAD / rebase-* 作为状态变化信号
+ *   2. 常见大目录（node_modules / dist / build / venv / target / coverage 等）排除
+ *      避免百万级文件 watch 占用过多 inotify watch / RAM
+ *   3. OS 元数据文件（.DS_Store / Thumbs.db）排除
+ *
+ * 适用：本数组以 RegExp[] 形式提供，chokidar 5.x `ignored` 选项接受函数
+ * `(file: string) => boolean`，由调用方包装：
+ *   ignored: (file) => REPO_WATCHER_IGNORED.some(re => re.test(file))
+ */
+export const REPO_WATCHER_IGNORED: ReadonlyArray<RegExp> = [
+  // .git 内噪声
+  /(^|[\\/])\.git[\\/]objects([\\/]|$)/,
+  /(^|[\\/])\.git[\\/]refs[\\/](heads|remotes|tags)([\\/]|$)/,
+  /(^|[\\/])\.git[\\/]logs([\\/]|$)/,
+  /(^|[\\/])\.git[\\/]hooks([\\/]|$)/,
+  /(^|[\\/])\.git[\\/](FETCH_HEAD|ORIG_HEAD|packed-refs)$/,
+
+  // 包管理器 / 构建输出
+  /(^|[\\/])node_modules([\\/]|$)/,
+  /(^|[\\/])(dist|dist-electron|dist-server|build|out|release)([\\/]|$)/,
+  /(^|[\\/])\.next([\\/]|$)/,
+  /(^|[\\/])\.nuxt([\\/]|$)/,
+  /(^|[\\/])\.svelte-kit([\\/]|$)/,
+  /(^|[\\/])\.turbo([\\/]|$)/,
+  /(^|[\\/])\.parcel-cache([\\/]|$)/,
+  /(^|[\\/])\.cache([\\/]|$)/,
+
+  // 测试/覆盖率
+  /(^|[\\/])coverage([\\/]|$)/,
+  /(^|[\\/])\.nyc_output([\\/]|$)/,
+  /(^|[\\/])\.pytest_cache([\\/]|$)/,
+
+  // Python / Ruby / Rust / Go / Java / .NET 常见 vendored 目录
+  /(^|[\\/])(venv|\.venv|env|__pycache__)([\\/]|$)/,
+  /(^|[\\/])(vendor|bundle)([\\/]|$)/,
+  /(^|[\\/])target([\\/]|$)/,
+  /(^|[\\/])(\.gradle|\.mvn)([\\/]|$)/,
+  /(^|[\\/])bin([\\/]|$)/,
+  /(^|[\\/])obj([\\/]|$)/,
+
+  // IDE / OS 元数据
+  /(^|[\\/])\.idea([\\/]|$)/,
+  /(^|[\\/])\.vscode([\\/]|$)/,
+  /(^|[\\/])\.DS_Store$/,
+  /(^|[\\/])Thumbs\.db$/,
+  /(^|[\\/])desktop\.ini$/,
+
+  // 大日志文件
+  /\.log$/,
+];
+
+/** 给 chokidar.ignored 用的函数适配器。 */
+export function makeIgnoredPredicate(): (file: string) => boolean {
+  return (file: string) => REPO_WATCHER_IGNORED.some((re) => re.test(file));
+}

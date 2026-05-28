@@ -22,15 +22,21 @@ function syncTitleBarTheme(theme: "dark" | "light") {
 syncTitleBarTheme(settings.theme);
 watch(() => settings.theme, syncTitleBarTheme);
 
+// 同步当前 active repo 给 watcher；用户禁用 autoRefresh 时传 null 让 watcher 释放资源
 watch(
-  () => repoStore.activeRepo?.path ?? null,
-  (p) => {
-    void setWatchedRepo(p);
+  () => ({
+    p: repoStore.activeRepo?.path ?? null,
+    enabled: settings.autoRefreshOnFsChange,
+  }),
+  ({ p, enabled }) => {
+    void setWatchedRepo(enabled ? p : null);
   },
-  { immediate: true }
+  { immediate: true, deep: false }
 );
 
 useRepoWatcher((e) => {
+  // 用户关闭了自动刷新 → 不处理事件（watcher 也应已关，是双保险）
+  if (!settings.autoRefreshOnFsChange) return;
   if (e.kind === "work" || e.kind === "index") {
     void commitStore.loadStatus();
     return;

@@ -126,6 +126,26 @@ const fetchTitle = computed(() => {
           </div>
         </div>
       </div>
+      <button
+        class="status-item auto-refresh-toggle"
+        :class="{ active: settings.autoRefreshOnFsChange }"
+        :title="settings.autoRefreshOnFsChange
+          ? '文件系统 watcher 已开启：外部 IDE 改文件后自动刷新（点击关闭）'
+          : '文件系统 watcher 已关闭：超大仓库可禁用以节省资源（点击开启）'"
+        @click="settings.setAutoRefreshOnFsChange(!settings.autoRefreshOnFsChange)"
+      >
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 1v6m0 10v6m11-11h-6M7 12H1m17.07-7.07l-4.24 4.24M9.17 14.83l-4.24 4.24m0-14.14l4.24 4.24M14.83 14.83l4.24 4.24" />
+        </svg>
+      </button>
       <button class="status-item theme-toggle" @click="settings.toggleTheme" title="切换主题">
         <svg
           v-if="settings.theme === 'dark'"

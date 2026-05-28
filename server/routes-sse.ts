@@ -18,22 +18,12 @@
 import { Router, Request, Response } from "express";
 import { watch, FSWatcher } from "chokidar";
 import * as path from "node:path";
+import { makeIgnoredPredicate } from "../shared/repo-watcher-ignored.js";
 
 const router = Router();
 
 const DEBOUNCE_MS = 500;
-
-const ALWAYS_IGNORED = [
-  /(^|[\\/])\.git[\\/]objects([\\/]|$)/,
-  /(^|[\\/])\.git[\\/]refs[\\/](heads|remotes|tags)([\\/]|$)/,
-  /(^|[\\/])\.git[\\/]logs([\\/]|$)/,
-  /(^|[\\/])\.git[\\/]hooks([\\/]|$)/,
-  /(^|[\\/])\.git[\\/](FETCH_HEAD|ORIG_HEAD|packed-refs)$/,
-  /(^|[\\/])node_modules([\\/]|$)/,
-  /(^|[\\/])(dist|dist-electron|dist-server|build|release)([\\/]|$)/,
-  /(^|[\\/])\.DS_Store$/,
-  /(^|[\\/])Thumbs\.db$/,
-];
+const IGNORED_PREDICATE = makeIgnoredPredicate();
 
 type Kind = "work" | "index" | "head" | "merge";
 
@@ -90,7 +80,7 @@ router.get("/repo/events", (req: Request, res: Response) => {
 
   try {
     watcher = watch(repoPath, {
-      ignored: (file: string) => ALWAYS_IGNORED.some((re) => re.test(file)),
+      ignored: IGNORED_PREDICATE,
       ignoreInitial: true,
       persistent: true,
       awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
