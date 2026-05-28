@@ -36,6 +36,7 @@ const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/Thre
 const FileHistoryDialog = defineAsyncComponent(
   () => import("@/components/file-history/FileHistoryDialog.vue")
 );
+const BlameView = defineAsyncComponent(() => import("@/components/blame/BlameView.vue"));
 
 const branchStore = useBranchStore();
 const commitStore = useCommitStore();
@@ -74,6 +75,8 @@ const contextSection = ref<SectionKey>("unstaged");
 const showDiffDialog = ref(false);
 const showFileHistoryDialog = ref(false);
 const fileHistoryFilePath = ref("");
+const showBlameDialog = ref(false);
+const blameFilePath = ref("");
 const diffDialogResult = ref<DiffResult | null>(null);
 const diffDialogFilePath = ref("");
 const diffDialogLoading = ref(false);
@@ -446,6 +449,12 @@ function handleShowFileHistory(): void {
   showFileHistoryDialog.value = true;
 }
 
+function handleShowBlame(): void {
+  if (!contextFile.value || !repoStore.activeRepo) return;
+  blameFilePath.value = contextFile.value.path;
+  showBlameDialog.value = true;
+}
+
 async function handleShowDiffInDialog(): Promise<void> {
   if (!contextFile.value || !repoStore.activeRepo) return;
   diffDialogFilePath.value = contextFile.value.path;
@@ -731,6 +740,11 @@ const contextMenuItems = computed<MenuItem[]>(() => {
     label: "显示文件历史…",
     disabled: isMulti || file.status === "untracked",
     action: handleShowFileHistory,
+  });
+  items.push({
+    label: "Annotate（逐行作者）…",
+    disabled: isMulti || file.status === "untracked",
+    action: handleShowBlame,
   });
   items.push({ separator: true, label: "" });
 
@@ -1131,6 +1145,24 @@ watch(
       :file-path="fileHistoryFilePath"
       @update:visible="(v: boolean) => (showFileHistoryDialog = v)"
     />
+
+    <Teleport to="body">
+      <div
+        v-if="showBlameDialog && repoStore.activeRepo"
+        class="modal-overlay"
+        @click.self="showBlameDialog = false"
+      >
+        <div class="modal-dialog blame-modal">
+          <div class="modal-header">
+            <span class="modal-title">Annotate · {{ blameFilePath }}</span>
+            <button class="modal-close" @click="showBlameDialog = false">✕</button>
+          </div>
+          <div class="modal-body blame-modal-body">
+            <BlameView :file-path="blameFilePath" />
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <Teleport to="body">
       <div v-if="showCommitDialog" class="modal-overlay" @click.self="showCommitDialog = false">
@@ -1535,6 +1567,18 @@ watch(
 .diff-modal {
   width: 85vw;
   height: 80vh;
+}
+
+.blame-modal {
+  width: 90vw;
+  height: 85vh;
+}
+
+.blame-modal-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .commit-modal {
