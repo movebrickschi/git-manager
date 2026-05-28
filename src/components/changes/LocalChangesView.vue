@@ -33,6 +33,9 @@ import MergeStateBar from "./MergeStateBar.vue";
 const { t } = useI18n();
 
 const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/ThreeWayMerge.vue"));
+const FileHistoryDialog = defineAsyncComponent(
+  () => import("@/components/file-history/FileHistoryDialog.vue")
+);
 
 const branchStore = useBranchStore();
 const commitStore = useCommitStore();
@@ -69,6 +72,8 @@ const contextFile = ref<FileStatus | null>(null);
 const contextSection = ref<SectionKey>("unstaged");
 
 const showDiffDialog = ref(false);
+const showFileHistoryDialog = ref(false);
+const fileHistoryFilePath = ref("");
 const diffDialogResult = ref<DiffResult | null>(null);
 const diffDialogFilePath = ref("");
 const diffDialogLoading = ref(false);
@@ -435,6 +440,12 @@ function handleShowDiff(): void {
   void onSelectFile(contextFile.value, section);
 }
 
+function handleShowFileHistory(): void {
+  if (!contextFile.value || !repoStore.activeRepo) return;
+  fileHistoryFilePath.value = contextFile.value.path;
+  showFileHistoryDialog.value = true;
+}
+
 async function handleShowDiffInDialog(): Promise<void> {
   if (!contextFile.value || !repoStore.activeRepo) return;
   diffDialogFilePath.value = contextFile.value.path;
@@ -716,6 +727,11 @@ const contextMenuItems = computed<MenuItem[]>(() => {
 
   items.push({ label: "显示差异", disabled: isMulti, action: handleShowDiff });
   items.push({ label: "在新窗口中显示差异", disabled: isMulti, action: handleShowDiffInDialog });
+  items.push({
+    label: "显示文件历史…",
+    disabled: isMulti || file.status === "untracked",
+    action: handleShowFileHistory,
+  });
   items.push({ separator: true, label: "" });
 
   if (isMulti) {
@@ -1107,6 +1123,14 @@ watch(
         </div>
       </div>
     </Teleport>
+
+    <FileHistoryDialog
+      v-if="showFileHistoryDialog && repoStore.activeRepo"
+      :visible="showFileHistoryDialog"
+      :repo-path="repoStore.activeRepo.path"
+      :file-path="fileHistoryFilePath"
+      @update:visible="(v: boolean) => (showFileHistoryDialog = v)"
+    />
 
     <Teleport to="body">
       <div v-if="showCommitDialog" class="modal-overlay" @click.self="showCommitDialog = false">
