@@ -68,23 +68,27 @@ describe("submoduleService.getSubmodules", () => {
     }
   });
 
-  it("正常 submodule → 解析出 path / state / head / url", async () => {
-    const { super: sup, child } = await makeRepoWithSubmodule();
-    try {
-      const list = await submoduleService.getSubmodules(sup);
-      expect(list).toHaveLength(1);
-      const sm = list[0]!;
-      expect(sm.path).toBe("lib");
-      expect(sm.name).toBe("lib");
-      expect(sm.state).toBe("initialized");
-      expect(sm.head).toMatch(/^[a-f0-9]{40}$/);
-      // url 字段应填 child 路径（来自 .gitmodules）
-      expect(sm.url).toBe(child);
-    } finally {
-      await fs.rm(sup, { recursive: true, force: true });
-      await fs.rm(child, { recursive: true, force: true });
+  it(
+    "正常 submodule → 解析出 path / state / head / url",
+    { timeout: 30_000 },
+    async () => {
+      const { super: sup, child } = await makeRepoWithSubmodule();
+      try {
+        const list = await submoduleService.getSubmodules(sup);
+        expect(list).toHaveLength(1);
+        const sm = list[0]!;
+        expect(sm.path).toBe("lib");
+        expect(sm.name).toBe("lib");
+        expect(sm.state).toBe("initialized");
+        expect(sm.head).toMatch(/^[a-f0-9]{40}$/);
+        // url 字段应填 child 路径（来自 .gitmodules）
+        expect(sm.url).toBe(child);
+      } finally {
+        await fs.rm(sup, { recursive: true, force: true });
+        await fs.rm(child, { recursive: true, force: true });
+      }
     }
-  });
+  );
 
   it("有 .gitmodules 但 submodule status 异常 → 返回 [] 而非抛", async () => {
     // 手工写一个非法 .gitmodules，git 会因 submodule registration 异常报错

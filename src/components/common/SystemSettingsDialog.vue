@@ -23,6 +23,9 @@ const AiSettingsDialog = defineAsyncComponent(
 const WorktreeDialog = defineAsyncComponent(
   () => import("@/components/worktree/WorktreeDialog.vue")
 );
+const CompareBranchesDialog = defineAsyncComponent(
+  () => import("@/components/compare/CompareBranchesDialog.vue")
+);
 
 const props = defineProps<{ visible: boolean }>();
 const emit = defineEmits<{ (e: "update:visible", v: boolean): void }>();
@@ -36,6 +39,7 @@ type Section =
   | "watcher"
   | "fetch"
   | "worktree"
+  | "compare"
   | "ai"
   | "integrations"
   | "about";
@@ -43,6 +47,7 @@ type Section =
 const activeSection = ref<Section>("appearance");
 const showAiDialog = ref(false);
 const showWorktreeDialog = ref(false);
+const showCompareDialog = ref(false);
 const remoteMeta = ref<RemoteMeta | null>(null);
 const remoteLoading = ref(false);
 
@@ -52,6 +57,7 @@ const sections: { id: Section; label: string; icon: string }[] = [
   { id: "watcher", label: "自动刷新", icon: "🔄" },
   { id: "fetch", label: "Auto-fetch", icon: "📡" },
   { id: "worktree", label: "Worktree", icon: "🌳" },
+  { id: "compare", label: "Compare Branches", icon: "🔍" },
   { id: "ai", label: "AI", icon: "✨" },
   { id: "integrations", label: "集成", icon: "🔗" },
   { id: "about", label: "关于", icon: "ℹ️" },
@@ -306,6 +312,23 @@ const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
             </p>
           </div>
 
+          <!-- Compare Branches -->
+          <div v-if="activeSection === 'compare'" class="section">
+            <h3>Compare Branches</h3>
+            <p>
+              对比任意两个分支之间的 commit 范围与文件变更（IDEA "Compare with Branch" 同款）。
+              支持 base..target 视角：target 上有但 base 没有的 commit。
+            </p>
+            <button
+              class="ai-open-btn"
+              :disabled="!repoStore.activeRepo"
+              @click="showCompareDialog = true"
+            >
+              🔍 打开分支对比
+            </button>
+            <p class="field-desc" v-if="!repoStore.activeRepo">需要先打开一个仓库。</p>
+          </div>
+
           <!-- 集成 -->
           <div v-if="activeSection === 'integrations'" class="section">
             <h3>外部集成</h3>
@@ -387,6 +410,13 @@ const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
       :visible="showWorktreeDialog"
       :repo-path="repoStore.activeRepo.path"
       @update:visible="(v: boolean) => (showWorktreeDialog = v)"
+    />
+
+    <CompareBranchesDialog
+      v-if="showCompareDialog && repoStore.activeRepo"
+      :visible="showCompareDialog"
+      :repo-path="repoStore.activeRepo.path"
+      @update:visible="(v: boolean) => (showCompareDialog = v)"
     />
   </div>
 </template>
