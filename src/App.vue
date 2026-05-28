@@ -19,8 +19,21 @@ function syncTitleBarTheme(theme: "dark" | "light") {
   }
 }
 
+/**
+ * 把 data-theme 同步到 <html>，让 CSS 变量在 Teleport 出去的弹窗（SystemSettingsDialog 等）
+ * 也能拿到正确的主题色。原先 data-theme 只设在 App.vue 内层 div 上，Teleport 到 body
+ * 的元素无法继承到。
+ */
+function syncDocumentTheme(theme: "dark" | "light") {
+  document.documentElement.setAttribute("data-theme", theme);
+}
+
 syncTitleBarTheme(settings.theme);
-watch(() => settings.theme, syncTitleBarTheme);
+syncDocumentTheme(settings.theme);
+watch(() => settings.theme, (v) => {
+  syncTitleBarTheme(v);
+  syncDocumentTheme(v);
+});
 
 // 同步当前 active repo 给 watcher；用户禁用 autoRefresh 时传 null 让 watcher 释放资源
 watch(

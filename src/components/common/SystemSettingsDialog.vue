@@ -301,15 +301,16 @@ const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
 }
 
 .settings-dialog {
-  background: var(--bg-elevated, #1f2230);
-  color: var(--text-default, #d1d5e0);
+  background: var(--color-surface);
+  color: var(--color-foreground);
   width: min(960px, 92vw);
   height: min(620px, 86vh);
-  border-radius: 8px;
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+  border-radius: var(--radius-lg, 10px);
+  box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border: 1px solid var(--color-border);
 }
 
 .settings-header {
@@ -317,27 +318,30 @@ const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
   align-items: center;
   justify-content: space-between;
   padding: 14px 18px;
-  border-bottom: 1px solid var(--border-default, #2c2f3d);
-  background: var(--bg-elevated-darker, #181a25);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-background);
 }
 
 .settings-title {
   font-size: 14px;
   font-weight: 600;
+  color: var(--color-foreground-bright);
 }
 
 .settings-close {
   background: transparent;
   border: none;
-  color: inherit;
+  color: var(--color-foreground-muted);
   cursor: pointer;
   font-size: 16px;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm, 4px);
+  transition: background var(--transition-fast, 100ms ease);
 }
 
 .settings-close:hover {
-  background: var(--bg-hover, #2c2f3d);
+  background: var(--color-surface-hover);
+  color: var(--color-foreground);
 }
 
 .settings-body {
@@ -349,12 +353,12 @@ const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
 .settings-nav {
   width: 180px;
   padding: 12px 8px;
-  border-right: 1px solid var(--border-default, #2c2f3d);
+  border-right: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   gap: 2px;
   overflow-y: auto;
-  background: var(--bg-elevated-darker, #181a25);
+  background: var(--color-background);
 }
 
 .nav-item {
@@ -362,22 +366,23 @@ const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-md, 6px);
   background: transparent;
   border: none;
-  color: inherit;
+  color: var(--color-foreground);
   cursor: pointer;
   font-size: 13px;
   text-align: left;
+  transition: background var(--transition-fast, 100ms ease);
 }
 
 .nav-item:hover {
-  background: var(--bg-hover, #2c2f3d);
+  background: var(--color-surface-hover);
 }
 
 .nav-item.active {
-  background: var(--accent-bg, #3b4252);
-  color: var(--accent-fg, #ffffff);
+  background: var(--color-surface-active);
+  color: var(--color-foreground-bright);
 }
 
 .nav-icon {
@@ -388,12 +393,14 @@ const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
   flex: 1;
   padding: 18px 24px;
   overflow-y: auto;
+  background: var(--color-surface);
 }
 
 .section h3 {
   margin: 0 0 16px;
   font-size: 16px;
   font-weight: 600;
+  color: var(--color-foreground-bright);
 }
 
 .field {
@@ -411,6 +418,7 @@ const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
   justify-content: space-between;
   gap: 16px;
   font-size: 13px;
+  color: var(--color-foreground);
 }
 
 .field-label > span:first-child {
@@ -419,13 +427,20 @@ const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
 
 .field-label select,
 .field-label input[type="number"] {
-  background: var(--bg-input, #14151f);
-  color: inherit;
-  border: 1px solid var(--border-default, #2c2f3d);
-  border-radius: 4px;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm, 4px);
   padding: 4px 8px;
   font-size: 13px;
   min-width: 160px;
+  font-family: inherit;
+}
+
+.field-label select:focus,
+.field-label input[type="number"]:focus {
+  outline: none;
+  border-color: var(--color-primary);
 }
 
 .field-toggle {
@@ -434,54 +449,59 @@ const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
   gap: 10px;
   cursor: pointer;
   font-size: 13px;
+  color: var(--color-foreground);
 }
 
 .field-toggle input[type="checkbox"] {
   width: 16px;
   height: 16px;
   cursor: pointer;
+  accent-color: var(--color-primary);
 }
 
 .field-desc {
   margin: 6px 0 0 0;
   font-size: 12px;
-  opacity: 0.65;
+  color: var(--color-foreground-muted);
   line-height: 1.5;
 }
 
 .section-tip {
   margin-top: 12px;
   font-size: 12px;
-  opacity: 0.75;
-  background: var(--bg-info, rgba(99, 167, 255, 0.08));
+  color: var(--color-foreground-muted);
+  background: var(--color-surface-active);
   padding: 8px 12px;
-  border-radius: 4px;
-  border-left: 3px solid var(--accent, #63a7ff);
+  border-radius: var(--radius-sm, 4px);
+  border-left: 3px solid var(--color-primary);
 }
 
 .ai-open-btn {
   margin-top: 10px;
   padding: 8px 16px;
   font-size: 13px;
-  background: var(--accent, #4a7cff);
+  background: var(--color-primary);
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md, 6px);
   cursor: pointer;
+  transition: background var(--transition-fast, 100ms ease);
 }
 
 .ai-open-btn:hover {
-  background: var(--accent-hover, #5a8cff);
+  background: var(--color-primary-hover);
 }
 
 .about-block {
-  background: var(--bg-input, #14151f);
-  border-radius: 6px;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 6px);
   padding: 12px 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   font-size: 13px;
+  color: var(--color-foreground);
 }
 
 .about-row {
@@ -491,12 +511,12 @@ const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
 }
 
 .about-row > span:first-child {
-  opacity: 0.65;
+  color: var(--color-foreground-muted);
   min-width: 80px;
 }
 
 .about-row a {
-  color: var(--accent, #63a7ff);
+  color: var(--color-primary);
   text-decoration: none;
 }
 
