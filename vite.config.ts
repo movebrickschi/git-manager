@@ -26,13 +26,15 @@ export default defineConfig({
     rollupOptions: {
       output: {
         /**
-         * 手动 chunks 策略：
+         * 手动 chunks 策略（已回退激进拆分）：
          *
-         * - Monaco editor 不再走单 chunk（原 3.3 MB），按 sub-module 拆分：
-         *   * basic-languages/* → `monaco-lang-<name>`（每个语言一 chunk，仅在 ThreeWayMerge 真正用到时按需 load）
-         *   * language/* （typescript/json/css/html 的语言服务）→ `monaco-lang-<name>`
-         *   * editor/contrib/* （find/format/fold/links/snippet 等）→ `monaco-contrib-<group>`
-         *   * 其余 esm/vs/* 主干 → `monaco-core`
+         * - Monaco editor 走 vite 默认行为（不在 manualChunks 中分流），让 rollup
+         *   按入口图自然形成 editor.main 单 chunk + 各 language chunks 副产品。
+         *   原因：曾尝试按 basic-languages / language / contrib 三层细拆，结果
+         *   index.html 被注入 160+ 个 modulepreload，Electron file:// 加载顺序
+         *   不稳，导致渲染空白。Monaco editor.main ≈ 3 MB 是 Monaco 自身规模，
+         *   要进一步瘦身只能走 features-only 入口（monaco-editor/esm/vs/editor/editor.api
+         *   + 手动注册需要的 contrib），属于深度重构，不在本次范围。
          * - vue/pinia/@vue 走 vue-vendor
          * - splitpanes/lucide-vue-next 走 ui-vendor
          * - 其它 node_modules 走 vendor
@@ -40,24 +42,7 @@ export default defineConfig({
         manualChunks(id: string): string | undefined {
           if (!id.includes("node_modules")) return undefined;
 
-          // Monaco editor 细粒度拆分
-          if (id.includes("monaco-editor")) {
-            // 每种 basic language (typescript / python / go / ...) 单独 chunk
-            const basicMatch = id.match(/monaco-editor[\\/]esm[\\/]vs[\\/]basic-languages[\\/]([^\\/]+)[\\/]/);
-            if (basicMatch) return `monaco-lang-${basicMatch[1]}`;
-
-            // language services (typescript/json/css/html 的 IntelliSense / worker)
-            const langMatch = id.match(/monaco-editor[\\/]esm[\\/]vs[\\/]language[\\/]([^\\/]+)[\\/]/);
-            if (langMatch) return `monaco-lang-${langMatch[1]}`;
-
-            // editor/contrib/* 按子目录分组，避免单文件碎片化
-            const contribMatch = id.match(/monaco-editor[\\/]esm[\\/]vs[\\/]editor[\\/]contrib[\\/]([^\\/]+)[\\/]/);
-            if (contribMatch) return `monaco-contrib-${contribMatch[1]}`;
-
-            // platform / base / browser 等运行时基础 → 主 monaco-core chunk
-            return "monaco-core";
-          }
-
+          if (id.includes("monaco-editor")) return undefined;
           if (id.includes("vue") || id.includes("pinia") || id.includes("@vue")) {
             return "vue-vendor";
           }
