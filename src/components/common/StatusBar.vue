@@ -1,15 +1,20 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from "vue";
+import { computed, defineAsyncComponent, nextTick, ref } from "vue";
 import { useRepoStore } from "@/stores/repoStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAutoFetch } from "@/composables/useAutoFetch";
 import { useUiStore } from "@/stores/uiStore";
+
+const SystemSettingsDialog = defineAsyncComponent(
+  () => import("@/components/common/SystemSettingsDialog.vue")
+);
 
 const repoStore = useRepoStore();
 const settings = useSettingsStore();
 const ui = useUiStore();
 const { isFetching, lastFetchAt, lastErrors, triggerFetch } = useAutoFetch();
 const showIntervalEditor = ref(false);
+const showSystemSettings = ref(false);
 const intervalInput = ref(String(settings.autoFetchIntervalMinutes));
 const intervalInputRef = ref<HTMLInputElement | null>(null);
 
@@ -130,8 +135,8 @@ const fetchTitle = computed(() => {
         class="status-item auto-refresh-toggle"
         :class="{ active: settings.autoRefreshOnFsChange }"
         :title="settings.autoRefreshOnFsChange
-          ? '文件系统 watcher 已开启：外部 IDE 改文件后自动刷新（点击关闭）'
-          : '文件系统 watcher 已关闭：超大仓库可禁用以节省资源（点击开启）'"
+          ? '文件系统 watcher 已开启：外部 IDE 改文件后自动刷新（点击关闭，更多设置见⚙️）'
+          : '文件系统 watcher 已关闭：超大仓库可禁用以节省资源（点击开启，更多设置见⚙️）'"
         @click="settings.setAutoRefreshOnFsChange(!settings.autoRefreshOnFsChange)"
       >
         <svg
@@ -144,6 +149,23 @@ const fetchTitle = computed(() => {
         >
           <circle cx="12" cy="12" r="3" />
           <path d="M12 1v6m0 10v6m11-11h-6M7 12H1m17.07-7.07l-4.24 4.24M9.17 14.83l-4.24 4.24m0-14.14l4.24 4.24M14.83 14.83l4.24 4.24" />
+        </svg>
+      </button>
+      <button
+        class="status-item settings-gear-btn"
+        title="系统设置（外观/编辑器/watcher/Fetch/AI/关于）"
+        @click="showSystemSettings = true"
+      >
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>
       </button>
       <button class="status-item theme-toggle" @click="settings.toggleTheme" title="切换主题">
@@ -186,6 +208,11 @@ const fetchTitle = computed(() => {
     <Transition name="toast">
       <div v-if="ui.toastVisible" class="global-toast">{{ ui.toastMessage }}</div>
     </Transition>
+    <SystemSettingsDialog
+      v-if="showSystemSettings"
+      :visible="showSystemSettings"
+      @update:visible="(v: boolean) => (showSystemSettings = v)"
+    />
   </Teleport>
 </template>
 
