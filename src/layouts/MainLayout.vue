@@ -6,6 +6,7 @@ import StatusBar from "@/components/common/StatusBar.vue";
 import Toolbar from "@/components/common/Toolbar.vue";
 import KeyboardShortcutsDialog from "@/components/common/KeyboardShortcutsDialog.vue";
 import CheckoutChoiceDialog from "@/components/common/CheckoutChoiceDialog.vue";
+import PullChoiceDialog from "@/components/common/PullChoiceDialog.vue";
 import RebaseSequencerDialog from "@/components/rebase/RebaseSequencerDialog.vue";
 import RebaseStatusBar from "@/components/rebase/RebaseStatusBar.vue";
 import { useRepoStore } from "@/stores/repoStore";
@@ -528,6 +529,20 @@ onUnmounted(() => {
       :result-message="branchStore.checkoutDialog.resultMessage"
       :result-kind="branchStore.checkoutDialog.resultKind"
       @choose="branchStore.resolveCheckoutChoice($event)"
+    />
+    <PullChoiceDialog
+      :visible="branchStore.pullDialog.visible"
+      :branch-name="branchStore.pullDialog.branchName"
+      :upstream="branchStore.pullDialog.upstream"
+      :remote-commits-ahead="branchStore.pullDialog.remoteCommitsAhead"
+      :dirty-files="branchStore.pullDialog.dirtyFiles"
+      :would-conflict="branchStore.pullDialog.wouldConflict"
+      :safe="branchStore.pullDialog.safe"
+      :fetched="branchStore.pullDialog.fetched"
+      :pending="branchStore.pullDialog.pending"
+      :result-message="branchStore.pullDialog.resultMessage"
+      :result-kind="branchStore.pullDialog.resultKind"
+      @choose="branchStore.resolvePullChoice"
     />
     <RebaseSequencerDialog />
     <RebaseStatusBar />

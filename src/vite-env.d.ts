@@ -5,6 +5,7 @@ interface Window {
     invoke(channel: string, ...args: any[]): Promise<any>;
     selectDirectory(): Promise<string | null>;
     revealInFolder(absPath: string): Promise<void>;
+    on?(channel: string, callback: (payload: any) => void): () => void;
   };
 }
 

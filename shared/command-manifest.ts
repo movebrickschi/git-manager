@@ -37,6 +37,8 @@ export const COMMANDS = [
   { method: "unstageFile", ipc: "unstage_file", http: "/unstage/file", bodyKeys: ["repoPath", "filePath"] },
   { method: "stageAll", ipc: "stage_all", http: "/stage/all", bodyKeys: ["repoPath"] },
   { method: "unstageAll", ipc: "unstage_all", http: "/unstage/all", bodyKeys: ["repoPath"] },
+  { method: "stageFilesBatch", ipc: "stage_files_batch", http: "/stage/files-batch", bodyKeys: ["repoPath", "filePaths"] },
+  { method: "unstageFilesBatch", ipc: "unstage_files_batch", http: "/unstage/files-batch", bodyKeys: ["repoPath", "filePaths"] },
   { method: "commit", ipc: "commit", http: "/commit", bodyKeys: ["repoPath", "message", "amend"] },
   { method: "commitFiles", ipc: "commit_files", http: "/commit-files", bodyKeys: ["repoPath", "filePaths", "message"] },
   { method: "push", ipc: "push_remote", http: "/push", bodyKeys: ["repoPath", "remote", "branch", "options"] },

@@ -5,8 +5,10 @@ import { gitService } from "../server/git-service";
 import { COMMANDS } from "../shared/command-manifest";
 import { registerAiHandlers } from "./ai-handlers";
 import { registerReportHandlers } from "./report-handlers";
+import { attachRepoWatcherToWebContents } from "./repo-watcher";
 
 let mainWindow: BrowserWindow | null = null;
+let repoWatcher: ReturnType<typeof attachRepoWatcherToWebContents> | null = null;
 
 function installCsp() {
   // 生产环境严格 CSP；开发环境允许 Vite HMR
@@ -89,10 +91,24 @@ function createWindow() {
     }
   });
 
+  repoWatcher = attachRepoWatcherToWebContents(mainWindow.webContents);
+
   mainWindow.on("closed", () => {
+    if (repoWatcher) {
+      void repoWatcher.dispose();
+      repoWatcher = null;
+    }
     mainWindow = null;
   });
 }
+
+ipcMain.handle("repo:watch", async (_e, repoPath: unknown) => {
+  if (!repoWatcher) return;
+  if (repoPath !== null && typeof repoPath !== "string") {
+    throw new Error("INVALID_REPO_PATH: must be string or null");
+  }
+  await repoWatcher.manager.setRepo(repoPath as string | null);
+});
 
 app.whenReady().then(() => {
   installCsp();

@@ -168,7 +168,7 @@ export const remoteService = {
    */
   async previewPullConflicts(repoPath: string, remote?: string): Promise<PullPreview> {
     const git = getGit(repoPath);
-    let fetched = false;
+    let fetched: boolean;
     try {
       if (remote) {
         await git.fetch(remote);
@@ -180,7 +180,7 @@ export const remoteService = {
       fetched = false;
     }
 
-    let dirtyFiles: string[] = [];
+    let dirtyFiles: string[];
     try {
       const status = await git.status();
       const all = new Set<string>();
@@ -192,7 +192,7 @@ export const remoteService = {
       dirtyFiles = [];
     }
 
-    let upstream: string | null = null;
+    let upstream: string | null;
     try {
       const raw = await git.raw(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
       upstream = raw.trim() || null;
@@ -221,8 +221,8 @@ export const remoteService = {
       };
     }
 
-    let wouldConflict: string[] = [];
-    let safe: string[] = dirtyFiles;
+    let wouldConflict: string[];
+    let safe: string[];
     try {
       const raw = await git.raw([
         "diff",

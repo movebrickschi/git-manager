@@ -12,6 +12,7 @@ import {
   buildUntrackedDiff,
   getGit,
   parseDiffOutput,
+  recoverMisdetectedBinaryDiff,
   parseNameStatus,
   parseRefs,
   LOG_FORMAT,
@@ -245,7 +246,12 @@ export const logService = {
       return buildUntrackedDiff(repoPath, filePath);
     }
 
-    return parseDiffOutput(raw, filePath);
+    const parsed = parseDiffOutput(raw, filePath);
+    if (parsed.binary) {
+      const recovered = await recoverMisdetectedBinaryDiff(repoPath, filePath, staged);
+      if (recovered) return recovered;
+    }
+    return parsed;
   },
 
   async compareCommits(

@@ -3,6 +3,8 @@ import type { FileStatus, StatusResult } from "../git-service.js";
 import { safeJoin } from "../utils/path-safe.js";
 import { getGit, parseStatusCode } from "./_helpers.js";
 
+const fsp = fs.promises;
+
 export const statusService = {
   async getStatus(repoPath: string): Promise<StatusResult> {
     const git = getGit(repoPath);
@@ -63,6 +65,27 @@ export const statusService = {
     await git.raw(["reset", "HEAD"]);
   },
 
+  /**
+   * 一次性 stage 多个文件。原前端实现是串行 N 次 git add（50 个文件 ~10s）；
+   * 这里 1 次 `git add -- <p1> <p2> ...` 完成，与 git commit pathspec 行为一致。
+   * 空数组直接 no-op。
+   */
+  async stageFilesBatch(repoPath: string, filePaths: string[]): Promise<void> {
+    if (!Array.isArray(filePaths) || filePaths.length === 0) return;
+    const git = getGit(repoPath);
+    await git.raw(["add", "--", ...filePaths]);
+  },
+
+  /**
+   * 一次性 unstage 多个文件。等价于 `git reset HEAD -- p1 p2 ... pN`。
+   * unborn 仓库（无 HEAD）下 git 会报错，这里透传给调用方而非静默吞。
+   */
+  async unstageFilesBatch(repoPath: string, filePaths: string[]): Promise<void> {
+    if (!Array.isArray(filePaths) || filePaths.length === 0) return;
+    const git = getGit(repoPath);
+    await git.raw(["reset", "HEAD", "--", ...filePaths]);
+  },
+
   async commit(repoPath: string, message: string, amend: boolean): Promise<string> {
     const git = getGit(repoPath);
     const args = amend ? ["commit", "--amend", "-m", message] : ["commit", "-m", message];
@@ -105,11 +128,11 @@ export const statusService = {
 
   async getWorkingFileContent(repoPath: string, filePath: string): Promise<string> {
     const fullPath = safeJoin(repoPath, filePath);
-    return fs.readFileSync(fullPath, "utf-8");
+    return fsp.readFile(fullPath, "utf-8");
   },
 
   async deleteFile(repoPath: string, filePath: string): Promise<void> {
     const fullPath = safeJoin(repoPath, filePath);
-    fs.unlinkSync(fullPath);
+    await fsp.unlink(fullPath);
   },
 };

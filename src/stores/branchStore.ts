@@ -223,9 +223,10 @@ export const useBranchStore = defineStore("branch", () => {
     branchName?: string;
     remote?: string;
     rebase?: boolean;
+    repoPath?: string;
   }): Promise<MergeResult | null> {
-    if (!repoStore.activeRepo) return null;
-    const repoPath = repoStore.activeRepo.path;
+    const repoPath = opts?.repoPath ?? repoStore.activeRepo?.path;
+    if (!repoPath) return null;
     const headBranchName =
       opts?.branchName ?? localBranches.value.find((b) => b.isHead)?.name ?? "HEAD";
 
@@ -233,11 +234,7 @@ export const useBranchStore = defineStore("branch", () => {
     try {
       preview = await commands.previewPullConflicts(repoPath, opts?.remote);
     } catch {
-      try {
-        return await commands.pull(repoPath, opts?.remote, opts?.rebase ?? false);
-      } catch (e: unknown) {
-        throw e;
-      }
+      return await commands.pull(repoPath, opts?.remote, opts?.rebase ?? false);
     }
 
     if (preview.upstream && preview.remoteCommitsAhead === 0 && preview.dirtyFiles.length === 0) {

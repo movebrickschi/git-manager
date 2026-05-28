@@ -1,5 +1,29 @@
+import { promises as fs } from "node:fs";
+import * as path from "node:path";
+import { simpleGit } from "simple-git";
 import { getGit } from "./_helpers.js";
 import type { Submodule } from "../git-service.js";
+
+/** submodule update / sync 可能需要克隆大子模块，单独用 5 分钟超时，避免被 30s 默认值打断。 */
+const SUBMODULE_LONG_TIMEOUT_MS = 5 * 60 * 1000;
+
+function getLongTimeoutGit(repoPath: string) {
+  return simpleGit({
+    baseDir: repoPath,
+    binary: "git",
+    maxConcurrentProcesses: 1,
+    timeout: { block: SUBMODULE_LONG_TIMEOUT_MS },
+  });
+}
+
+async function hasGitmodules(repoPath: string): Promise<boolean> {
+  try {
+    await fs.access(path.join(repoPath, ".gitmodules"));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Submodule（子模块）服务。
@@ -79,12 +103,24 @@ async function fillUrls(
 }
 
 export const submoduleService = {
+  /**
+   * 列出仓库的子模块。优化：
+   * 1. 若仓库根目录不存在 `.gitmodules`，直接 return `[]` —— 不再触发 `git submodule status`，
+   *    解决"进入无 submodule 仓库也会闪『扫描中...』"的 UX 抖动。
+   * 2. `git submodule` 命令本身异常（git 版本太老 / 仓库结构特殊）继续走老路径，
+   *    并把 error 暴露给前端，避免被装作"没 submodule"。
+   *
+   * 返回兼容旧 API：Submodule[]。如需 error 信息，调用方应自行尝试 catch；
+   * 若未来要切换为 `{ list, error }` 结构，需要前端联动。当前仅在 console.warn 一下。
+   */
   async getSubmodules(repoPath: string): Promise<Submodule[]> {
+    if (!(await hasGitmodules(repoPath))) return [];
     const git = getGit(repoPath);
     let raw: string;
     try {
       raw = await git.raw(["submodule", "status"]);
-    } catch {
+    } catch (e: unknown) {
+      console.warn(`[submodule] status failed at ${repoPath}:`, e instanceof Error ? e.message : e);
       return [];
     }
     const list = parseStatus(raw);
@@ -92,21 +128,23 @@ export const submoduleService = {
   },
 
   async initSubmodules(repoPath: string, paths?: string[]): Promise<void> {
-    const git = getGit(repoPath);
+    const git = getLongTimeoutGit(repoPath);
     const args = ["submodule", "init"];
     if (paths && paths.length > 0) args.push("--", ...paths);
     await git.raw(args);
   },
 
+  /** update 需要克隆大子模块，统一走 5 分钟超时。 */
   async updateSubmodules(repoPath: string, paths?: string[]): Promise<void> {
-    const git = getGit(repoPath);
+    const git = getLongTimeoutGit(repoPath);
     const args = ["submodule", "update", "--init", "--recursive"];
     if (paths && paths.length > 0) args.push("--", ...paths);
     await git.raw(args);
   },
 
+  /** sync 也走 5 分钟超时，子模块 url 改动同步可能涉及多 remote 校验。 */
   async syncSubmodules(repoPath: string, paths?: string[]): Promise<void> {
-    const git = getGit(repoPath);
+    const git = getLongTimeoutGit(repoPath);
     const args = ["submodule", "sync", "--recursive"];
     if (paths && paths.length > 0) args.push("--", ...paths);
     await git.raw(args);

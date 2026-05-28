@@ -47,6 +47,8 @@ const ALLOWED_CHANNELS = new Set<string>([
   "unstage_file",
   "stage_all",
   "unstage_all",
+  "stage_files_batch",
+  "unstage_files_batch",
   "commit",
   "commit_files",
   "push_remote",
@@ -105,6 +107,16 @@ const ALLOWED_CHANNELS = new Set<string>([
   "report:polish",
   "report:abort",
   "system:reveal_in_folder",
+  "repo:watch",
+]);
+
+/**
+ * 仅这些主进程 → 渲染进程的推送 channel 被允许 subscribe。
+ * 与 invoke 不同，这里是"主进程主动推数据"——必须独立 allowlist 防止
+ * 渲染进程订阅敏感事件流（例如 ai/secret 之类）。
+ */
+const ALLOWED_PUSH_CHANNELS = new Set<string>([
+  "repo:changed",
 ]);
 
 contextBridge.exposeInMainWorld("electronAPI", {
@@ -116,4 +128,25 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
   selectDirectory: () => ipcRenderer.invoke("dialog:openDirectory"),
   revealInFolder: (absPath: string) => ipcRenderer.invoke("system:reveal_in_folder", absPath),
+  /**
+   * 订阅主进程推送事件。返回 unsubscribe 函数。
+   * channel 必须在 ALLOWED_PUSH_CHANNELS 内，否则抛错。
+   * callback 通过包装隔离 IpcRendererEvent，避免泄漏 sender / senderFrame 等内部对象。
+   */
+  on: (channel: string, callback: (payload: unknown) => void): (() => void) => {
+    if (typeof channel !== "string" || !ALLOWED_PUSH_CHANNELS.has(channel)) {
+      throw new Error(`push channel "${channel}" is not allowed`);
+    }
+    const wrapped = (_e: unknown, payload: unknown) => {
+      try {
+        callback(payload);
+      } catch (err) {
+        console.warn(`[electronAPI.on] callback throw on ${channel}:`, err);
+      }
+    };
+    ipcRenderer.on(channel, wrapped);
+    return () => {
+      ipcRenderer.removeListener(channel, wrapped);
+    };
+  },
 });

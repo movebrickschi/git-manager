@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, defineAsyncComponent } from "vue";
 import { commands } from "@/utils/commands";
+import { useBranchStore } from "@/stores/branchStore";
 import type { CommitInfo, FileStatus, PushOptions } from "@/utils/commands";
 import { formatTimestamp } from "@/utils/format";
 import DivergenceDialog from "./DivergenceDialog.vue";
@@ -20,6 +21,8 @@ const emit = defineEmits<{
   close: [];
   confirm: [];
 }>();
+
+const branchStore = useBranchStore();
 
 const loading = ref(false);
 const pushing = ref(false);
@@ -168,7 +171,15 @@ async function handleDivergenceRebase() {
   pushing.value = true;
   pushError.value = "";
   try {
-    const result = await commands.pull(props.repoPath, remoteName.value, true);
+    const result = await branchStore.smartPullCurrentBranch({
+      repoPath: props.repoPath,
+      remote: remoteName.value,
+      rebase: true,
+    });
+    if (result === null) {
+      pushing.value = false;
+      return;
+    }
     if (result.conflicts && result.conflicts.length > 0) {
       pushing.value = false;
       openConflictResolver(result.conflicts);
@@ -192,7 +203,15 @@ async function handleDivergenceMerge() {
   pushing.value = true;
   pushError.value = "";
   try {
-    const result = await commands.pull(props.repoPath, remoteName.value, false);
+    const result = await branchStore.smartPullCurrentBranch({
+      repoPath: props.repoPath,
+      remote: remoteName.value,
+      rebase: false,
+    });
+    if (result === null) {
+      pushing.value = false;
+      return;
+    }
     if (result.conflicts && result.conflicts.length > 0) {
       pushing.value = false;
       openConflictResolver(result.conflicts);

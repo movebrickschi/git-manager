@@ -101,18 +101,14 @@ export const useCommitStore = defineStore("commit", () => {
   async function stageFiles(paths: string[]) {
     if (!repoStore.activeRepo || paths.length === 0) return;
     const repoPath = repoStore.activeRepo.path;
-    for (const p of paths) {
-      await commands.stageFile(repoPath, p);
-    }
+    await commands.stageFilesBatch(repoPath, paths);
     await loadStatus();
   }
 
   async function unstageFiles(paths: string[]) {
     if (!repoStore.activeRepo || paths.length === 0) return;
     const repoPath = repoStore.activeRepo.path;
-    for (const p of paths) {
-      await commands.unstageFile(repoPath, p);
-    }
+    await commands.unstageFilesBatch(repoPath, paths);
     await loadStatus();
   }
 

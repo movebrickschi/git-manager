@@ -8,23 +8,36 @@
  */
 import type { ReportEntry, ReportFilter } from "./types.js";
 
-/** 解析 commit message 的 conventional commits 前缀，得到 module / scope / subject。 */
+/**
+ * 解析 commit message 的 conventional commits 前缀，得到 module / scope / subject / breaking。
+ *
+ * 支持格式：
+ *   `feat: xxx`
+ *   `feat(order): xxx`
+ *   `feat!: xxx`           （breaking, 无 scope）
+ *   `feat(order)!: xxx`    （breaking, 有 scope）
+ *   `FEAT: xxx`            （大小写不敏感，统一转小写 type）
+ *
+ * 不命中 conventional 格式时（例如 `修复登录 bug`）回退 `{ module: "other", subject: firstLine, breaking: false }`。
+ */
 export function parseConventional(message: string): {
   module: string;
   scope?: string;
   subject: string;
+  /** 是否带 `!` 标记（conventional commits 的 BREAKING CHANGE 缩写）。 */
+  breaking: boolean;
 } {
   const firstLine = (message.split(/\r?\n/, 1)[0] ?? "").trim();
-  // 形如 `feat(order)!: xxxxx`  或  `fix: xxx`
-  const match = firstLine.match(/^([a-zA-Z]+)(?:\(([^)]+)\))?!?:\s*(.*)$/);
+  const match = firstLine.match(/^([a-zA-Z]+)(?:\(([^)]+)\))?(!)?:\s*(.*)$/);
   if (!match) {
-    return { module: "other", subject: firstLine };
+    return { module: "other", subject: firstLine, breaking: false };
   }
-  const [, type, scope, rest] = match;
+  const [, type, scope, bang, rest] = match;
   return {
     module: (type ?? "other").toLowerCase(),
     scope: scope?.trim() || undefined,
     subject: (rest ?? firstLine).trim() || firstLine,
+    breaking: bang === "!",
   };
 }
 
@@ -100,7 +113,10 @@ export function applyReportFilter(
     if (!branchMatches(entry, filter.branches)) continue;
 
     if (filter.dedupMessage) {
-      const key = `${entry.repo}::${entry.subject.toLowerCase()}`;
+      // 把 scope 纳入 dedup key —— 否则 `feat(auth): support oauth` 与
+      // `feat(payment): support oauth` 会被错误合并为一条
+      const scopeKey = entry.scope ?? "";
+      const key = `${entry.repo}::${scopeKey}::${entry.subject.toLowerCase()}`;
       if (seenSubjects.has(key)) continue;
       seenSubjects.add(key);
     }

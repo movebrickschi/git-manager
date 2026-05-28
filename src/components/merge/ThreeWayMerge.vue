@@ -224,11 +224,6 @@ function stateOf(index: number): HunkSideState {
   return hunkStates.value[index] ?? { ours: false, theirs: false };
 }
 
-function isUnresolved(index: number): boolean {
-  const s = stateOf(index);
-  return !s.ours && !s.theirs;
-}
-
 // Inspect originalRaw to figure out what git operation produced this conflict
 // and which side holds the user's own (local, unstaged or stashed) code.
 // See https://git-scm.com/docs/git-merge#_how_conflicts_are_presented for

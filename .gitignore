@@ -50,3 +50,6 @@ coverage/
 .test.log
 .typecheck.log
 .push.log
+
+# PowerShell 构建脚本临时日志
+build-start.txt

@@ -1,4 +1,8 @@
+import { execFile as execFileCb } from "node:child_process";
 import { promises as fs } from "node:fs";
+import { promisify } from "node:util";
+
+const execFile = promisify(execFileCb);
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -6,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   buildUntrackedDiff,
   parseDiffOutput,
+  recoverMisdetectedBinaryDiff,
   UNTRACKED_DIFF_MAX_BYTES,
 } from "./_helpers.js";
 
@@ -116,6 +121,73 @@ describe("buildUntrackedDiff", () => {
  * _helpers.ts 自己改了某行又出现在 `+` 行里）。
  * 现已改成"按行 + 行首 + 完整格式"严格匹配，本组用例守住该回归。
  */
+describe("recoverMisdetectedBinaryDiff · staged/modified UTF-16", () => {
+  let gitRoot: string;
+
+  beforeAll(async () => {
+    gitRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gm-binary-recover-"));
+    await execFile("git", ["-C", gitRoot, "init"], { encoding: "utf8" });
+    await execFile("git", ["-C", gitRoot, "config", "user.email", "t@test"], { encoding: "utf8" });
+    await execFile("git", ["-C", gitRoot, "config", "user.name", "t"], { encoding: "utf8" });
+    await fs.writeFile(path.join(gitRoot, "README.md"), "# base\n", "utf8");
+    await execFile("git", ["-C", gitRoot, "add", "README.md"], { encoding: "utf8" });
+    await execFile("git", ["-C", gitRoot, "commit", "-m", "init"], { encoding: "utf8" });
+  });
+
+  afterAll(async () => {
+    await fs.rm(gitRoot, { recursive: true, force: true });
+  });
+
+  it("【7】staged UTF-16 LE 文件 → 恢复为文本 diff 而非 binary", async () => {
+    const filename = "ps-log.txt";
+    const utf16 = Buffer.from("line1\r\nline2\r\n", "utf16le");
+    await fs.writeFile(path.join(gitRoot, filename), utf16);
+    await execFile("git", ["-C", gitRoot, "add", filename], { encoding: "utf8" });
+
+    const diff = await recoverMisdetectedBinaryDiff(gitRoot, filename, true);
+
+    expect(diff).not.toBeNull();
+    expect(diff!.binary).toBe(false);
+    expect(diff!.hunks.length).toBeGreaterThan(0);
+    const added = diff!.hunks.flatMap((h) => h.lines.filter((l) => l.lineType === "addition"));
+    expect(added.some((l) => l.content.includes("line1"))).toBe(true);
+  });
+});
+
+describe("parseDiffOutput · A3 回归：CRLF 输入也能正确识别二进制行", () => {
+  it("Binary files 行用 \\r\\n 结尾仍然命中 → binary=true", () => {
+    // 原实现 split("\n") 后该行末尾会残留 \r，BINARY_DIFF_LINE 正则 $ 不匹配
+    const raw = [
+      `diff --git a/x.png b/x.png\r`,
+      `index 1..2 100644\r`,
+      `Binary files a/x.png and b/x.png differ\r`,
+    ].join("\n");
+
+    const diff = parseDiffOutput(raw, "x.png");
+
+    expect(diff.binary).toBe(true);
+    expect(diff.hunks).toHaveLength(0);
+  });
+});
+
+describe("decodeBufferToText · A1 回归：大文件后段含 NUL 也能被识别", () => {
+  it("前 8 KB 合法 ASCII + 后段含 NUL 的 buffer → 视为二进制", async () => {
+    const filename = "mixed-1mb.bin";
+    const front = Buffer.alloc(8 * 1024, 0x41); // 8 KB 的 'A'
+    const back = Buffer.from([0x00, 0x01, 0x02, 0x03]);
+    const buf = Buffer.concat([front, Buffer.alloc(900 * 1024, 0x41), back]);
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "gm-mixed-bin-"));
+    await fs.writeFile(path.join(tmpDir, filename), buf);
+
+    const diff = await buildUntrackedDiff(tmpDir, filename);
+
+    expect(diff.binary).toBe(true);
+    expect(diff.hunks).toHaveLength(0);
+
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+});
+
 describe("parseDiffOutput · 二进制识别不误伤代码字面量", () => {
   it("hunk 内 + 行含 'Binary files' 字符串字面量 → 仍按文本 diff 解析", () => {
     const raw = [

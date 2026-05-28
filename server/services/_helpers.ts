@@ -1,6 +1,11 @@
+import { execFile as execFileCb } from "node:child_process";
 import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { simpleGit, type SimpleGit } from "simple-git";
+
+const execFile = promisify(execFileCb);
 import type {
   FileStatus,
   DiffResultModel,
@@ -17,10 +22,11 @@ export const GIT_TIMEOUT_MS = 30_000;
 export const UNTRACKED_DIFF_MAX_BYTES = 1024 * 1024;
 
 /**
- * 二进制嗅探阈值。读取前 N 字节，若含 \0 即视为二进制。
- * 与 git 自身行为一致：git diff 在文件含 NUL 时会输出 "Binary files ... differ"。
+ * 二进制嗅探：原先只扫前 8 KB，会把"前 8 KB 合法 ASCII + 后段含 NUL"的文件
+ * 误判为文本（典型：损坏的 .po / .csv / .pdf 误存为 .txt）。改为全量扫一遍，
+ * 1 MB 文件成本只在 ms 级，与 git 自身 "Binary files ... differ" 的判定行为一致。
  */
-const BINARY_SNIFF_BYTES = 8 * 1024;
+const BINARY_SNIFF_BYTES = Number.POSITIVE_INFINITY;
 
 /**
  * 尝试把任意 Buffer 智能解码为文本。
@@ -76,7 +82,9 @@ export function decodeBufferToText(buf: Buffer): { text: string | null; encoding
     }
   }
 
-  const sniffEnd = Math.min(buf.length, BINARY_SNIFF_BYTES);
+  const sniffEnd = Number.isFinite(BINARY_SNIFF_BYTES)
+    ? Math.min(buf.length, BINARY_SNIFF_BYTES)
+    : buf.length;
   for (let i = 0; i < sniffEnd; i++) {
     if (buf[i] === 0) return { text: null, encoding: "binary" };
   }
@@ -234,7 +242,9 @@ export function parseDiffOutput(raw: string, filePath?: string): DiffResultModel
     newContent: null,
   };
 
-  const lines = raw.split("\n");
+  // split 同时兼容 \r\n（Windows core.autocrlf=true 项目的 git diff 输出可能带 \r），
+  // 再额外 strip 每行末尾落单的 \r（防止最后一行没 \n 时残留）。
+  const lines = raw.split(/\r?\n/).map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l));
 
   if (lines.some((line) => BINARY_DIFF_LINE.test(line))) {
     result.binary = true;
@@ -385,6 +395,108 @@ export async function buildUntrackedDiff(
   ].join("\n");
 
   return parseDiffOutput(synthetic, filePath);
+}
+
+async function readGitBlob(repoPath: string, spec: string): Promise<Buffer | null> {
+  try {
+    const { stdout } = await execFile("git", ["-C", repoPath, "cat-file", "-p", spec], {
+      maxBuffer: UNTRACKED_DIFF_MAX_BYTES + 4096,
+      encoding: "buffer",
+    });
+    return Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * When `git diff` marks a file binary (typical: UTF-16 LE from PowerShell) but
+ * decodeBufferToText can read both sides, synthesize a normal unified diff.
+ */
+export async function recoverMisdetectedBinaryDiff(
+  repoPath: string,
+  filePath: string,
+  staged: boolean
+): Promise<DiffResultModel | null> {
+  const abs = path.resolve(repoPath, filePath);
+
+  // 先用 fs.stat 拿大小预判，超过阈值直接 return null，避免先 readFile 几 MB 再丢弃。
+  // git blob 大小无法零成本拿，姑且按工作区文件大小做粗筛——只要工作区已经超阈值
+  // 就放弃 recover，让前端直接显示 Binary（实际场景：恢复 binary 也不切实际）。
+  try {
+    const stat = await fs.stat(abs);
+    if (stat.size > UNTRACKED_DIFF_MAX_BYTES * 2) return null;
+  } catch {
+    // 工作区文件不在（rare for staged but possible），继续走原路径
+  }
+
+  let oldBuf: Buffer | null;
+  let newBuf: Buffer | null;
+
+  if (staged) {
+    oldBuf = await readGitBlob(repoPath, `HEAD:${filePath}`);
+    newBuf = (await readGitBlob(repoPath, `:${filePath}`)) ?? (await fs.readFile(abs).catch(() => null));
+    if (!newBuf) return null;
+    if (!oldBuf) oldBuf = Buffer.alloc(0);
+  } else {
+    newBuf = await fs.readFile(abs).catch(() => null);
+    if (!newBuf) return null;
+    oldBuf =
+      (await readGitBlob(repoPath, `:${filePath}`)) ??
+      (await readGitBlob(repoPath, `HEAD:${filePath}`)) ??
+      Buffer.alloc(0);
+  }
+
+  if (oldBuf.length + newBuf.length > UNTRACKED_DIFF_MAX_BYTES * 2) return null;
+
+  const oldDec = decodeBufferToText(oldBuf);
+  const newDec = decodeBufferToText(newBuf);
+  if (oldDec.text === null || newDec.text === null) return null;
+
+  return synthesizeTextUnifiedDiff(filePath, oldDec.text, newDec.text);
+}
+
+export async function synthesizeTextUnifiedDiff(
+  filePath: string,
+  oldText: string,
+  newText: string
+): Promise<DiffResultModel> {
+  if (oldText === newText) {
+    const header = [
+      `diff --git a/${filePath} b/${filePath}`,
+      `--- a/${filePath}`,
+      `+++ b/${filePath}`,
+    ].join("\n");
+    return parseDiffOutput(header, filePath);
+  }
+
+  const tmpBase = await fs.mkdtemp(path.join(os.tmpdir(), "gm-text-diff-"));
+  const oldFile = path.join(tmpBase, "old");
+  const newFile = path.join(tmpBase, "new");
+  try {
+    await fs.writeFile(oldFile, oldText, "utf8");
+    await fs.writeFile(newFile, newText, "utf8");
+    let raw = "";
+    try {
+      const { stdout } = await execFile(
+        "git",
+        ["diff", "--no-index", "--no-color", "-U3", oldFile, newFile],
+        { maxBuffer: UNTRACKED_DIFF_MAX_BYTES + 4096, encoding: "utf8" }
+      );
+      raw = stdout;
+    } catch (e: unknown) {
+      const err = e as { stdout?: string };
+      raw = err.stdout ?? "";
+      if (!raw) return parseDiffOutput("", filePath);
+    }
+    const normalized = raw
+      .replace(/^diff --git a\/old b\/new/m, `diff --git a/${filePath} b/${filePath}`)
+      .replace(/^--- a\/old/m, `--- a/${filePath}`)
+      .replace(/^\+\+\+ b\/new/m, `+++ b/${filePath}`);
+    return parseDiffOutput(normalized, filePath);
+  } finally {
+    await fs.rm(tmpBase, { recursive: true, force: true });
+  }
 }
 
 export function parseRefs(refStr: string, headBranch: string): RefInfo[] {

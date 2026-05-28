@@ -84,7 +84,7 @@ describe("renderEntryBlockMd · 嵌套列表格式", () => {
       rangeISO: { fromISO: "2026-05-21T00:00:00Z", toISO: "2026-05-21T23:59:59Z" },
     });
 
-    const matches = markdown.match(/  - 明细A/g) ?? [];
+    const matches = markdown.match(/ {2}- 明细A/g) ?? [];
     expect(matches.length).toBe(1);
     expect(markdown.indexOf("明细A")).toBeLessThan(markdown.indexOf("明细B"));
   });

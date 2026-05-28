@@ -334,6 +334,10 @@ export interface Commands {
   unstageFile(repoPath: string, filePath: string): Promise<void>;
   stageAll(repoPath: string): Promise<void>;
   unstageAll(repoPath: string): Promise<void>;
+  /** 一次性 stage N 个文件（`git add -- p1 p2 ... pN`），等价于 N 次 stageFile 但更快。 */
+  stageFilesBatch(repoPath: string, filePaths: string[]): Promise<void>;
+  /** 一次性 unstage N 个文件（`git reset HEAD -- p1 p2 ... pN`）。 */
+  unstageFilesBatch(repoPath: string, filePaths: string[]): Promise<void>;
   commit(repoPath: string, message: string, amend: boolean): Promise<string>;
   commitFiles(repoPath: string, filePaths: string[], message: string): Promise<string>;
   push(
