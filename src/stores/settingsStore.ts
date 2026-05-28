@@ -1,76 +1,121 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { ref, watch } from "vue";
 
-const LS_AUTO_FETCH = "gm.autoFetchEnabled";
-const LS_AUTO_FETCH_INTERVAL = "gm.autoFetchIntervalMinutes";
-const LS_FETCH_ON_OPEN = "gm.fetchOnOpen";
-const LS_AUTO_REFRESH_ON_FS_CHANGE = "gm.autoRefreshOnFsChange";
+/**
+ * 所有设置项的 localStorage key 集中管理。
+ * 改名前先确认 grep 项目内引用，避免遗留旧 key 残值。
+ */
+const LS = {
+  theme: "gm.theme",
+  diffMode: "gm.diffMode",
+  showCommitDetails: "gm.showCommitDetails",
+  showDiffPreview: "gm.showDiffPreview",
+  compactReferences: "gm.compactReferences",
+  showTagNames: "gm.showTagNames",
+  highlightMyCommits: "gm.highlightMyCommits",
+  highlightCurrentBranch: "gm.highlightCurrentBranch",
+  autoFetchEnabled: "gm.autoFetchEnabled",
+  autoFetchIntervalMinutes: "gm.autoFetchIntervalMinutes",
+  fetchOnOpen: "gm.fetchOnOpen",
+  autoRefreshOnFsChange: "gm.autoRefreshOnFsChange",
+} as const;
 
-function loadAutoFetchEnabled(): boolean {
+function readBool(key: string, defaultValue: boolean): boolean {
   try {
-    return localStorage.getItem(LS_AUTO_FETCH) === "1";
+    const raw = localStorage.getItem(key);
+    if (raw === null) return defaultValue;
+    return raw === "1";
   } catch {
-    return false;
+    return defaultValue;
   }
 }
-function loadAutoFetchInterval(): number {
+
+function writeBool(key: string, value: boolean): void {
   try {
-    const v = Number(localStorage.getItem(LS_AUTO_FETCH_INTERVAL));
-    return Number.isFinite(v) && v >= 1 ? v : 5;
+    localStorage.setItem(key, value ? "1" : "0");
   } catch {
-    return 5;
+    /* ignore quota */
   }
 }
 
-function loadFetchOnOpen(): boolean {
+function readString<T extends string>(key: string, defaultValue: T, allowed: readonly T[]): T {
   try {
-    return localStorage.getItem(LS_FETCH_ON_OPEN) !== "0";
+    const raw = localStorage.getItem(key);
+    if (raw !== null && (allowed as readonly string[]).includes(raw)) return raw as T;
+    return defaultValue;
   } catch {
-    return true;
+    return defaultValue;
   }
 }
 
-/** 默认开启文件系统 watcher。大仓库用户可手动关闭。 */
-function loadAutoRefreshOnFsChange(): boolean {
+function writeString(key: string, value: string): void {
   try {
-    return localStorage.getItem(LS_AUTO_REFRESH_ON_FS_CHANGE) !== "0";
+    localStorage.setItem(key, value);
   } catch {
-    return true;
+    /* ignore quota */
+  }
+}
+
+function readInt(key: string, defaultValue: number, min: number, max: number): number {
+  try {
+    const v = Number(localStorage.getItem(key));
+    if (Number.isFinite(v) && v >= min && v <= max) return Math.floor(v);
+    return defaultValue;
+  } catch {
+    return defaultValue;
   }
 }
 
 export const useSettingsStore = defineStore("settings", () => {
-  const theme = ref<"dark" | "light">("dark");
-  const diffMode = ref<"side-by-side" | "unified">("side-by-side");
-  const showCommitDetails = ref(true);
-  const showDiffPreview = ref(true);
-  const compactReferences = ref(true);
-  const showTagNames = ref(true);
-  const highlightMyCommits = ref(true);
-  const highlightCurrentBranch = ref(true);
-  const autoFetchEnabled = ref(loadAutoFetchEnabled());
-  const autoFetchIntervalMinutes = ref(loadAutoFetchInterval());
-  const fetchOnOpen = ref(loadFetchOnOpen());
-  const autoRefreshOnFsChange = ref(loadAutoRefreshOnFsChange());
+  // 启动时从 localStorage 读取，未存过则用默认值
+  const theme = ref<"dark" | "light">(readString(LS.theme, "dark", ["dark", "light"] as const));
+  const diffMode = ref<"side-by-side" | "unified">(
+    readString(LS.diffMode, "side-by-side", ["side-by-side", "unified"] as const)
+  );
+  const showCommitDetails = ref(readBool(LS.showCommitDetails, true));
+  const showDiffPreview = ref(readBool(LS.showDiffPreview, true));
+  const compactReferences = ref(readBool(LS.compactReferences, true));
+  const showTagNames = ref(readBool(LS.showTagNames, true));
+  const highlightMyCommits = ref(readBool(LS.highlightMyCommits, true));
+  const highlightCurrentBranch = ref(readBool(LS.highlightCurrentBranch, true));
+  const autoFetchEnabled = ref(readBool(LS.autoFetchEnabled, false));
+  const autoFetchIntervalMinutes = ref(readInt(LS.autoFetchIntervalMinutes, 5, 1, 120));
+  const fetchOnOpen = ref(readBool(LS.fetchOnOpen, true));
+  const autoRefreshOnFsChange = ref(readBool(LS.autoRefreshOnFsChange, true));
+
+  // 所有 ref 自动持久化（watch 监听 ref 变化 → localStorage 写）。
+  // 即便外部直接 mutate（如 v-model），也能保证落盘。
+  watch(theme, (v) => writeString(LS.theme, v));
+  watch(diffMode, (v) => writeString(LS.diffMode, v));
+  watch(showCommitDetails, (v) => writeBool(LS.showCommitDetails, v));
+  watch(showDiffPreview, (v) => writeBool(LS.showDiffPreview, v));
+  watch(compactReferences, (v) => writeBool(LS.compactReferences, v));
+  watch(showTagNames, (v) => writeBool(LS.showTagNames, v));
+  watch(highlightMyCommits, (v) => writeBool(LS.highlightMyCommits, v));
+  watch(highlightCurrentBranch, (v) => writeBool(LS.highlightCurrentBranch, v));
 
   function toggleTheme() {
     theme.value = theme.value === "dark" ? "light" : "dark";
   }
 
+  function setTheme(v: "dark" | "light") {
+    theme.value = v;
+  }
+
+  function setDiffMode(v: "side-by-side" | "unified") {
+    diffMode.value = v;
+  }
+
   function setAutoFetchEnabled(v: boolean) {
     autoFetchEnabled.value = v;
-    try {
-      localStorage.setItem(LS_AUTO_FETCH, v ? "1" : "0");
-    } catch {
-      /* ignore quota */
-    }
+    writeBool(LS.autoFetchEnabled, v);
   }
 
   function setAutoFetchIntervalMinutes(v: number) {
     const clamped = Math.max(1, Math.min(120, Math.floor(v)));
     autoFetchIntervalMinutes.value = clamped;
     try {
-      localStorage.setItem(LS_AUTO_FETCH_INTERVAL, String(clamped));
+      localStorage.setItem(LS.autoFetchIntervalMinutes, String(clamped));
     } catch {
       /* ignore quota */
     }
@@ -78,20 +123,12 @@ export const useSettingsStore = defineStore("settings", () => {
 
   function setFetchOnOpen(v: boolean) {
     fetchOnOpen.value = v;
-    try {
-      localStorage.setItem(LS_FETCH_ON_OPEN, v ? "1" : "0");
-    } catch {
-      /* ignore quota */
-    }
+    writeBool(LS.fetchOnOpen, v);
   }
 
   function setAutoRefreshOnFsChange(v: boolean) {
     autoRefreshOnFsChange.value = v;
-    try {
-      localStorage.setItem(LS_AUTO_REFRESH_ON_FS_CHANGE, v ? "1" : "0");
-    } catch {
-      /* ignore quota */
-    }
+    writeBool(LS.autoRefreshOnFsChange, v);
   }
 
   return {
@@ -108,6 +145,8 @@ export const useSettingsStore = defineStore("settings", () => {
     fetchOnOpen,
     autoRefreshOnFsChange,
     toggleTheme,
+    setTheme,
+    setDiffMode,
     setAutoFetchEnabled,
     setAutoFetchIntervalMinutes,
     setFetchOnOpen,

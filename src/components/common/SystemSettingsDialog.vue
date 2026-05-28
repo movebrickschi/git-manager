@@ -10,7 +10,7 @@
  *
  * 用法：在 StatusBar 用 v-model:visible 控制显示。
  */
-import { computed, defineAsyncComponent, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from "vue";
 import { useSettingsStore } from "@/stores/settingsStore";
 
 const AiSettingsDialog = defineAsyncComponent(
@@ -63,6 +63,28 @@ function close() {
   emit("update:visible", false);
 }
 
+// Esc 关闭弹窗，但只在系统设置弹窗本身可见且 AI 子弹窗未打开时生效
+function onKeydown(e: KeyboardEvent) {
+  if (e.key !== "Escape") return;
+  if (!props.visible) return;
+  if (showAiDialog.value) return; // 让 AI 子弹窗自己处理 Esc
+  e.preventDefault();
+  close();
+}
+
+watch(
+  () => props.visible,
+  (v) => {
+    if (v) window.addEventListener("keydown", onKeydown);
+    else window.removeEventListener("keydown", onKeydown);
+  },
+  { immediate: true }
+);
+
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onKeydown);
+});
+
 const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
 </script>
 
@@ -97,13 +119,13 @@ const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
                 <span>主题</span>
                 <select
                   :value="settings.theme"
-                  @change="(e: any) => { if (e.target.value !== settings.theme) settings.toggleTheme(); }"
+                  @change="(e: any) => settings.setTheme(e.target.value as 'dark' | 'light')"
                 >
                   <option value="dark">深色（dark）</option>
                   <option value="light">浅色（light）</option>
                 </select>
               </label>
-              <p class="field-desc">应用启动时立即生效。</p>
+              <p class="field-desc">应用启动时立即生效，下次启动保持。</p>
             </div>
           </div>
 
