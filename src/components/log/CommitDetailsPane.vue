@@ -11,6 +11,8 @@ const repoStore = useRepoStore();
 const selectedCommit = ref<CommitInfo | null>(null);
 const loading = ref(false);
 
+// 请求序号守卫：快速切 commit 时，只让最新一次请求的结果落库，避免迟到的旧请求覆盖当前详情
+let detailLoadSeq = 0;
 watch(
   () => logStore.selectedCommitId,
   async (commitId) => {
@@ -19,14 +21,18 @@ watch(
       selectedCommit.value = null;
       return;
     }
+    const seq = ++detailLoadSeq;
     loading.value = true;
     try {
-      selectedCommit.value = await commands.getCommitDetail(repoPath, commitId);
+      const detail = await commands.getCommitDetail(repoPath, commitId);
+      if (seq === detailLoadSeq) selectedCommit.value = detail;
     } catch {
-      const fallback = logStore.commits.find((c) => c.id === commitId);
-      selectedCommit.value = fallback ?? null;
+      if (seq === detailLoadSeq) {
+        const fallback = logStore.commits.find((c) => c.id === commitId);
+        selectedCommit.value = fallback ?? null;
+      }
     } finally {
-      loading.value = false;
+      if (seq === detailLoadSeq) loading.value = false;
     }
   },
   { immediate: true }

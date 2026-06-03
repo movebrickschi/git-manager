@@ -64,6 +64,8 @@ watch(
   { immediate: true }
 );
 
+// 请求序号守卫：快速切 commit 时，只让最新一次请求的结果落库，避免迟到的旧请求覆盖当前选中
+let filesLoadSeq = 0;
 watch(
   () => logStore.selectedCommitId,
   async (commitId) => {
@@ -71,22 +73,23 @@ watch(
       commitFiles.value = [];
       return;
     }
+    const seq = ++filesLoadSeq;
     loadingCommit.value = true;
     try {
-      if (logStore.selectedCommitIds.length === 2) {
-        commitFiles.value = await commands.compareCommits(
-          repoStore.activeRepo.path,
-          logStore.selectedCommitIds[0],
-          logStore.selectedCommitIds[1]
-        );
-      } else {
-        commitFiles.value = await commands.getCommitFiles(repoStore.activeRepo.path, commitId);
-      }
+      const files =
+        logStore.selectedCommitIds.length === 2
+          ? await commands.compareCommits(
+              repoStore.activeRepo.path,
+              logStore.selectedCommitIds[0],
+              logStore.selectedCommitIds[1]
+            )
+          : await commands.getCommitFiles(repoStore.activeRepo.path, commitId);
+      if (seq === filesLoadSeq) commitFiles.value = files;
     } catch (e) {
       console.error("Failed to load files:", e);
-      commitFiles.value = [];
+      if (seq === filesLoadSeq) commitFiles.value = [];
     } finally {
-      loadingCommit.value = false;
+      if (seq === filesLoadSeq) loadingCommit.value = false;
     }
   }
 );

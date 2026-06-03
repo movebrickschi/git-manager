@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, defineAsyncComponent } from "vue";
+import { ref, onMounted, onUnmounted, watch, defineAsyncComponent } from "vue";
 import { Splitpanes, Pane } from "splitpanes";
 import "splitpanes/dist/splitpanes.css";
 import MainLayout from "@/layouts/MainLayout.vue";
@@ -21,6 +21,7 @@ import { useCommitStore } from "@/stores/commitStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import type { FileStatus, DiffResult } from "@/utils/commands";
 import { commands } from "@/utils/commands";
+import { errMsg } from "@/utils/error";
 
 const repoStore = useRepoStore();
 const logStore = useLogStore();
@@ -42,6 +43,14 @@ const selectedFile = ref<FileStatus | null>(null);
 const diffResult = ref<DiffResult | null>(null);
 const changedFilesSource = ref<"commit" | "working">("commit");
 const showDiffViewer = ref(false);
+// 弹框打开序号守卫：防止"迟到"的 diff 加载 promise 在弹框已被关闭后又把它重新打开
+// （快速重复双击大文件时会有多个 onFileDblClick 并发，旧 promise resolve 会覆盖关闭状态）
+let diffOpenSeq = 0;
+// 文件 diff 加载守卫：
+// - fileSelectSeq：只让"最新一次选择"的结果落到 diffResult，避免快速切文件时旧 diff 覆盖新文件
+// - lastDiffKey：双击会触发 2×click + 1×dblclick，去重避免对同一文件重复发起 3 次 IPC
+let fileSelectSeq = 0;
+let lastDiffKey = "";
 const showBlame = ref(false);
 const blameFilePath = ref("");
 const showMerge = ref(false);
@@ -66,10 +75,17 @@ watch(
     // logStore 内部 watch 会自行 swap per-repo 的 filter（含 branch/author/date/searchText 等）
     selectedFile.value = null;
     diffResult.value = null;
+    diffOpenSeq++; // 切仓库时作废在途的弹框打开请求
+    lastDiffKey = "";
     showDiffViewer.value = false;
     if (repoStore.activeRepo) {
       void branchStore.loadBranches();
       void commitStore.loadStatus();
+      // 切仓库时 logStore 内部 watch 已清空日志并置 needsReload；若当前正处于 log tab
+      // 需立刻重新加载，否则日志会一直空白。非 log tab 则保留 needsReload，切回时由下方 watch 处理。
+      if (activeTab.value === "log") {
+        logStore.ensureLoaded();
+      }
     }
   }
 );
@@ -84,36 +100,53 @@ function onChangedFilesSource(source: "commit" | "working") {
   changedFilesSource.value = source;
   diffResult.value = null;
   selectedFile.value = null;
+  lastDiffKey = "";
 }
 
 async function onFileSelect(file: FileStatus) {
   selectedFile.value = file;
   if (!repoStore.activeRepo) return;
+  // 去重：双击/重复点击同一文件时不重复发起 IPC（key 含来源/commit/staged/path）
+  const key = `${changedFilesSource.value}|${logStore.selectedCommitId ?? ""}|${file.staged}|${file.path}`;
+  if (key === lastDiffKey) return;
+  lastDiffKey = key;
+  const seq = ++fileSelectSeq;
   try {
+    let result: DiffResult | null = null;
     if (changedFilesSource.value === "working") {
-      diffResult.value = await commands.getFileDiff(
-        repoStore.activeRepo.path,
-        file.path,
-        file.staged
-      );
+      result = await commands.getFileDiff(repoStore.activeRepo.path, file.path, file.staged);
     } else if (logStore.selectedCommitId) {
-      diffResult.value = await commands.getCommitDiff(
+      result = await commands.getCommitDiff(
         repoStore.activeRepo.path,
         logStore.selectedCommitId,
         file.path
       );
     }
+    // 仅当仍是最新一次选择时才落库，避免旧请求覆盖新文件的 diff
+    if (seq === fileSelectSeq) diffResult.value = result;
   } catch (e) {
     console.error("Failed to load diff:", e);
+    if (seq === fileSelectSeq) {
+      diffResult.value = null;
+      showDiffViewer.value = false; // 加载失败不残留半开弹框
+      lastDiffKey = ""; // 失败后允许重试同一文件
+      branchStore.showToast(`加载 diff 失败: ${errMsg(e)}`, "err");
+    }
   }
 }
 
 async function onFileDblClick(file: FileStatus) {
+  const seq = ++diffOpenSeq;
   await onFileSelect(file);
-  showDiffViewer.value = true;
+  // 仅当这是最新一次双击、且期间未被关闭/切仓库时才真正打开，
+  // 否则迟到的 promise 会把已关闭的弹框重新打开（“关不掉”的根因）
+  if (seq === diffOpenSeq) {
+    showDiffViewer.value = true;
+  }
 }
 
 function closeDiffViewer() {
+  diffOpenSeq++; // 作废所有在途的打开请求，确保关闭后不会被旧 promise 重新打开
   showDiffViewer.value = false;
 }
 
@@ -135,6 +168,15 @@ function openMerge(filePath: string, conflictFiles?: string[]) {
 function closeMerge() {
   showMerge.value = false;
 }
+
+// Esc 关闭只读弹框（diff / blame）。合并弹框含编辑态，不做 Esc/背景关闭以免误丢失改动。
+function onGlobalKeydown(e: KeyboardEvent) {
+  if (e.key !== "Escape") return;
+  if (showDiffViewer.value) closeDiffViewer();
+  else if (showBlame.value) closeBlame();
+}
+onMounted(() => document.addEventListener("keydown", onGlobalKeydown));
+onUnmounted(() => document.removeEventListener("keydown", onGlobalKeydown));
 </script>
 
 <template>
@@ -202,7 +244,11 @@ function closeMerge() {
 
     <!-- Full diff viewer dialog -->
     <Teleport to="body">
-      <div v-if="showDiffViewer && diffResult" class="fullscreen-overlay">
+      <div
+        v-if="showDiffViewer && diffResult"
+        class="fullscreen-overlay"
+        @click.self="closeDiffViewer"
+      >
         <div class="fullscreen-panel">
           <div class="fullscreen-header">
             <span>{{ selectedFile?.path }}</span>
@@ -227,7 +273,7 @@ function closeMerge() {
 
     <!-- Blame viewer -->
     <Teleport to="body">
-      <div v-if="showBlame" class="fullscreen-overlay">
+      <div v-if="showBlame" class="fullscreen-overlay" @click.self="closeBlame">
         <div class="fullscreen-panel">
           <div class="fullscreen-header">
             <span>Blame: {{ blameFilePath }}</span>
