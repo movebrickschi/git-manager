@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, session, shell } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, session, shell, Menu } from "electron";
 import { promises as fs } from "fs";
 import * as path from "path";
 import { gitService } from "../server/git-service";
@@ -42,6 +42,68 @@ function installCsp() {
   });
 }
 
+/**
+ * 注册带标准编辑角色的应用菜单。
+ *
+ * 关键：Electron 里 Ctrl+C/X/V、Ctrl+A、撤销/重做这些加速键是绑定在应用菜单的
+ * role 上的；不注册菜单 → 加速键无人处理 → 复制粘贴整体失效。窗口用的是自定义
+ * 标题栏（titleBarStyle: hidden），配合 autoHideMenuBar 让菜单栏默认不可见
+ * （Windows/Linux 按 Alt 临时唤出），加速键全程有效；macOS 照常显示全局菜单栏。
+ */
+function installAppMenu() {
+  const isMac = process.platform === "darwin";
+  const template: Electron.MenuItemConstructorOptions[] = [
+    ...(isMac ? ([{ role: "appMenu" }] as Electron.MenuItemConstructorOptions[]) : []),
+    { role: "editMenu" },
+    {
+      label: "View",
+      submenu: [
+        { role: "reload" },
+        { role: "forceReload" },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
+    { role: "windowMenu" },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+/**
+ * 给 webContents 接上原生右键菜单。Electron 桌面应用默认没有网页右键菜单，必须
+ * 监听 context-menu 事件手动弹出。按右键位置是否可编辑 / 是否有选中文本给出不同
+ * 菜单项（全部用内置 role，自带剪贴板能力且自动本地化）。
+ */
+function attachContextMenu(wc: Electron.WebContents) {
+  wc.on("context-menu", (_event, params) => {
+    const hasSelection = params.selectionText.trim().length > 0;
+    let template: Electron.MenuItemConstructorOptions[];
+    if (params.isEditable) {
+      template = [
+        { role: "undo", enabled: params.editFlags.canUndo },
+        { role: "redo", enabled: params.editFlags.canRedo },
+        { type: "separator" },
+        { role: "cut", enabled: params.editFlags.canCut },
+        { role: "copy", enabled: params.editFlags.canCopy },
+        { role: "paste", enabled: params.editFlags.canPaste },
+        { type: "separator" },
+        { role: "selectAll" },
+      ];
+    } else if (hasSelection) {
+      template = [{ role: "copy" }];
+    } else {
+      return;
+    }
+    const win = BrowserWindow.fromWebContents(wc) ?? undefined;
+    Menu.buildFromTemplate(template).popup({ window: win });
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -56,6 +118,7 @@ function createWindow() {
       symbolColor: "#d1d5e0",
       height: 36,
     },
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -91,6 +154,8 @@ function createWindow() {
     }
   });
 
+  attachContextMenu(mainWindow.webContents);
+
   repoWatcher = attachRepoWatcherToWebContents(mainWindow.webContents);
 
   mainWindow.on("closed", () => {
@@ -112,6 +177,7 @@ ipcMain.handle("repo:watch", async (_e, repoPath: unknown) => {
 
 app.whenReady().then(() => {
   installCsp();
+  installAppMenu();
   createWindow();
 });
 

@@ -485,6 +485,10 @@ onUnmounted(() => {
   overflow-x: auto;
   padding-right: 8px;
   tab-size: 4;
+  /* 覆盖 #app 全局的 user-select: none，让 diff 正文可以选中复制（行号/前缀仍不可选，复制出来是干净代码） */
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 .hunk-nav {
