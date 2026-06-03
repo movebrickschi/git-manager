@@ -6,12 +6,13 @@ vi.mock("./_helpers.js", async (importOriginal) => {
   return {
     ...actual,
     getGit: vi.fn(),
+    getRemoteGit: vi.fn(),
     getConflictFiles: vi.fn(),
   };
 });
 
 import { remoteService } from "./remote.service.js";
-import { getGit, getConflictFiles } from "./_helpers.js";
+import { getGit, getRemoteGit, getConflictFiles } from "./_helpers.js";
 
 interface MockGit {
   status: ReturnType<typeof vi.fn>;
@@ -46,6 +47,7 @@ describe("remoteService.pull · Smart Pull", () => {
     vi.clearAllMocks();
     mockGit = makeMockGit();
     vi.mocked(getGit).mockReturnValue(mockGit as never);
+    vi.mocked(getRemoteGit).mockReturnValue(mockGit as never);
     vi.mocked(getConflictFiles).mockResolvedValue([]);
   });
 
@@ -245,6 +247,7 @@ describe("remoteService.previewPullConflicts · IDEA-style preview", () => {
     vi.clearAllMocks();
     mockGit = makeMockGit();
     vi.mocked(getGit).mockReturnValue(mockGit as never);
+    vi.mocked(getRemoteGit).mockReturnValue(mockGit as never);
   });
 
   it("【preview-1】clean tree + upstream 配置 + remote 落后 → 空 dirty / 0 commits ahead", async () => {
@@ -357,6 +360,7 @@ describe("remoteService.forcePull · 丢弃本地改动强制拉取", () => {
     vi.clearAllMocks();
     mockGit = makeMockGit();
     vi.mocked(getGit).mockReturnValue(mockGit as never);
+    vi.mocked(getRemoteGit).mockReturnValue(mockGit as never);
     vi.mocked(getConflictFiles).mockResolvedValue([]);
   });
 

@@ -16,6 +16,19 @@ import type {
 export const GIT_TIMEOUT_MS = 30_000;
 
 /**
+ * 联网 git 操作（fetch / pull / push）专用的 block 超时（毫秒）。
+ *
+ * simple-git 的 timeout.block 语义是「子进程连续 N 毫秒没有任何 stdout/stderr
+ * 输出就 kill 掉并抛 `block timeout reached`」。本地命令用 GIT_TIMEOUT_MS（30s）
+ * 足够，但 fetch / pull / push 在认证等待、SSH/TLS 握手、慢网或代理、远端
+ * counting objects 等阶段长时间无输出是正常现象，30s 会把进程误杀。
+ *
+ * 放宽到 120s（与 repo.service 的 clone 一致），既给足联网时间，又保留
+ * 「彻底卡死」时的兜底 kill，避免无限挂起。
+ */
+export const REMOTE_GIT_TIMEOUT_MS = 120_000;
+
+/**
  * 单个 untracked 文件 diff 的合成阈值（字节）。
  * 超过该阈值视为大文件，不读全文，只回 1 行占位说明，避免把内存打爆。
  */
@@ -168,6 +181,20 @@ export function getGit(repoPath: string): SimpleGit {
     binary: "git",
     maxConcurrentProcesses: 6,
     timeout: { block: GIT_TIMEOUT_MS },
+  });
+}
+
+/**
+ * 联网 git 操作专用工厂：配置与 getGit 完全一致，仅把 block 超时放宽到
+ * REMOTE_GIT_TIMEOUT_MS，供 remote.service 的 fetch / pull / push 等联网方法使用，
+ * 避免慢网 / 认证等待 / 握手期间长时间无输出被 30s 的 block 超时误杀。
+ */
+export function getRemoteGit(repoPath: string): SimpleGit {
+  return simpleGit({
+    baseDir: repoPath,
+    binary: "git",
+    maxConcurrentProcesses: 6,
+    timeout: { block: REMOTE_GIT_TIMEOUT_MS },
   });
 }
 

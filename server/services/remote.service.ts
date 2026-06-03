@@ -3,6 +3,7 @@ import {
   errStr,
   getConflictFiles,
   getGit,
+  getRemoteGit,
   parseRefs,
   withRetry,
   LOG_FORMAT,
@@ -15,7 +16,7 @@ export const remoteService = {
     branch?: string,
     options?: PushOptions
   ): Promise<void> {
-    const git = getGit(repoPath);
+    const git = getRemoteGit(repoPath);
     const args: string[] = ["push"];
     // forceWithLease 优先于 force（与 shared/types.ts 的契约一致）
     if (options?.forceWithLease) args.push("--force-with-lease");
@@ -49,7 +50,7 @@ export const remoteService = {
    *       → 返回错误提示 stash 仍可恢复
    */
   async pull(repoPath: string, remote?: string, rebase?: boolean): Promise<MergeResult> {
-    const git = getGit(repoPath);
+    const git = getRemoteGit(repoPath);
 
     let isDirty: boolean;
     try {
@@ -171,7 +172,7 @@ export const remoteService = {
    *   - status 失败 → 不抛错，返回空 dirtyFiles（兜底）
    */
   async previewPullConflicts(repoPath: string, remote?: string): Promise<PullPreview> {
-    const git = getGit(repoPath);
+    const git = getRemoteGit(repoPath);
     let fetched: boolean;
     try {
       if (remote) {
@@ -266,7 +267,7 @@ export const remoteService = {
    * 异常处理：reset / clean 失败 → 返回错误，不继续 pull；pull 失败按 MergeResult 返回。
    */
   async forcePull(repoPath: string, remote?: string, rebase?: boolean): Promise<MergeResult> {
-    const git = getGit(repoPath);
+    const git = getRemoteGit(repoPath);
     try {
       await git.raw(["reset", "--hard", "HEAD"]);
       await git.raw(["clean", "-fd"]);
@@ -329,19 +330,19 @@ export const remoteService = {
   },
 
   async fetch(repoPath: string, remote?: string): Promise<void> {
-    const git = getGit(repoPath);
+    const git = getRemoteGit(repoPath);
     await withRetry(() => (remote ? git.fetch(remote) : git.fetch()), {
       label: `fetch ${remote ?? "(default)"}`,
     });
   },
 
   async fetchAll(repoPath: string): Promise<void> {
-    const git = getGit(repoPath);
+    const git = getRemoteGit(repoPath);
     await withRetry(() => git.fetch(["--all"]), { label: "fetch --all" });
   },
 
   async fetchBranch(repoPath: string, remote: string, branchName: string): Promise<void> {
-    const git = getGit(repoPath);
+    const git = getRemoteGit(repoPath);
     await withRetry(() => git.raw(["fetch", remote, `${branchName}:${branchName}`]), {
       label: `fetch ${remote} ${branchName}`,
     });
