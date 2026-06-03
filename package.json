@@ -39,7 +39,6 @@
     "cors": "^2.8.5",
     "express": "^4.21.0",
     "lucide-vue-next": "^0.469.0",
-    "monaco-editor": "^0.52.2",
     "pinia": "^2.3.0",
     "simple-git": "^3.27.0",
     "splitpanes": "^3.1.5",
@@ -63,6 +62,7 @@
     "eslint": "^10.3.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-vue": "^10.9.1",
+    "monaco-editor": "^0.52.2",
     "png-to-ico": "^3.0.1",
     "png2icons": "^2.0.1",
     "prettier": "^3.8.3",
@@ -85,6 +85,10 @@
   "build": {
     "appId": "com.gitmanager.app",
     "productName": "Git Manager",
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
+    ],
     "directories": {
       "output": "release"
     },
