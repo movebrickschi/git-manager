@@ -112,6 +112,7 @@ const ALLOWED_CHANNELS = new Set<string>([
   "sync_submodules",
   "ai:generate",
   "ai:get_settings",
+  "ai:reveal_apikey",
   "ai:save_settings",
   "ai:test_connection",
   "ai:abort",

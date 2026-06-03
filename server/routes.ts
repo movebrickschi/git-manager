@@ -93,6 +93,11 @@ router.get(
 );
 
 router.post(
+  "/ai/reveal-apikey",
+  wrap(async () => ({ apiKey: await aiService.revealApiKey() }))
+);
+
+router.post(
   "/ai/settings",
   wrap(async (req) => {
     await aiService.saveSettings(req.body as AiSettings);

@@ -116,6 +116,15 @@ export function registerAiHandlers(): void {
     }
   });
 
+  ipcMain.handle("ai:reveal_apikey", async () => {
+    try {
+      return { apiKey: await svc.revealApiKey() };
+    } catch (e: unknown) {
+      console.error("[ipc:ai:reveal_apikey]", e);
+      return { apiKey: null };
+    }
+  });
+
   ipcMain.handle("ai:save_settings", async (_e, settings: AiSettings) => {
     await svc.saveSettings(settings);
     return { ok: true };

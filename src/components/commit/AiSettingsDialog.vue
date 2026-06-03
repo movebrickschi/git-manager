@@ -22,6 +22,7 @@ const baseUrl = ref(DEFAULT_PUBLIC_AI_SETTINGS.baseUrl);
 const apiKey = ref("");
 const apiKeyVisible = ref(false);
 const apiKeyExisting = ref(false);
+const apiKeyRevealed = ref(false);
 const model = ref(DEFAULT_PUBLIC_AI_SETTINGS.model);
 const commitStyle = ref<AiSettings["commitStyle"]>("cc");
 const lang = ref<AiSettings["lang"]>("auto");
@@ -50,6 +51,26 @@ const apiKeyPlaceholder = computed(() =>
     : t("ai.settings.apikey_placeholder_new")
 );
 
+/**
+ * 切换 apiKey 明文显示。
+ *
+ * 已存储的密钥默认不回填（loadSettings 把输入框清空），所以首次点「显示」
+ * 时若输入框仍为空，就按需向后端取一次明文回填，否则切到 text 模式只能看到
+ * 占位符、视觉上「没反应」。只回填一次，避免覆盖用户随后手输的新值。
+ */
+async function toggleApiKeyVisible() {
+  if (!apiKeyVisible.value && apiKeyExisting.value && !apiKeyRevealed.value && !apiKey.value) {
+    apiKeyRevealed.value = true;
+    try {
+      const plain = await aiBridge.revealApiKey();
+      if (plain) apiKey.value = plain;
+    } catch {
+      // 取明文失败不阻塞，至少完成 password/text 切换
+    }
+  }
+  apiKeyVisible.value = !apiKeyVisible.value;
+}
+
 function pickPresetById(id: string) {
   presetId.value = id;
   if (id === "custom") return;
@@ -77,6 +98,8 @@ async function loadSettings() {
     reportConfig.value = { ...DEFAULT_REPORT_AI_SETTINGS, ...(view.report ?? {}) };
     apiKeyExisting.value = view.hasApiKey;
     apiKey.value = "";
+    apiKeyVisible.value = false;
+    apiKeyRevealed.value = false;
     presetId.value = detectPresetFromUrl(view.baseUrl);
   } catch (e: unknown) {
     const reason = e instanceof Error ? e.message : String(e);
@@ -198,7 +221,7 @@ watch(
             <button
               type="button"
               class="ai-toggle"
-              @click="apiKeyVisible = !apiKeyVisible"
+              @click="toggleApiKeyVisible"
               :title="
                 apiKeyVisible ? $t('ai.settings.apikey_hide') : $t('ai.settings.apikey_show')
               "

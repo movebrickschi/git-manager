@@ -243,6 +243,16 @@ export function makeAiService(deps: AiServiceDeps) {
       return { ...pub, hasApiKey: !!apiKey };
     },
 
+    /**
+     * 按需取回已存储的明文 apiKey，仅供「显示密钥」按钮回填输入框。
+     *
+     * 与 getSettingsView 刻意分开：常规加载永远拿不到明文，只有用户主动点
+     * 「显示」才走这条通道，把明文暴露面收窄到单次显式操作。
+     */
+    async revealApiKey(): Promise<string | null> {
+      return await deps.secretStorage.getApiKey();
+    },
+
     async saveSettings(s: AiSettings): Promise<void> {
       const { apiKey, ...pub } = s;
       await deps.publicStorage.write(pub);

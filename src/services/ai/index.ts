@@ -8,6 +8,8 @@ import type {
 export interface AiBridge {
   generate(repoPath: string): Promise<AiGenerateResult>;
   getSettings(): Promise<AiSettingsView>;
+  /** 按需取回已存储的明文 apiKey（仅「显示密钥」按钮使用）；无则返回 null。 */
+  revealApiKey(): Promise<string | null>;
   saveSettings(s: AiSettings): Promise<void>;
   testConnection(s: AiSettings): Promise<AiTestResult>;
   abort(): Promise<void>;
@@ -22,6 +24,10 @@ function createElectronBridge(): AiBridge {
   return {
     generate: (repoPath) => api.invoke("ai:generate", repoPath) as Promise<AiGenerateResult>,
     getSettings: () => api.invoke("ai:get_settings") as Promise<AiSettingsView>,
+    revealApiKey: async () => {
+      const r = (await api.invoke("ai:reveal_apikey")) as { apiKey: string | null };
+      return r?.apiKey ?? null;
+    },
     saveSettings: async (s) => {
       await api.invoke("ai:save_settings", s);
     },
@@ -60,6 +66,10 @@ function createWebBridge(): AiBridge {
   return {
     generate: (repoPath) => webPost<AiGenerateResult>("/ai/generate", { repoPath }),
     getSettings: () => webGet<AiSettingsView>("/ai/settings"),
+    revealApiKey: async () => {
+      const r = await webPost<{ apiKey: string | null }>("/ai/reveal-apikey");
+      return r?.apiKey ?? null;
+    },
     saveSettings: async (s) => {
       await webPost("/ai/settings", s);
     },
