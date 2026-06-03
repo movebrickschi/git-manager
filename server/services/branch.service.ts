@@ -1,5 +1,108 @@
+import { execFile as execFileCb } from "node:child_process";
+import { existsSync, promises as fsp } from "node:fs";
+import * as path from "node:path";
+import { promisify } from "node:util";
 import type { BranchInfo, BranchesResult, MergeResult } from "../git-service.js";
 import { errStr, getConflictFiles, getGit, parseBranchVerboseLabel } from "./_helpers.js";
+
+const execFile = promisify(execFileCb);
+
+type Git = ReturnType<typeof getGit>;
+
+/**
+ * 计算「目标分支会写入、但当前工作区物理存在且未被 git 跟踪」的文件集合。
+ *
+ * 这类文件（典型：被 .gitignore 忽略、却在目标分支被提交的自动生成 .d.ts）会让
+ * `git checkout` 报 "untracked working tree files would be overwritten by checkout"。
+ * `changed` 为目标分支相对 HEAD 的变更文件集（git diff HEAD..branch）。
+ */
+async function computeUntrackedOverwrite(
+  git: Git,
+  repoPath: string,
+  changed: Set<string>
+): Promise<string[]> {
+  const list = [...changed];
+  if (list.length === 0) return [];
+  let trackedSet: Set<string>;
+  try {
+    const lsRaw = await git.raw(["ls-files", "-z", "--", ...list]);
+    trackedSet = new Set(
+      lsRaw
+        .split("\0")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
+  } catch {
+    // ls-files 失败时保守返回空，避免把已跟踪文件误当未跟踪而移走。
+    return [];
+  }
+  const out: string[] = [];
+  for (const f of list) {
+    if (trackedSet.has(f)) continue;
+    if (existsSync(path.join(repoPath, f))) out.push(f);
+  }
+  return out;
+}
+
+/** 取目标分支相对 HEAD 的变更文件，算出会被覆盖的未跟踪文件。 */
+async function detectUntrackedOverwrite(
+  git: Git,
+  repoPath: string,
+  branch: string
+): Promise<string[]> {
+  let changed: Set<string>;
+  try {
+    const raw = await git.raw(["diff", "--name-only", "--no-renames", `HEAD..${branch}`]);
+    changed = new Set(
+      raw
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
+  } catch {
+    return [];
+  }
+  return computeUntrackedOverwrite(git, repoPath, changed);
+}
+
+/** 当前 stash 栈条目数；用于判断 `stash push` 是否真的存了东西（跨语言环境稳健）。 */
+async function countStash(git: Git): Promise<number> {
+  try {
+    const raw = await git.raw(["stash", "list"]);
+    return raw.split("\n").filter((s) => s.trim()).length;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * 把会被 checkout 覆盖的未跟踪文件移动到 `.git/gitmanager-backup/<ts>` 暂存，
+ * 既让 checkout 顺利进行，又不静默丢失用户文件。返回备份目录（空列表返回 null）。
+ */
+async function backupAndRemove(repoPath: string, files: string[]): Promise<string | null> {
+  if (files.length === 0) return null;
+  const backupDir = path.join(repoPath, ".git", "gitmanager-backup", `checkout-${Date.now()}`);
+  for (const f of files) {
+    const dst = path.join(backupDir, f);
+    await fsp.mkdir(path.dirname(dst), { recursive: true });
+    await fsp.rename(path.join(repoPath, f), dst);
+  }
+  return backupDir;
+}
+
+/** 还原现场：把备份文件移回工作区原位（用于 checkout 失败回滚）。 */
+async function restoreBackup(repoPath: string, backupDir: string, files: string[]): Promise<void> {
+  for (const f of files) {
+    const dst = path.join(repoPath, f);
+    try {
+      await fsp.mkdir(path.dirname(dst), { recursive: true });
+      await fsp.rename(path.join(backupDir, f), dst);
+    } catch {
+      // best-effort
+    }
+  }
+  await fsp.rm(backupDir, { recursive: true, force: true }).catch(() => {});
+}
 
 async function getLocalBranchTracking(
   git: ReturnType<typeof getGit>,
@@ -81,97 +184,133 @@ export const branchService = {
   },
 
   /**
-   * 预检测切到 `branch` 后会冲突的本地 dirty 文件。
+   * 预检测切到 `branch` 后会冲突的本地文件。返回三类：
+   * - `wouldConflict`：dirty 且目标分支也改过 → Smart pop 可能冲突、Force 会丢失
+   * - `safe`：dirty 但目标分支没动 → Smart pop 基本能无痛保留
+   * - `untrackedConflict`：工作区物理存在、当前未被跟踪/被忽略、但目标分支已跟踪的同名
+   *   文件 → `git checkout` 会报 "would be overwritten by checkout"。它不依赖传入的
+   *   `dirtyFiles`（被忽略文件根本不在 `git status` 里），故 dirtyFiles 为空时仍会检测。
    *
-   * 算法：拿到 `git diff HEAD..<branch> --name-only` 列出两端不同的文件路径，
-   * 与传入 `dirtyFiles` 取交集即"会被覆盖/冲突"的文件，其余为"Smart Checkout
-   * 可安全保留"的文件。
-   *
-   * 注意：
-   * - 未传 `dirtyFiles`（或空数组）时返回 `{ wouldConflict: [], safe: [] }`，
-   *   表示工作区干净、无需检测。
-   * - rename 检测关闭（--no-renames）以避免噪音误判；对绝大多数 conflict 场景已够用。
-   * - 出错时回退到"假设全部冲突"，避免对用户误导为"安全"。
+   * 算法：`git diff HEAD..<branch> --name-only` 列出两端不同的路径；与 dirtyFiles 取交集
+   * 得 wouldConflict/safe；与"工作区存在且未跟踪"的文件取交集得 untrackedConflict。
+   * rename 检测关闭（--no-renames）以避免噪音误判；diff 出错时回退为"全部冲突"。
    */
   async previewCheckoutConflicts(
     repoPath: string,
     branch: string,
     dirtyFiles: string[]
-  ): Promise<{ wouldConflict: string[]; safe: string[] }> {
-    if (!Array.isArray(dirtyFiles) || dirtyFiles.length === 0) {
-      return { wouldConflict: [], safe: [] };
-    }
+  ): Promise<{ wouldConflict: string[]; safe: string[]; untrackedConflict: string[] }> {
     const git = getGit(repoPath);
+    const dirty = Array.isArray(dirtyFiles) ? dirtyFiles : [];
+    let changed: Set<string>;
     try {
-      const raw = await git.raw([
-        "diff",
-        "--name-only",
-        "--no-renames",
-        `HEAD..${branch}`,
-      ]);
-      const changed = new Set(
+      const raw = await git.raw(["diff", "--name-only", "--no-renames", `HEAD..${branch}`]);
+      changed = new Set(
         raw
           .split("\n")
           .map((s) => s.trim())
           .filter((s) => s.length > 0)
       );
-      const wouldConflict: string[] = [];
-      const safe: string[] = [];
-      for (const f of dirtyFiles) {
-        if (changed.has(f)) wouldConflict.push(f);
-        else safe.push(f);
-      }
-      return { wouldConflict, safe };
     } catch {
-      return { wouldConflict: [...dirtyFiles], safe: [] };
+      // diff 失败：无法判定，dirty 全部当冲突，未跟踪检测跳过。
+      return { wouldConflict: [...dirty], safe: [], untrackedConflict: [] };
     }
+    const untrackedConflict = await computeUntrackedOverwrite(git, repoPath, changed);
+    const wouldConflict: string[] = [];
+    const safe: string[] = [];
+    for (const f of dirty) {
+      if (changed.has(f)) wouldConflict.push(f);
+      else safe.push(f);
+    }
+    return { wouldConflict, safe, untrackedConflict };
   },
 
   /**
    * Smart checkout（仿 IntelliJ IDEA）：
-   *   1. `git stash push --include-untracked -m <auto-tag>` 暂存全部 dirty
+   *   0. 把"目标分支已跟踪、本地未跟踪/被忽略"的同名文件备份移到 .git（否则 checkout 撞车）
+   *   1. `git stash push --include-untracked -m <auto-tag>` 暂存其余 dirty
    *   2. `git checkout <name>` 切到目标分支
    *   3. `git stash pop` 把暂存还原到新分支工作区
-   * 任一步失败均回滚（pop 冲突时 stash 仍在栈顶，由调用方/用户后续处理）。
+   * 任一步失败均回滚现场（pop 冲突时 stash 仍在栈顶，由调用方/用户后续处理）。
    *
    * 返回 MergeResult：
-   * - ok=true · message="..."：三步全部成功
+   * - ok=true · message="..."：成功（message 含备份位置，若有）
    * - ok=false · conflicts=[paths]：stash pop 时遇到冲突（已切到新分支）
-   * - ok=false · message=err：stash 或 checkout 阶段失败，仍在原分支
+   * - ok=false · message=err：stash 或 checkout 阶段失败，已还原现场仍在原分支
    */
   async smartCheckoutBranch(repoPath: string, name: string): Promise<MergeResult> {
     const git = getGit(repoPath);
-    const tag = `gitmanager-auto-stash-before-checkout-${name}-${Date.now()}`;
+
+    // 步骤 0：把"目标分支已跟踪、本地却未跟踪/被忽略"的同名文件移到 .git 备份。
+    // `git stash -u` 带不走 ignored 文件，留着会让 `git checkout` 因
+    // "untracked working tree files would be overwritten" 直接失败。
+    let untracked: string[];
+    let backupDir: string | null;
     try {
-      await git.raw(["stash", "push", "--include-untracked", "-m", tag]);
+      untracked = await detectUntrackedOverwrite(git, repoPath, name);
+      backupDir = await backupAndRemove(repoPath, untracked);
     } catch (e: unknown) {
+      return {
+        success: false,
+        conflicts: [],
+        message: `预处理未跟踪冲突文件失败：${errStr(e) || "未知错误"}`,
+      };
+    }
+
+    const tag = `gitmanager-auto-stash-before-checkout-${name}-${Date.now()}`;
+    let stashed: boolean;
+    try {
+      const before = await countStash(git);
+      await git.raw(["stash", "push", "--include-untracked", "-m", tag]);
+      stashed = (await countStash(git)) > before;
+    } catch (e: unknown) {
+      if (backupDir) await restoreBackup(repoPath, backupDir, untracked);
       return {
         success: false,
         conflicts: [],
         message: `stash 失败：${errStr(e) || "未知错误"}`,
       };
     }
+
     try {
       await git.checkout(name);
     } catch (e: unknown) {
-      await git.raw(["stash", "pop", "--index"]).catch(() => {
-        git.raw(["stash", "pop"]).catch(() => {});
-      });
+      if (stashed) {
+        await git.raw(["stash", "pop", "--index"]).catch(() => {
+          git.raw(["stash", "pop"]).catch(() => {});
+        });
+      }
+      if (backupDir) await restoreBackup(repoPath, backupDir, untracked);
       return {
         success: false,
         conflicts: [],
-        message: `checkout 失败（已恢复 stash）：${errStr(e) || "未知错误"}`,
+        message: `checkout 失败（已恢复现场）：${errStr(e) || "未知错误"}`,
       };
+    }
+
+    const backupNote =
+      backupDir && untracked.length > 0
+        ? `；${untracked.length} 个被忽略/未跟踪文件已被目标分支版本覆盖，原文件备份于 ${path.relative(repoPath, backupDir)}`
+        : "";
+
+    if (!stashed) {
+      return { success: true, conflicts: [], message: `已切换到 '${name}'${backupNote}` };
     }
     try {
       await git.raw(["stash", "pop", "--index"]);
-      return { success: true, conflicts: [], message: `已切换到 '${name}' 并恢复本地修改` };
+      return {
+        success: true,
+        conflicts: [],
+        message: `已切换到 '${name}' 并恢复本地修改${backupNote}`,
+      };
     } catch (e: unknown) {
       const conflicts = await getConflictFiles(repoPath);
       return {
         success: false,
         conflicts,
-        message: `已切到 '${name}'，但 stash pop 冲突，stash 保留在栈顶：${errStr(e) || "请手动处理"}`,
+        message: `已切到 '${name}'，但 stash pop 冲突，stash 保留在栈顶${backupNote}：${errStr(e) || "请手动处理"}`,
+        // 改动已带冲突标记落在工作区，stash 冗余；前端三栏解决后应 stash drop（与 pull 一致）
+        autoStash: { kind: "stash-pop" },
       };
     }
   },
@@ -222,27 +361,28 @@ export const branchService = {
   /**
    * Rebase with --autosquash —— 自动合并 fixup!/squash! 提交。
    *
-   * 行为：
-   *   git -c rebase.autosquash=true -c sequence.editor=true \
-   *       rebase --interactive --autosquash <upstream>
+   * 用 GIT_SEQUENCE_EDITOR=true 实现非交互 rebase：`true` 忽略 todo 文件参数并退出 0，
+   * git 沿用 --autosquash 已重排好的 todo 继续。`true` 在 POSIX 与 git-for-windows 内置
+   * sh 中均可用，避免把含反斜杠的 Windows 脚本路径交给 sh 执行时被转义吞掉（command not found）。
    *
-   * 让 sequence.editor 设为 `true`（POSIX no-op）让 rebase --interactive 直接接受
-   * git 自动生成的 todo（已含 fixup/squash 重排），不弹编辑器。
-   *
-   * 注意：使用前调用方应确保工作区是 clean 的（dirty 会导致 rebase 失败）。
+   * 调用前请确保工作区 clean，否则 git 会拒绝 rebase。
    */
   async rebaseAutosquash(repoPath: string, upstream: string): Promise<MergeResult> {
-    const git = getGit(repoPath);
     try {
-      // simple-git 不直接支持 -c 参数；用 raw 透传。POSIX/Windows 都支持 `true` 命令。
-      await git.raw([
-        "-c",
-        "sequence.editor=true",
-        "rebase",
-        "--interactive",
-        "--autosquash",
-        upstream,
-      ]);
+      await execFile(
+        "git",
+        ["-C", repoPath, "rebase", "--interactive", "--autosquash", upstream],
+        {
+          env: {
+            ...process.env,
+            GIT_SEQUENCE_EDITOR: "true",
+            GIT_EDITOR: "true",
+            EDITOR: "true",
+          },
+          encoding: "utf8",
+          maxBuffer: 16 * 1024 * 1024,
+        }
+      );
       return { success: true, conflicts: [], message: "Autosquash rebase completed" };
     } catch (e: unknown) {
       const conflicts = await getConflictFiles(repoPath);

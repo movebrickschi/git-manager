@@ -95,6 +95,8 @@ export const remoteService = {
           success: false,
           conflicts,
           message: errStr(pullErr) || "Pull produced merge conflicts",
+          // 若之前 auto-stash 过：stash 仍保留（未 pop），里面是本地改动，解决 merge 后需 pop 恢复
+          autoStash: autoStashed ? { kind: "merge" } : null,
         };
       }
       if (autoStashed) {
@@ -128,6 +130,8 @@ export const remoteService = {
             message:
               "Pull completed, but restoring stashed local changes caused conflicts. " +
               "Resolve them and then drop stash@{0} manually.",
+            // 改动已落到工作区（带冲突标记），解决后 stash 是冗余的，应 drop
+            autoStash: { kind: "stash-pop" },
           };
         }
         return {
@@ -155,8 +159,8 @@ export const remoteService = {
    *   5. `git diff HEAD..@{u} --name-only --no-renames` 拿 remote 改过的文件
    *   6. dirty ∩ remoteChanged = wouldConflict（Smart Pull 时 stash pop 大概率失败）
    *
-   * 返回值用于驱动 PullChoiceDialog 决策：
-   *   - dirtyFiles.length === 0：可以直接 pull 不用弹窗
+   * 返回值用于驱动静默 Smart Pull 决策：
+   *   - dirtyFiles.length === 0：可以直接 pull
    *   - remoteCommitsAhead === 0：本地是最新的，不需要 pull
    *   - wouldConflict.length > 0：警告 Smart Pull 风险，Force Pull 会丢数据
    *
@@ -251,7 +255,7 @@ export const remoteService = {
   },
 
   /**
-   * Force Pull —— 用户在 PullChoiceDialog 明确选择「丢弃本地修改强制更新」时调用。
+   * Force Pull —— 用户在分支右键「强制拉取（覆盖本地改动）」明确选择时调用。
    *
    * 流程：
    *   1. `git reset --hard HEAD`：丢弃所有 tracked 文件的未提交修改（含 staged / unstaged）

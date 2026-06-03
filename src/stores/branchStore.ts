@@ -5,48 +5,15 @@ import { commands } from "@/utils/commands";
 import type { BranchInfo, MergeResult, Submodule } from "@/utils/commands";
 
 /**
- * IDEA 风格切分支 dirty 决策窗口的状态机。
- * `resolve` 为 null 表示当前没有挂起的请求；非 null 时 dialog 应该可见。
- *
- * `wouldConflict` / `safe` 是切到目标分支后的影响预检测：
- * - `wouldConflict`：dirty 且目标分支也动过 → Smart pop 时可能冲突，Force 直接丢失
- * - `safe`：dirty 但目标分支未动 → Smart pop 100% 成功保留；Force 仍丢失
+ * 冲突解决信号：IDEA 风格「无冲突静默、有冲突直接开三栏」。
+ * checkout / pull 等操作产生冲突时 bump seq，MainLayout 监听后打开全局三栏。
+ * - files：冲突文件列表
+ * - autoStash："stash-pop" 表示改动已带冲突标记落在工作区，解决后应 drop stash@{0}
  */
-export interface CheckoutDialogState {
-  visible: boolean;
-  branchName: string;
-  dirtyFiles: string[];
-  wouldConflict: string[];
-  safe: string[];
-  pending: boolean;
-  resultMessage: string;
-  resultKind: "ok" | "err" | null;
-  resolve: ((choice: "smart" | "force" | "cancel") => void) | null;
-}
-
-/**
- * Pull 决策弹窗状态机（仿 IDEA「Update Project」预检 + 三选项弹窗）。
- *
- * 弹窗打开条件（由 smartPullCurrentBranch 决定）：
- * - 工作区有未提交修改（`dirtyFiles.length > 0`）
- * - remote 比 local 至少多一个 commit（`remoteCommitsAhead > 0`）
- * - 且 upstream 已配置（`upstream !== null`）
- *
- * 工作区干净时不弹窗，直接走 Smart Pull；已是最新时不操作，只 toast。
- */
-export interface PullDialogState {
-  visible: boolean;
-  branchName: string;
-  upstream: string | null;
-  remoteCommitsAhead: number;
-  dirtyFiles: string[];
-  wouldConflict: string[];
-  safe: string[];
-  fetched: boolean;
-  pending: boolean;
-  resultMessage: string;
-  resultKind: "ok" | "err" | null;
-  resolve: ((choice: "smart" | "force" | "cancel") => void) | null;
+export interface ConflictResolveSignal {
+  files: string[];
+  autoStash: { kind: "merge" | "stash-pop" } | null;
+  seq: number;
 }
 
 /** 跨组件切 tab 的"信号 ref"，bump 数字触发 watcher。 */
@@ -72,32 +39,7 @@ export const useBranchStore = defineStore("branch", () => {
   const searchQuery = ref("");
   const favorites = ref<string[]>([]);
 
-  const checkoutDialog = ref<CheckoutDialogState>({
-    visible: false,
-    branchName: "",
-    dirtyFiles: [],
-    wouldConflict: [],
-    safe: [],
-    pending: false,
-    resultMessage: "",
-    resultKind: null,
-    resolve: null,
-  });
-
-  const pullDialog = ref<PullDialogState>({
-    visible: false,
-    branchName: "",
-    upstream: null,
-    remoteCommitsAhead: 0,
-    dirtyFiles: [],
-    wouldConflict: [],
-    safe: [],
-    fetched: false,
-    pending: false,
-    resultMessage: "",
-    resultKind: null,
-    resolve: null,
-  });
+  const conflictSignal = ref<ConflictResolveSignal>({ files: [], autoStash: null, seq: 0 });
 
   const tabSwitchSignal = ref<TabSwitchSignal>({ tab: "log", seq: 0 });
   const globalToast = ref<GlobalToast>({ message: "", kind: "info", seq: 0 });
@@ -117,7 +59,6 @@ export const useBranchStore = defineStore("branch", () => {
   // 切仓库时清掉跨仓库会污染/误操作的状态：
   // - searchQuery：A 的分支搜索文字带到 B 是 UX bug
   // - submodules：A 的 submodule 列表残留到 B 直到 loadSubmodules 完成
-  // - checkoutDialog：展开时切仓库会让 branchName 绑到 A、确认按钮触发 B 的 ops（严重）
   // 不动 favorites：星标分支跨仓库共享（产品决策，命名常重叠如 main/develop）
   watch(
     () => repoStore.activeRepo?.path,
@@ -125,16 +66,6 @@ export const useBranchStore = defineStore("branch", () => {
       searchQuery.value = "";
       submodules.value = [];
       submodulesLoading.value = false;
-      if (checkoutDialog.value.visible || checkoutDialog.value.resolve) {
-        const resolver = checkoutDialog.value.resolve;
-        if (resolver) resolver("cancel");
-        closeCheckoutDialog();
-      }
-      if (pullDialog.value.visible || pullDialog.value.resolve) {
-        const resolver = pullDialog.value.resolve;
-        if (resolver) resolver("cancel");
-        closePullDialog();
-      }
     }
   );
 
@@ -167,57 +98,34 @@ export const useBranchStore = defineStore("branch", () => {
     await loadBranches();
   }
 
-  function closeCheckoutDialog(): void {
-    checkoutDialog.value = {
-      visible: false,
-      branchName: "",
-      dirtyFiles: [],
-      wouldConflict: [],
-      safe: [],
-      pending: false,
-      resultMessage: "",
-      resultKind: null,
-      resolve: null,
+  /**
+   * 产生冲突时通知 MainLayout 打开全局三栏。
+   * @param files 冲突文件
+   * @param autoStash "stash-pop" 表示解决后需 drop stash@{0}
+   */
+  function requestConflictResolve(
+    files: string[],
+    autoStash?: { kind: "merge" | "stash-pop" } | null
+  ): void {
+    if (files.length === 0) return;
+    conflictSignal.value = {
+      files,
+      autoStash: autoStash ?? null,
+      seq: conflictSignal.value.seq + 1,
     };
-  }
-
-  function closePullDialog(): void {
-    pullDialog.value = {
-      visible: false,
-      branchName: "",
-      upstream: null,
-      remoteCommitsAhead: 0,
-      dirtyFiles: [],
-      wouldConflict: [],
-      safe: [],
-      fetched: false,
-      pending: false,
-      resultMessage: "",
-      resultKind: null,
-      resolve: null,
-    };
-  }
-
-  function resolvePullChoice(choice: "smart" | "force" | "cancel"): void {
-    const resolver = pullDialog.value.resolve;
-    if (resolver) {
-      resolver(choice);
-    } else if (choice === "cancel") {
-      closePullDialog();
-    }
   }
 
   /**
-   * IDEA 风格 Pull —— 仿 IntelliJ「Update Project」三选项体验：
+   * 静默 Pull —— 仿 IntelliJ「Update Project」但不弹预检窗：
    *   1. 预检（previewPullConflicts）：fetch + status + diff HEAD..@{u}
-   *   2. 工作区干净 → 直接 Smart Pull
-   *   3. 已是最新（remote 没多 commit）→ 仅 toast 提示
-   *   4. dirty → 弹 PullChoiceDialog 给用户选 Smart / Force / Cancel
-   *   5. preview 接口失败 → 降级到旧 pull 行为（保持兼容、不阻断）
+   *   2. 已是最新（remote 没多 commit 且工作区干净）→ 仅 toast 提示
+   *   3. 其余情况（含 dirty）→ 直接 Smart Pull；后端 dirty 时自动 stash→pull→pop，
+   *      冲突时返回 conflicts 由调用方弹三栏（Force Pull 改为分支右键单独入口）
+   *   4. preview 接口失败 → 降级到直接 pull（保持兼容、不阻断）
    *
    * 返回值：
    *   - MergeResult：成功 / 失败 / 冲突，前端 UI 据此决定后续行为
-   *   - null：用户主动取消、或 preview 失败且降级 pull 抛错前已被前端 try/catch 捕获
+   *   - null：repoPath 缺失
    */
   async function smartPullCurrentBranch(opts?: {
     branchName?: string;
@@ -242,66 +150,21 @@ export const useBranchStore = defineStore("branch", () => {
       return { success: true, conflicts: [], message: "已是最新" };
     }
 
-    if (preview.dirtyFiles.length === 0) {
-      return await commands.pull(repoPath, opts?.remote, opts?.rebase ?? false);
-    }
-
-    const choice = await new Promise<"smart" | "force" | "cancel">((resolve) => {
-      pullDialog.value = {
-        visible: true,
-        branchName: headBranchName,
-        upstream: preview.upstream,
-        remoteCommitsAhead: preview.remoteCommitsAhead,
-        dirtyFiles: preview.dirtyFiles,
-        wouldConflict: preview.wouldConflict,
-        safe: preview.safe,
-        fetched: preview.fetched,
-        pending: false,
-        resultMessage: "",
-        resultKind: null,
-        resolve,
-      };
-    });
-
-    if (choice === "cancel") {
-      closePullDialog();
-      return null;
-    }
-
-    pullDialog.value.pending = true;
-    pullDialog.value.resolve = null;
-
-    try {
-      const result =
-        choice === "smart"
-          ? await commands.pull(repoPath, opts?.remote, opts?.rebase ?? false)
-          : await commands.forcePull(repoPath, opts?.remote, opts?.rebase ?? false);
-      if (result.success || (result.conflicts && result.conflicts.length > 0)) {
-        closePullDialog();
-        return result;
-      }
-      pullDialog.value.pending = false;
-      pullDialog.value.resultKind = "err";
-      pullDialog.value.resultMessage = result.message;
-      return result;
-    } catch (e: unknown) {
-      pullDialog.value.pending = false;
-      pullDialog.value.resultKind = "err";
-      pullDialog.value.resultMessage = e instanceof Error ? e.message : String(e);
-      return null;
-    }
+    // 静默 Smart Pull：无论工作区是否 dirty 都直接 pull。
+    // 后端 pull 在 dirty 时会自动 stash→pull→pop；产生冲突时返回 conflicts，由调用方弹三栏。
+    // （原 dirty 三选项预检窗已不再触发；Force Pull 改为分支右键单独入口）
+    return await commands.pull(repoPath, opts?.remote, opts?.rebase ?? false);
   }
 
   /**
-   * IDEA 风格 checkout：dirty 时弹窗给三选项（Smart / Force / Cancel），
-   * 干净时直接 checkout。所有 checkout 入口（侧栏右键、log 右键、新建分支后切换等）
-   * 都走本方法，无需调用方各自检测 dirty。
+   * IDEA 风格 checkout：无冲突直接静默切换，有冲突直接走全局三栏，不再弹「选一项」框。
+   * 所有 checkout 入口（侧栏右键、log 右键、新建分支后切换等）都走本方法。
    *
-   * 异常策略：
-   * - dirty 检测失败 → 退化为直接 checkout（保持兼容）
-   * - 用户取消 → 静默 return（不抛错）
-   * - smart pop 冲突 → 在 dialog 内显示提示，不抛；分支已切，stash 仍在栈顶
-   * - force checkout 失败 / smart 中 stash/checkout 阶段失败 → 抛错，调用方现有 try/catch 接收
+   * 分支：
+   * - 干净 / dirty 但目标分支没碰且无未跟踪覆盖 → 直接 checkout（改动自动带过去）
+   * - dirty 冲突 / 未跟踪覆盖 / 预检失败 → 静默 smartCheckout（stash→切→pop / 自动备份）
+   *   - pop 冲突 → bump conflictSignal 让 MainLayout 开三栏，并跳到本地变更 tab
+   *   - stash/checkout/备份阶段失败 → toast 报错，仍在原分支
    */
   async function checkoutBranch(name: string) {
     if (!repoStore.activeRepo) return;
@@ -314,96 +177,62 @@ export const useBranchStore = defineStore("branch", () => {
       // 同一文件可能同时在 staged + unstaged，去重
       dirty = Array.from(new Set(all.map((f) => f.path)));
     } catch {
-      // status 取不到 → 跳过 dirty 检测，按原行为直接 checkout
+      // status 取不到 → 当作无 dirty，下面会走直切
     }
 
-    if (dirty.length === 0) {
-      await commands.checkoutBranch(repoPath, name);
-      repoStore.activeRepo.currentBranch = name;
-      await loadBranches();
-      return;
-    }
-
+    let previewOk = true;
     let wouldConflict: string[] = [];
-    let safe: string[] = dirty;
+    let untrackedConflict: string[] = [];
     try {
       const preview = await commands.previewCheckoutConflicts(repoPath, name, dirty);
       wouldConflict = preview.wouldConflict;
-      safe = preview.safe;
+      untrackedConflict = preview.untrackedConflict ?? [];
     } catch {
-      // 预检测失败 → 退化为"全部 dirty 当作安全"，仍交给用户决策
+      previewOk = false;
     }
 
-    const choice = await new Promise<"smart" | "force" | "cancel">((resolve) => {
-      checkoutDialog.value = {
-        visible: true,
-        branchName: name,
-        dirtyFiles: dirty,
-        wouldConflict,
-        safe,
-        pending: false,
-        resultMessage: "",
-        resultKind: null,
-        resolve,
-      };
-    });
-
-    if (choice === "cancel") {
-      closeCheckoutDialog();
+    // 无冲突（含 dirty 但目标分支没碰、且无未跟踪覆盖）→ 直接 checkout，改动自动带过去。
+    // 被 .gitignore 忽略的文件不在 dirty 里，靠 untrackedConflict 兜底，避免直切撞
+    // "would be overwritten by checkout"。
+    if (previewOk && wouldConflict.length === 0 && untrackedConflict.length === 0) {
+      await commands.checkoutBranch(repoPath, name);
+      repoStore.activeRepo.currentBranch = name;
+      await loadBranches();
+      showToast(dirty.length ? `已切换到 '${name}'，本地修改已保留` : `已切换到 '${name}'`, "ok");
       return;
     }
 
-    checkoutDialog.value.pending = true;
-    checkoutDialog.value.resolve = null;
-
-    try {
-      if (choice === "smart") {
-        const result = await commands.smartCheckoutBranch(repoPath, name);
-        if (result.success) {
-          closeCheckoutDialog();
-          repoStore.activeRepo.currentBranch = name;
-          await loadBranches();
-          showToast(result.message || `已切换到 '${name}' 并恢复本地修改`, "ok");
-          return;
-        }
-        // pop 冲突：分支已切，关闭 dialog → 跳到"本地变更"tab → 显示 toast
-        if (result.conflicts.length > 0) {
-          closeCheckoutDialog();
-          repoStore.activeRepo.currentBranch = name;
-          await loadBranches();
-          requestTabSwitch("commit");
-          showToast(
-            `Stash pop 冲突，${result.conflicts.length} 个文件需手动解决（已跳到本地变更）`,
-            "err"
-          );
-          return;
-        }
-        // 其它失败（stash 或 checkout 阶段）：仍在原分支
-        checkoutDialog.value.pending = false;
-        checkoutDialog.value.resultKind = "err";
-        checkoutDialog.value.resultMessage = result.message;
-        return;
-      }
-      await commands.forceCheckoutBranch(repoPath, name);
-      closeCheckoutDialog();
+    // 冲突 / 未跟踪覆盖 / 预检失败 → 静默 smartCheckout
+    const result = await commands.smartCheckoutBranch(repoPath, name);
+    if (result.success) {
       repoStore.activeRepo.currentBranch = name;
       await loadBranches();
-      showToast(`已强制切换到 '${name}'，本地未提交修改已丢弃`, "ok");
-    } catch (e: unknown) {
-      checkoutDialog.value.pending = false;
-      checkoutDialog.value.resultKind = "err";
-      checkoutDialog.value.resultMessage = e instanceof Error ? e.message : String(e);
+      showToast(result.message || `已切换到 '${name}' 并恢复本地修改`, "ok");
+      return;
     }
+    if (result.conflicts.length > 0) {
+      // 已切到目标分支，改动带冲突标记落在工作区 → 跳本地变更 tab + 开全局三栏
+      repoStore.activeRepo.currentBranch = name;
+      await loadBranches();
+      requestTabSwitch("commit");
+      requestConflictResolve(result.conflicts, result.autoStash ?? { kind: "stash-pop" });
+      showToast(
+        `本地改动与 '${name}' 冲突，${result.conflicts.length} 个文件请在三栏中解决`,
+        "err"
+      );
+      return;
+    }
+    // stash / checkout / 备份阶段失败 → 仍在原分支
+    showToast(result.message || `切换到 '${name}' 失败`, "err");
   }
 
-  function resolveCheckoutChoice(choice: "smart" | "force" | "cancel"): void {
-    const resolver = checkoutDialog.value.resolve;
-    if (resolver) {
-      resolver(choice);
-    } else if (choice === "cancel") {
-      // 已无 pending 请求时，cancel 兼作"关闭结果提示"按钮
-      closeCheckoutDialog();
-    }
+  /** 强制签出（丢弃本地未提交修改）。供分支右键「强制签出」入口，调用方需先二次确认。 */
+  async function forceCheckout(name: string) {
+    if (!repoStore.activeRepo) return;
+    const repoPath = repoStore.activeRepo.path;
+    await commands.forceCheckoutBranch(repoPath, name);
+    repoStore.activeRepo.currentBranch = name;
+    await loadBranches();
   }
 
   async function deleteBranch(name: string, force = false) {
@@ -497,18 +326,17 @@ export const useBranchStore = defineStore("branch", () => {
     loading,
     searchQuery,
     favorites,
-    checkoutDialog,
-    pullDialog,
+    conflictSignal,
     tabSwitchSignal,
     globalToast,
-    resolveCheckoutChoice,
-    resolvePullChoice,
+    requestConflictResolve,
     smartPullCurrentBranch,
     requestTabSwitch,
     showToast,
     loadBranches,
     createBranch,
     checkoutBranch,
+    forceCheckout,
     deleteBranch,
     renameBranch,
     mergeBranch,

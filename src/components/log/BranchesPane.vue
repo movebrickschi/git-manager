@@ -16,7 +16,7 @@ const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/Thre
 import PushDialog from "@/components/common/PushDialog.vue";
 import CreateTagDialog from "@/components/common/CreateTagDialog.vue";
 import ReflogDialog from "@/components/common/ReflogDialog.vue";
-import PullChoiceDialog from "@/components/common/PullChoiceDialog.vue";
+import ConfirmDialog from "@/components/changes/ConfirmDialog.vue";
 import BranchPopup from "@/components/branch/BranchPopup.vue";
 
 function friendlyErr(input: unknown): string {
@@ -64,6 +64,11 @@ const pushDialogBranch = ref<string | undefined>(undefined);
 const showConflictDialog = ref(false);
 const conflictDialogFiles = ref<string[]>([]);
 const conflictDialogFirstFile = ref("");
+// 记录触发本次三栏的 pull 是否自动 stash 过，决定冲突解决后 drop 还是 pop
+const conflictAutoStash = ref<{ kind: "merge" | "stash-pop" } | null>(null);
+// Force Pull 二次确认
+const showForceConfirm = ref(false);
+const forceConfirmBranch = ref("");
 
 // Tag 相关
 const showCreateTagDialog = ref(false);
@@ -170,16 +175,69 @@ function submoduleStateIcon(state: Submodule["state"]): { color: string; title: 
   }
 }
 
-function openConflictDialog(files: string[]) {
+function openConflictDialog(files: string[], autoStash?: { kind: "merge" | "stash-pop" } | null) {
   if (files.length === 0) return;
   conflictDialogFiles.value = files;
   conflictDialogFirstFile.value = files[0]!;
+  conflictAutoStash.value = autoStash ?? null;
   showConflictDialog.value = true;
 }
 
-function onConflictResolved() {
+async function onConflictResolved() {
   showConflictDialog.value = false;
+  const autoStash = conflictAutoStash.value;
+  conflictAutoStash.value = null;
+  const path = repoStore.activeRepo?.path;
+  if (autoStash && path) {
+    if (autoStash.kind === "stash-pop") {
+      // 改动已落工作区（带过冲突标记），stash 是冗余的 → 自动 drop，避免 stash 堆积
+      try {
+        await commands.stashDrop(path, 0);
+      } catch (e: unknown) {
+        ui.showToast(`自动清理 stash 失败，请手动 drop stash@{0}：${friendlyErr(e)}`);
+      }
+    } else {
+      // merge 冲突：stash 里是你未提交的本地改动（未 pop）。自动 pop 的安全时机依赖合并是否已提交，
+      // 风险较高，这里只提醒，避免误操作丢改动。
+      ui.showToast("本地改动已暂存在 stash@{0}，合并完成后请到 Stash 列表手动 pop 恢复");
+    }
+  }
   void refreshAfterGitOp();
+}
+
+function requestForcePull(branch: BranchInfo) {
+  forceConfirmBranch.value = branch.name;
+  showForceConfirm.value = true;
+}
+
+function handleForcePullCancel() {
+  showForceConfirm.value = false;
+}
+
+async function handleForcePullConfirm() {
+  showForceConfirm.value = false;
+  const path = repoStore.activeRepo?.path;
+  if (!path) return;
+  clearActionError();
+  actionLoading.value = true;
+  ui.startProgress("强制拉取中…");
+  try {
+    const remote = await resolveDefaultRemote();
+    const result = await commands.forcePull(path, remote, false);
+    await refreshAfterGitOp();
+    if (result.conflicts && result.conflicts.length > 0) {
+      openConflictDialog(result.conflicts, result.autoStash);
+    } else if (!result.success) {
+      actionError.value = friendlyErr(result.message);
+    } else {
+      ui.showToast("强制拉取完成（本地未提交改动已被覆盖）");
+    }
+  } catch (e: unknown) {
+    actionError.value = friendlyErr(e);
+  } finally {
+    actionLoading.value = false;
+    ui.stopProgress();
+  }
 }
 
 useKeyboardShortcuts([
@@ -303,11 +361,9 @@ async function handlePull() {
     await refreshAfterGitOp();
     if (!result) return;
     if (result.conflicts && result.conflicts.length > 0) {
-      openConflictDialog(result.conflicts);
+      openConflictDialog(result.conflicts, result.autoStash);
     } else if (!result.success) {
-      if (!branchStore.pullDialog.visible) {
-        actionError.value = friendlyErr(result.message);
-      }
+      actionError.value = friendlyErr(result.message);
     } else if (result.message !== "已是最新") {
       ui.showToast("拉取完成，所有文件都处于最新状态");
     }
@@ -386,11 +442,9 @@ async function pullForLocalBranch(branch: BranchInfo) {
     await refreshAfterGitOp();
     if (!result) return;
     if (result.conflicts && result.conflicts.length > 0) {
-      openConflictDialog(result.conflicts);
+      openConflictDialog(result.conflicts, result.autoStash);
     } else if (!result.success) {
-      if (!branchStore.pullDialog.visible) {
-        actionError.value = friendlyErr(result.message);
-      }
+      actionError.value = friendlyErr(result.message);
     } else if (result.message !== "已是最新") {
       ui.showToast(`${branch.name} 已是最新状态`);
     }
@@ -430,11 +484,9 @@ async function updateBranchWithoutCheckout(branch: BranchInfo) {
         return;
       }
       if (result.conflicts && result.conflicts.length > 0) {
-        openConflictDialog(result.conflicts);
+        openConflictDialog(result.conflicts, result.autoStash);
       } else if (!result.success) {
-        if (!branchStore.pullDialog.visible) {
           actionError.value = friendlyErr(result.message);
-        }
       } else if (result.message !== "已是最新") {
         ui.showToast(`${branch.name} 已是最新状态`);
       }
@@ -709,6 +761,10 @@ const contextMenuItems = computed<MenuItem[]>(() => {
 
   if (!isHead) {
     items.push({ label: "签出", action: () => branchStore.checkoutBranch(branch.name) });
+    items.push({
+      label: "强制签出（丢弃本地修改）",
+      action: () => forceCheckout(branch.name),
+    });
   }
   items.push({
     label: `从 '${branch.name}' 新建分支...`,
@@ -754,6 +810,12 @@ const contextMenuItems = computed<MenuItem[]>(() => {
     label: "更新",
     action: () => updateBranchWithoutCheckout(branch),
   });
+  if (isHead) {
+    items.push({
+      label: "强制拉取（覆盖本地改动）",
+      action: () => requestForcePull(branch),
+    });
+  }
   items.push({
     label: "推送...",
     action: () => pushForLocalBranch(branch),
@@ -806,6 +868,26 @@ async function onNewBranchConfirmed(name: string, fromBranch: string) {
   }
 }
 
+/** 强制签出：丢弃当前分支所有未提交修改后切换。破坏性操作，先二次确认。 */
+async function forceCheckout(name: string) {
+  if (!window.confirm(`强制签出 '${name}' 会永久丢弃当前分支所有未提交修改，确定继续？`)) {
+    return;
+  }
+  clearActionError();
+  actionLoading.value = true;
+  ui.startProgress(`强制签出 ${name}…`);
+  try {
+    await branchStore.forceCheckout(name);
+    await refreshAfterGitOp();
+    ui.showToast(`已强制签出 '${name}'，本地未提交修改已丢弃`);
+  } catch (e: unknown) {
+    actionError.value = friendlyErr(e);
+  } finally {
+    actionLoading.value = false;
+    ui.stopProgress();
+  }
+}
+
 async function handleCheckoutAndRebase(branchToCheckout: string, rebaseOnto: string) {
   const path = repoStore.activeRepo?.path;
   if (!path) return;
@@ -846,7 +928,7 @@ async function handleMergeBranchIntoHead(sourceBranch: string) {
     const result = await commands.mergeBranch(path, sourceBranch);
     await refreshAfterGitOp();
     if (result.conflicts && result.conflicts.length > 0) {
-      openConflictDialog(result.conflicts);
+      openConflictDialog(result.conflicts, result.autoStash);
     }
   } catch (e: unknown) {
     actionError.value = friendlyErr(e);
@@ -1592,20 +1674,15 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
       @close="onPushCancelled"
     />
 
-    <!-- Pull 三选项弹框（仿 IDEA Update Project） -->
-    <PullChoiceDialog
-      :visible="branchStore.pullDialog.visible"
-      :branch-name="branchStore.pullDialog.branchName"
-      :upstream="branchStore.pullDialog.upstream"
-      :remote-commits-ahead="branchStore.pullDialog.remoteCommitsAhead"
-      :dirty-files="branchStore.pullDialog.dirtyFiles"
-      :would-conflict="branchStore.pullDialog.wouldConflict"
-      :safe="branchStore.pullDialog.safe"
-      :fetched="branchStore.pullDialog.fetched"
-      :pending="branchStore.pullDialog.pending"
-      :result-message="branchStore.pullDialog.resultMessage"
-      :result-kind="branchStore.pullDialog.resultKind"
-      @choose="branchStore.resolvePullChoice"
+    <!-- 强制拉取二次确认 -->
+    <ConfirmDialog
+      :visible="showForceConfirm"
+      title="强制拉取"
+      :text="`将丢弃 '${forceConfirmBranch}' 上所有未提交的本地改动（reset --hard + clean -fd）后再拉取远程，此操作不可恢复。确定继续？`"
+      confirm-label="强制拉取"
+      :danger="true"
+      @confirm="handleForcePullConfirm"
+      @cancel="handleForcePullCancel"
     />
 
     <!-- 冲突解决弹窗 -->

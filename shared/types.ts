@@ -157,6 +157,12 @@ export interface MergeResult {
   success: boolean;
   conflicts: string[];
   message: string;
+  /**
+   * 当本次操作前自动 stash 过本地改动、且随后产生冲突时携带，用于前端冲突解决后正确收尾：
+   * - "merge"：pull 产生 merge 冲突，stash 尚未 pop（内含本地改动），解决后应 stash pop 恢复
+   * - "stash-pop"：pull 已成功但 stash pop 撞车（改动已落工作区）→ 解决后应 stash drop
+   */
+  autoStash?: { kind: "merge" | "stash-pop" } | null;
 }
 
 /**
@@ -327,7 +333,7 @@ export interface Commands {
     repoPath: string,
     branch: string,
     dirtyFiles: string[]
-  ): Promise<{ wouldConflict: string[]; safe: string[] }>;
+  ): Promise<{ wouldConflict: string[]; safe: string[]; untrackedConflict: string[] }>;
   deleteBranch(repoPath: string, name: string, force: boolean): Promise<void>;
   renameBranch(repoPath: string, oldName: string, newName: string): Promise<void>;
   mergeBranch(repoPath: string, name: string): Promise<MergeResult>;

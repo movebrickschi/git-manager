@@ -1,12 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from "vue";
+import { ref, onMounted, onUnmounted, watch, defineAsyncComponent } from "vue";
 import { useRouter } from "vue-router";
 import OpeningRepositoryOverlay from "@/components/common/OpeningRepositoryOverlay.vue";
 import StatusBar from "@/components/common/StatusBar.vue";
 import Toolbar from "@/components/common/Toolbar.vue";
 import KeyboardShortcutsDialog from "@/components/common/KeyboardShortcutsDialog.vue";
-import CheckoutChoiceDialog from "@/components/common/CheckoutChoiceDialog.vue";
-import PullChoiceDialog from "@/components/common/PullChoiceDialog.vue";
 import RebaseSequencerDialog from "@/components/rebase/RebaseSequencerDialog.vue";
 import RebaseStatusBar from "@/components/rebase/RebaseStatusBar.vue";
 import { useRepoStore } from "@/stores/repoStore";
@@ -14,6 +12,8 @@ import { useBranchStore } from "@/stores/branchStore";
 import { commands, platform } from "@/utils/commands";
 import { useAutoFetch } from "@/composables/useAutoFetch";
 import { useToast } from "@/composables/useToast";
+
+const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/ThreeWayMerge.vue"));
 
 const branchStore = useBranchStore();
 
@@ -49,6 +49,41 @@ function handleGlobalKey(e: KeyboardEvent) {
 
 const router = useRouter();
 const repoStore = useRepoStore();
+
+// 全局三栏冲突解决（IDEA 风格）：监听 branchStore.conflictSignal，有冲突直接开三栏
+const showConflictResolver = ref(false);
+const conflictFiles = ref<string[]>([]);
+const conflictFirstFile = ref("");
+const conflictAutoStash = ref<{ kind: "merge" | "stash-pop" } | null>(null);
+
+watch(
+  () => branchStore.conflictSignal.seq,
+  () => {
+    const sig = branchStore.conflictSignal;
+    if (!sig || sig.seq === 0 || sig.files.length === 0) return;
+    conflictFiles.value = sig.files;
+    conflictFirstFile.value = sig.files[0]!;
+    conflictAutoStash.value = sig.autoStash;
+    showConflictResolver.value = true;
+  }
+);
+
+async function onGlobalConflictResolved() {
+  showConflictResolver.value = false;
+  const path = repoStore.activeRepo?.path;
+  const autoStash = conflictAutoStash.value;
+  conflictAutoStash.value = null;
+  if (autoStash?.kind === "stash-pop" && path) {
+    // 改动已带冲突标记落在工作区，stash 冗余 → 自动 drop，避免堆积
+    try {
+      await commands.stashDrop(path, 0);
+    } catch {
+      branchStore.showToast("自动清理 stash 失败，请手动 drop stash@{0}", "err");
+    }
+  }
+  await branchStore.loadBranches();
+  branchStore.showToast("冲突已解决", "ok");
+}
 
 // 加号菜单状态
 const showAddMenu = ref(false);
@@ -519,31 +554,32 @@ onUnmounted(() => {
     </div>
     <OpeningRepositoryOverlay :visible="loading" :repo-name="openingRepoPath" />
     <KeyboardShortcutsDialog v-if="showShortcutsDialog" @close="showShortcutsDialog = false" />
-    <CheckoutChoiceDialog
-      :visible="branchStore.checkoutDialog.visible"
-      :branch-name="branchStore.checkoutDialog.branchName"
-      :dirty-files="branchStore.checkoutDialog.dirtyFiles"
-      :would-conflict="branchStore.checkoutDialog.wouldConflict"
-      :safe="branchStore.checkoutDialog.safe"
-      :pending="branchStore.checkoutDialog.pending"
-      :result-message="branchStore.checkoutDialog.resultMessage"
-      :result-kind="branchStore.checkoutDialog.resultKind"
-      @choose="branchStore.resolveCheckoutChoice($event)"
-    />
-    <PullChoiceDialog
-      :visible="branchStore.pullDialog.visible"
-      :branch-name="branchStore.pullDialog.branchName"
-      :upstream="branchStore.pullDialog.upstream"
-      :remote-commits-ahead="branchStore.pullDialog.remoteCommitsAhead"
-      :dirty-files="branchStore.pullDialog.dirtyFiles"
-      :would-conflict="branchStore.pullDialog.wouldConflict"
-      :safe="branchStore.pullDialog.safe"
-      :fetched="branchStore.pullDialog.fetched"
-      :pending="branchStore.pullDialog.pending"
-      :result-message="branchStore.pullDialog.resultMessage"
-      :result-kind="branchStore.pullDialog.resultKind"
-      @choose="branchStore.resolvePullChoice"
-    />
+
+    <!-- 全局三栏冲突解决：checkout / pull 冲突时由 branchStore.conflictSignal 触发 -->
+    <Teleport to="body">
+      <div v-if="showConflictResolver" class="conflict-modal-overlay">
+        <div class="conflict-modal-panel">
+          <div class="conflict-modal-header">
+            <span>解决冲突（{{ conflictFiles.length }} 个文件）</span>
+            <button
+              class="conflict-modal-close"
+              title="关闭"
+              @click="showConflictResolver = false"
+            >
+              ✕
+            </button>
+          </div>
+          <div class="conflict-modal-body">
+            <ThreeWayMerge
+              :file-path="conflictFirstFile"
+              :conflict-files="conflictFiles"
+              @resolved="onGlobalConflictResolved"
+            />
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <RebaseSequencerDialog />
     <RebaseStatusBar />
     <Teleport to="body">
@@ -937,5 +973,80 @@ onUnmounted(() => {
   line-height: 1;
   color: var(--color-foreground-muted);
   margin-left: auto;
+}
+
+/* ---- 全局三栏冲突解决弹窗 ---- */
+.conflict-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.conflict-modal-panel {
+  width: 90vw;
+  height: 85vh;
+  min-width: 600px;
+  min-height: 400px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 60px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.conflict-modal-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 8px 14px;
+  padding-right: 44px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.conflict-modal-header > span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conflict-modal-close {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-border);
+  color: var(--color-foreground);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.conflict-modal-close:hover {
+  background: #c04040;
+  border-color: #c04040;
+  color: #fff;
+}
+
+.conflict-modal-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
 }
 </style>
