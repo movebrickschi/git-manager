@@ -13,6 +13,7 @@ import type { MenuItem } from "@/components/common/ContextMenu.vue";
 import type { CommitInfo } from "@/utils/commands";
 import { commands } from "@/utils/commands";
 import { formatTimestamp } from "@/utils/format";
+import { errMsg } from "@/utils/error";
 
 const logStore = useLogStore();
 const repoStore = useRepoStore();
@@ -267,6 +268,54 @@ async function handleInteractiveRebase() {
   await rebaseStore.openSequencer(commit.id, `${commit.shortId} ${commit.summary}`);
 }
 
+// ---- Fixup into this commit ----
+/**
+ * 把当前已暂存(staged)改动提交为 `fixup! <目标 commit 标题>`。
+ * 配合 Autosquash 即可全自动把补丁并回目标 commit，无需手写 fixup! message。
+ */
+async function handleFixupInto() {
+  if (!contextCommit.value || !repoStore.activeRepo) return;
+  const commit = contextCommit.value;
+  const ok = window.confirm(
+    `将当前已暂存(staged)的改动提交为 fixup! "${commit.summary}"。\n请先暂存要修补的改动；之后对其父提交执行 Autosquash 即可合并。继续？`
+  );
+  if (!ok) return;
+  try {
+    await commands.commitFixup(repoStore.activeRepo.path, commit.id);
+    await Promise.all([logStore.loadCommits(true), branchStore.loadBranches()]);
+    showToast(`已创建 fixup! ${commit.shortId}`);
+  } catch (e) {
+    showToast(`Fixup 失败：${errMsg(e)}（请确认已暂存改动）`);
+  }
+}
+
+// ---- Autosquash rebase from here ----
+/**
+ * 以右键 commit 为 base（不含），对其后的提交执行 rebase --autosquash，
+ * 自动把范围内的 fixup!/squash! 合并进目标 commit。需要工作区 clean。
+ */
+async function handleAutosquash() {
+  if (!contextCommit.value || !repoStore.activeRepo) return;
+  const commit = contextCommit.value;
+  const ok = window.confirm(
+    `将对 ${commit.shortId} 之后的提交执行 autosquash 变基，自动合并 fixup!/squash!（会改写提交历史）。\n请先确保工作区已提交干净。继续？`
+  );
+  if (!ok) return;
+  try {
+    const result = await commands.rebaseAutosquash(repoStore.activeRepo.path, commit.id);
+    if (result.success) {
+      await Promise.all([logStore.loadCommits(true), branchStore.loadBranches()]);
+      showToast("Autosquash 变基完成");
+    } else if (result.conflicts.length > 0) {
+      showToast(`Autosquash 产生冲突，请手动解决：${result.conflicts.join(", ")}`);
+    } else {
+      showToast(`Autosquash 失败：${result.message}`);
+    }
+  } catch (e) {
+    showToast(`Autosquash 失败：${errMsg(e)}`);
+  }
+}
+
 // ---- New branch from commit ----
 async function handleNewBranchFromCommit() {
   if (!contextCommit.value || !repoStore.activeRepo) return;
@@ -373,6 +422,8 @@ const contextMenuItems = computed<MenuItem[]>(() => {
         ]
       : []),
     { label: "Interactive Rebase from here...", action: handleInteractiveRebase },
+    { label: "Fixup into this commit...", action: handleFixupInto },
+    { label: "Autosquash from here...", action: handleAutosquash },
     { separator: true, label: "" },
     { label: "Reset Current Branch to Here...", action: handleResetToHere },
     { label: "Revert Commit", action: handleRevertCommit },

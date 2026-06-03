@@ -64,6 +64,7 @@ const ALLOWED_CHANNELS = new Set<string>([
   "hooks_enable",
   "hooks_disable",
   "commit",
+  "commit_fixup",
   "commit_files",
   "push_remote",
   "get_unpushed_commits",

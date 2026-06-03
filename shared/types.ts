@@ -389,6 +389,7 @@ export interface Commands {
   enableHook(repoPath: string, hookName: string): Promise<void>;
   disableHook(repoPath: string, hookName: string): Promise<void>;
   commit(repoPath: string, message: string, amend: boolean): Promise<string>;
+  commitFixup(repoPath: string, commitId: string): Promise<string>;
   commitFiles(repoPath: string, filePaths: string[], message: string): Promise<string>;
   push(
     repoPath: string,

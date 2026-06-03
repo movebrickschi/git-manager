@@ -54,6 +54,7 @@ export const COMMANDS = [
   { method: "enableHook", ipc: "hooks_enable", http: "/hooks/enable", bodyKeys: ["repoPath", "hookName"] },
   { method: "disableHook", ipc: "hooks_disable", http: "/hooks/disable", bodyKeys: ["repoPath", "hookName"] },
   { method: "commit", ipc: "commit", http: "/commit", bodyKeys: ["repoPath", "message", "amend"] },
+  { method: "commitFixup", ipc: "commit_fixup", http: "/commit-fixup", bodyKeys: ["repoPath", "commitId"] },
   { method: "commitFiles", ipc: "commit_files", http: "/commit-files", bodyKeys: ["repoPath", "filePaths", "message"] },
   { method: "push", ipc: "push_remote", http: "/push", bodyKeys: ["repoPath", "remote", "branch", "options"] },
   { method: "getUnpushedCommits", ipc: "get_unpushed_commits", http: "/unpushed-commits", bodyKeys: ["repoPath", "remote", "branch"] },

@@ -95,6 +95,23 @@ export const statusService = {
   },
 
   /**
+   * 把当前已暂存改动提交为 fixup commit：`git commit --fixup=<commitId>`。
+   * git 自动生成 message `fixup! <目标 commit 标题>`，随后可用 rebaseAutosquash 自动合并。
+   * 暂存区为空时 git 报 "nothing to commit"，错误透传给调用方由前端提示。
+   */
+  async commitFixup(repoPath: string, commitId: string): Promise<string> {
+    const git = getGit(repoPath);
+    const result = await git.raw(["commit", `--fixup=${commitId}`]);
+    const match = result.match(/\[[\w/.-]+ ([a-f0-9]+)\]/);
+    // 空暂存区时 git 输出 "nothing to commit"，simple-git 不会 reject，
+    // 匹配不到新 commit 即视为未提交，显式抛错避免前端误报成功。
+    if (!match) {
+      throw new Error(`NOTHING_TO_COMMIT: 没有已暂存的改动可提交为 fixup（${result.trim()}）`);
+    }
+    return match[1];
+  },
+
+  /**
    * 只提交指定 N 个文件（pathspec 限定），不影响其他 staged 文件。
    *
    * 实现两步：
