@@ -26,6 +26,7 @@ const WorktreeDialog = defineAsyncComponent(
 const CompareBranchesDialog = defineAsyncComponent(
   () => import("@/components/compare/CompareBranchesDialog.vue")
 );
+const HooksDialog = defineAsyncComponent(() => import("@/components/hooks/HooksDialog.vue"));
 
 const props = defineProps<{ visible: boolean }>();
 const emit = defineEmits<{ (e: "update:visible", v: boolean): void }>();
@@ -40,6 +41,7 @@ type Section =
   | "fetch"
   | "worktree"
   | "compare"
+  | "hooks"
   | "ai"
   | "integrations"
   | "about";
@@ -48,6 +50,7 @@ const activeSection = ref<Section>("appearance");
 const showAiDialog = ref(false);
 const showWorktreeDialog = ref(false);
 const showCompareDialog = ref(false);
+const showHooksDialog = ref(false);
 const remoteMeta = ref<RemoteMeta | null>(null);
 const remoteLoading = ref(false);
 
@@ -58,6 +61,7 @@ const sections: { id: Section; label: string; icon: string }[] = [
   { id: "fetch", label: "Auto-fetch", icon: "📡" },
   { id: "worktree", label: "Worktree", icon: "🌳" },
   { id: "compare", label: "Compare Branches", icon: "🔍" },
+  { id: "hooks", label: "Git Hooks", icon: "🪝" },
   { id: "ai", label: "AI", icon: "✨" },
   { id: "integrations", label: "集成", icon: "🔗" },
   { id: "about", label: "关于", icon: "ℹ️" },
@@ -115,7 +119,13 @@ function close() {
 function onKeydown(e: KeyboardEvent) {
   if (e.key !== "Escape") return;
   if (!props.visible) return;
-  if (showAiDialog.value || showWorktreeDialog.value || showCompareDialog.value) return;
+  if (
+    showAiDialog.value ||
+    showWorktreeDialog.value ||
+    showCompareDialog.value ||
+    showHooksDialog.value
+  )
+    return;
   e.preventDefault();
   close();
 }
@@ -329,6 +339,23 @@ const appVersion = computed(() => __APP_VERSION__);
             <p class="field-desc" v-if="!repoStore.activeRepo">需要先打开一个仓库。</p>
           </div>
 
+          <!-- Git Hooks -->
+          <div v-if="activeSection === 'hooks'" class="section">
+            <h3>Git Hooks</h3>
+            <p>
+              管理当前仓库 <code>.git/hooks</code> 下的钩子脚本：查看状态、启用 / 禁用、
+              新建与编辑内容（pre-commit / commit-msg / pre-push 等）。
+            </p>
+            <button
+              class="ai-open-btn"
+              :disabled="!repoStore.activeRepo"
+              @click="showHooksDialog = true"
+            >
+              🪝 打开 Hooks 管理
+            </button>
+            <p class="field-desc" v-if="!repoStore.activeRepo">需要先打开一个仓库。</p>
+          </div>
+
           <!-- 集成 -->
           <div v-if="activeSection === 'integrations'" class="section">
             <h3>外部集成</h3>
@@ -417,6 +444,13 @@ const appVersion = computed(() => __APP_VERSION__);
       :visible="showCompareDialog"
       :repo-path="repoStore.activeRepo.path"
       @update:visible="(v: boolean) => (showCompareDialog = v)"
+    />
+
+    <HooksDialog
+      v-if="showHooksDialog && repoStore.activeRepo"
+      :visible="showHooksDialog"
+      :repo-path="repoStore.activeRepo.path"
+      @update:visible="(v: boolean) => (showHooksDialog = v)"
     />
   </div>
 </template>
