@@ -124,6 +124,8 @@ export default {
       advanced: "高级",
       timeout: "timeout (ms)",
       max_diff_chars: "maxDiffChars",
+      timeout_min: "timeout 不能低于 {min} ms",
+      max_diff_chars_min: "maxDiffChars 不能低于 {min}",
       test_btn: "🔌 测试连接",
       testing: "测试中…",
       test_success: "连接成功",

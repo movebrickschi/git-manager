@@ -115,6 +115,8 @@ export default {
       advanced: "Advanced",
       timeout: "timeout (ms)",
       max_diff_chars: "maxDiffChars",
+      timeout_min: "timeout must be ≥ {min} ms",
+      max_diff_chars_min: "maxDiffChars must be ≥ {min}",
       test_btn: "🔌 Test connection",
       testing: "Testing…",
       test_success: "Connected",

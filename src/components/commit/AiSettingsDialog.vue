@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from "vue";
+import { ref, watch, computed, onBeforeUnmount } from "vue";
 import { useI18n } from "vue-i18n";
 import { aiBridge } from "@/services/ai";
 import {
@@ -26,6 +26,8 @@ const apiKeyRevealed = ref(false);
 const model = ref(DEFAULT_PUBLIC_AI_SETTINGS.model);
 const commitStyle = ref<AiSettings["commitStyle"]>("cc");
 const lang = ref<AiSettings["lang"]>("auto");
+const MIN_TIMEOUT = 3000;
+const MIN_MAX_DIFF_CHARS = 500;
 const timeout = ref(DEFAULT_PUBLIC_AI_SETTINGS.timeout);
 const maxDiffChars = ref(DEFAULT_PUBLIC_AI_SETTINGS.maxDiffChars);
 
@@ -50,6 +52,20 @@ const apiKeyPlaceholder = computed(() =>
     ? t("ai.settings.apikey_placeholder_existing")
     : t("ai.settings.apikey_placeholder_new")
 );
+
+const timeoutError = computed(() => {
+  const n = Number(timeout.value);
+  return Number.isFinite(n) && n >= MIN_TIMEOUT
+    ? ""
+    : t("ai.settings.timeout_min", { min: MIN_TIMEOUT });
+});
+
+const maxDiffCharsError = computed(() => {
+  const n = Number(maxDiffChars.value);
+  return Number.isFinite(n) && n >= MIN_MAX_DIFF_CHARS
+    ? ""
+    : t("ai.settings.max_diff_chars_min", { min: MIN_MAX_DIFF_CHARS });
+});
 
 /**
  * 切换 apiKey 明文显示。
@@ -114,9 +130,9 @@ function buildSettings(): AiSettings {
     model: model.value.trim(),
     commitStyle: commitStyle.value,
     lang: lang.value,
-    timeout: Math.max(3000, Number(timeout.value) || DEFAULT_PUBLIC_AI_SETTINGS.timeout),
+    timeout: Math.max(MIN_TIMEOUT, Number(timeout.value) || DEFAULT_PUBLIC_AI_SETTINGS.timeout),
     maxDiffChars: Math.max(
-      500,
+      MIN_MAX_DIFF_CHARS,
       Number(maxDiffChars.value) || DEFAULT_PUBLIC_AI_SETTINGS.maxDiffChars
     ),
     report: { ...reportConfig.value },
@@ -126,6 +142,12 @@ function buildSettings(): AiSettings {
 async function handleSave() {
   if (!baseUrl.value.trim()) {
     testToast.value = { ok: false, text: t("ai.settings.baseurl_required") };
+    return;
+  }
+  const advError = timeoutError.value || maxDiffCharsError.value;
+  if (advError) {
+    advancedOpen.value = true; // 展开高级，让用户看到出错字段
+    testToast.value = { ok: false, text: advError };
     return;
   }
   saving.value = true;
@@ -166,16 +188,30 @@ function handleCancel() {
   emit("close");
 }
 
+// Esc 关闭本弹窗。父级 SystemSettingsDialog 在本弹窗打开时已主动放行 Esc，
+// 故必须由本弹窗自己监听，否则 Esc 完全无效。
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape" && props.visible) {
+    e.preventDefault();
+    handleCancel();
+  }
+}
+
 watch(
   () => props.visible,
   (v) => {
     if (v) {
       testToast.value = null;
       void loadSettings();
+      window.addEventListener("keydown", onKeydown);
+    } else {
+      window.removeEventListener("keydown", onKeydown);
     }
   },
   { immediate: true }
 );
+
+onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 </script>
 
 <template>
@@ -276,11 +312,25 @@ watch(
           <summary>{{ $t("ai.settings.advanced") }}</summary>
           <label class="ai-row">
             <span class="ai-label">{{ $t("ai.settings.timeout") }}</span>
-            <input v-model.number="timeout" type="number" min="3000" step="1000" />
+            <input
+              v-model.number="timeout"
+              type="number"
+              :min="MIN_TIMEOUT"
+              step="1000"
+              :class="{ 'ai-input-invalid': timeoutError }"
+            />
+            <span v-if="timeoutError" class="ai-field-error">{{ timeoutError }}</span>
           </label>
           <label class="ai-row">
             <span class="ai-label">{{ $t("ai.settings.max_diff_chars") }}</span>
-            <input v-model.number="maxDiffChars" type="number" min="500" step="500" />
+            <input
+              v-model.number="maxDiffChars"
+              type="number"
+              :min="MIN_MAX_DIFF_CHARS"
+              step="500"
+              :class="{ 'ai-input-invalid': maxDiffCharsError }"
+            />
+            <span v-if="maxDiffCharsError" class="ai-field-error">{{ maxDiffCharsError }}</span>
           </label>
         </details>
 
@@ -453,6 +503,15 @@ watch(
 
 .ai-test-toast.err {
   border-left-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.ai-input-invalid {
+  border-color: var(--color-error) !important;
+}
+
+.ai-field-error {
+  font-size: 11px;
   color: var(--color-error);
 }
 

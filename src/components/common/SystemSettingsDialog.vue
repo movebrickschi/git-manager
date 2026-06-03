@@ -111,11 +111,11 @@ function close() {
   emit("update:visible", false);
 }
 
-// Esc 关闭弹窗，但只在系统设置弹窗本身可见且 AI 子弹窗未打开时生效
+// Esc 关闭弹窗，但任一子弹窗打开时把 Esc 交给子弹窗自己处理，避免父面板被一起关掉。
 function onKeydown(e: KeyboardEvent) {
   if (e.key !== "Escape") return;
   if (!props.visible) return;
-  if (showAiDialog.value) return; // 让 AI 子弹窗自己处理 Esc
+  if (showAiDialog.value || showWorktreeDialog.value || showCompareDialog.value) return;
   e.preventDefault();
   close();
 }
@@ -133,7 +133,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", onKeydown);
 });
 
-const appVersion = computed(() => "0.2.0-dev"); // TODO: 接入 package.json
+const appVersion = computed(() => __APP_VERSION__);
 </script>
 
 <template>
