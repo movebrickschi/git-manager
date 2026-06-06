@@ -111,4 +111,47 @@ describe("branchStore — 多仓库切换时不残留旧仓库分支", () => {
     // 关键：回填的是 A 的缓存，不是 B 的数据
     expect(branchStore.localBranches.some((b) => b.name.startsWith("B-"))).toBe(false);
   });
+
+  it("loadBranches 进行中切到新仓库后，旧仓库晚到的结果不得覆盖当前仓库（消除竞态闪烁）", async () => {
+    const repoStore = useRepoStore();
+    const branchStore = useBranchStore();
+
+    const aBranches = makeBranches("A");
+    const bBranches = makeBranches("B");
+    const mockedGetBranches = vi.mocked(commands.getBranches);
+
+    repoStore.repos = [
+      { path: "/repos/A", name: "A", currentBranch: "main", color: "#000" },
+      { path: "/repos/B", name: "B", currentBranch: "main", color: "#111" },
+    ];
+    repoStore.activeRepoIndex = 0;
+
+    // A 的 getBranches 挂起（模拟 in-flight 的旧请求，如 autoFetch 后的刷新尚未返回）；
+    // B 的 getBranches 立即返回。
+    let resolveA!: (v: BranchesResult) => void;
+    const aPending = new Promise<BranchesResult>((r) => {
+      resolveA = r;
+    });
+    mockedGetBranches.mockImplementation((path: string) =>
+      path === "/repos/A" ? aPending : Promise.resolve(bBranches)
+    );
+
+    // 在 A 上发起 loadBranches（请求挂起，先不等它完成）
+    const aLoad = branchStore.loadBranches();
+
+    // 切到 B 并完成 B 的加载（B 立即返回，写入 B 的分支）
+    repoStore.activeRepoIndex = 1;
+    await Promise.resolve(); // 让切仓库 watch 先跑（同步清空）
+    await branchStore.loadBranches();
+    expect(branchStore.localBranches).toEqual(bBranches.local);
+
+    // 现在 A 的旧请求才姗姗来迟地返回
+    resolveA(aBranches);
+    await aLoad;
+
+    // 关键：A 的晚到结果不能覆盖当前 B 的展示（旧实现会闪出 A 的分支）
+    expect(branchStore.localBranches).toEqual(bBranches.local);
+    expect(branchStore.remoteBranches).toEqual(bBranches.remote);
+    expect(branchStore.localBranches.some((b) => b.name.startsWith("A-"))).toBe(false);
+  });
 });

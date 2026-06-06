@@ -90,12 +90,20 @@ export const useBranchStore = defineStore("branch", () => {
     loading.value = true;
     try {
       const result = await commands.getBranches(repoPath);
+      // 结果先入缓存：即便用户已切走，下次切回该仓库时上方 watch 可立即回填，避免空白。
+      branchCache.set(repoPath, { local: result.local, remote: result.remote, tags: result.tags });
+      // 竞态守卫：await 期间用户可能已切到别的仓库。旧仓库 in-flight 的结果（如 autoFetch
+      // 后的刷新晚到、或快速连切仓库）若仍写入可见 ref，会"闪"出旧仓库分支再跳回当前仓库。
+      // 只有结果仍属于当前激活仓库时才更新展示。
+      if (repoStore.activeRepo?.path !== repoPath) return;
       localBranches.value = result.local;
       remoteBranches.value = result.remote;
       tags.value = result.tags;
-      branchCache.set(repoPath, { local: result.local, remote: result.remote, tags: result.tags });
     } finally {
-      loading.value = false;
+      // 同理：仅当结束的是"当前仓库"的请求才复位 loading，避免旧请求关掉新请求的 loading 态。
+      if (repoStore.activeRepo?.path === repoPath) {
+        loading.value = false;
+      }
     }
   }
 
