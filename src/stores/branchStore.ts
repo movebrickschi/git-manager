@@ -306,11 +306,17 @@ export const useBranchStore = defineStore("branch", () => {
 
   async function loadSubmodules() {
     if (!repoStore.activeRepo) return;
+    const repoPath = repoStore.activeRepo.path;
     submodulesLoading.value = true;
     try {
-      submodules.value = await commands.getSubmodules(repoStore.activeRepo.path);
+      const result = await commands.getSubmodules(repoPath);
+      // 竞态守卫：await 期间用户可能已切到别的仓库，旧仓库 submodule 结果不应覆盖当前显示。
+      if (repoStore.activeRepo?.path !== repoPath) return;
+      submodules.value = result;
     } finally {
-      submodulesLoading.value = false;
+      if (repoStore.activeRepo?.path === repoPath) {
+        submodulesLoading.value = false;
+      }
     }
   }
 

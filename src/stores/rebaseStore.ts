@@ -182,8 +182,13 @@ export const useRebaseStore = defineStore("rebase", () => {
       };
       return;
     }
+    const repoPath = repoStore.activeRepo.path;
     try {
-      status.value = await commands.getRebaseStatus(repoStore.activeRepo.path);
+      const next = await commands.getRebaseStatus(repoPath);
+      // 竞态守卫：2s 轮询与切仓库 watch 会并发触发；await 期间若已切到别的仓库，
+      // 旧仓库的 rebase 进度不能覆盖当前仓库的状态栏。
+      if (repoStore.activeRepo?.path !== repoPath) return;
+      status.value = next;
     } catch {
       // 状态查询失败时保留旧值，避免 UI 抖动
     }

@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
-import type { BranchInfo, BranchesResult } from "@/utils/commands";
+import type { BranchInfo, BranchesResult, Submodule } from "@/utils/commands";
 
 // 必须在 import store 之前 mock commands（store 顶部 import 会触发 web/electron adapter 选择）
 vi.mock("@/utils/commands", () => {
   return {
     commands: {
       getBranches: vi.fn(),
+      getSubmodules: vi.fn(),
     },
   };
 });
@@ -40,6 +41,10 @@ function makeBranches(prefix: string): BranchesResult {
     remote: [makeBranch(`origin/${prefix}-main`)],
     tags: [`${prefix}-v1`],
   };
+}
+
+function makeSubmodule(name: string): Submodule {
+  return { path: `sub/${name}`, name, url: "", head: null, described: null, state: "initialized" };
 }
 
 describe("branchStore — 多仓库切换时不残留旧仓库分支", () => {
@@ -153,5 +158,46 @@ describe("branchStore — 多仓库切换时不残留旧仓库分支", () => {
     expect(branchStore.localBranches).toEqual(bBranches.local);
     expect(branchStore.remoteBranches).toEqual(bBranches.remote);
     expect(branchStore.localBranches.some((b) => b.name.startsWith("A-"))).toBe(false);
+  });
+
+  it("loadSubmodules 进行中切到新仓库后，旧仓库晚到的 submodule 结果不得覆盖当前仓库", async () => {
+    const repoStore = useRepoStore();
+    const branchStore = useBranchStore();
+    const mockedGetSubmodules = vi.mocked(commands.getSubmodules);
+
+    repoStore.repos = [
+      { path: "/repos/A", name: "A", currentBranch: "main", color: "#000" },
+      { path: "/repos/B", name: "B", currentBranch: "main", color: "#111" },
+    ];
+    repoStore.activeRepoIndex = 0;
+
+    const subA = [makeSubmodule("A-sub")];
+    const subB = [makeSubmodule("B-sub")];
+
+    // A 的 getSubmodules 挂起（in-flight 旧请求），B 立即返回
+    let resolveA!: (v: Submodule[]) => void;
+    const aPending = new Promise<Submodule[]>((r) => {
+      resolveA = r;
+    });
+    mockedGetSubmodules.mockImplementation((path: string) =>
+      path === "/repos/A" ? aPending : Promise.resolve(subB)
+    );
+
+    // 在 A 上发起 loadSubmodules（挂起，先不等）
+    const aLoad = branchStore.loadSubmodules();
+
+    // 切到 B 并完成 B 的加载
+    repoStore.activeRepoIndex = 1;
+    await Promise.resolve();
+    await branchStore.loadSubmodules();
+    expect(branchStore.submodules).toEqual(subB);
+
+    // A 的旧请求姗姗来迟返回
+    resolveA(subA);
+    await aLoad;
+
+    // 关键：A 的晚到结果不能覆盖当前 B 的 submodule 列表
+    expect(branchStore.submodules).toEqual(subB);
+    expect(branchStore.submodules.some((s) => s.name.startsWith("A-"))).toBe(false);
   });
 });
