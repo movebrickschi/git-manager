@@ -130,7 +130,14 @@ function createWindow() {
   });
 
   if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+    const devUrl = process.env.VITE_DEV_SERVER_URL;
+    // dev 下 electron 可能先于 Vite dev server ready 启动；loadURL 失败时短间隔重试，避免白屏。
+    const loadDevServer = () => {
+      mainWindow?.loadURL(devUrl).catch(() => {
+        setTimeout(loadDevServer, 300);
+      });
+    };
+    loadDevServer();
     mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(__dirname, "../../dist/index.html"));
