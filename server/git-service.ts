@@ -25,6 +25,7 @@ import { hooksService } from "./services/hooks.service.js";
 
 export type {
   AheadBehind,
+  BatchFileResult,
   BlameInfo,
   BlameLine,
   BranchInfo,

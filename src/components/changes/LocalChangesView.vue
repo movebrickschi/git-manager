@@ -4,7 +4,6 @@ import { Pane, Splitpanes } from "splitpanes";
 import "splitpanes/dist/splitpanes.css";
 import { onClickOutside } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
-import { useBranchStore } from "@/stores/branchStore";
 import { useCommitStore } from "@/stores/commitStore";
 import { useFilterStore } from "@/stores/filterStore";
 import { useRepoStore } from "@/stores/repoStore";
@@ -16,6 +15,7 @@ import type { MenuItem } from "@/components/common/ContextMenu.vue";
 import PushDialog from "@/components/common/PushDialog.vue";
 import AiSettingsDialog from "@/components/commit/AiSettingsDialog.vue";
 import { errMsg } from "@/utils/error";
+import { refreshGit } from "@/composables/useGitRefresh";
 import { useBulkActions } from "@/composables/useBulkActions";
 import { useConfirmDialog } from "@/composables/useConfirmDialog";
 import { useFilterRules } from "@/composables/useFilterRules";
@@ -38,7 +38,6 @@ const FileHistoryDialog = defineAsyncComponent(
 );
 const BlameView = defineAsyncComponent(() => import("@/components/blame/BlameView.vue"));
 
-const branchStore = useBranchStore();
 const commitStore = useCommitStore();
 const repoStore = useRepoStore();
 const filterStore = useFilterStore();
@@ -517,7 +516,7 @@ async function doQuickCommit(): Promise<void> {
         await commands.stageFile(repoStore.activeRepo.path, contextFile.value.path);
       }
       await commands.commit(repoStore.activeRepo.path, msg, false);
-      await Promise.all([commitStore.loadStatus(), branchStore.loadBranches()]);
+      await refreshGit();
       showToast("提交成功");
     }
     showCommitDialog.value = false;
@@ -711,7 +710,14 @@ function openMergeDialog(filePath: string): void {
 
 async function onMergeResolved(): Promise<void> {
   showMergeDialog.value = false;
-  await commitStore.loadStatus();
+  // 冲突解决后历史/分支也可能变化（merge commit、ahead/behind），做全量刷新
+  await refreshGit();
+}
+
+async function onPushConfirmed(): Promise<void> {
+  showPushDialog.value = false;
+  // 推送后刷新分支：待推送箭头(ahead/behind)依赖 loadBranches 才会消失
+  await refreshGit();
 }
 
 /**
@@ -1269,7 +1275,7 @@ watch(
     :visible="showPushDialog"
     :repo-path="repoStore.activeRepo?.path ?? ''"
     :repo-name="repoStore.activeRepo?.name"
-    @confirm="showPushDialog = false"
+    @confirm="onPushConfirmed"
     @close="showPushDialog = false"
   />
 </template>
@@ -1379,6 +1385,9 @@ watch(
   cursor: pointer;
   font-size: 12px;
   color: var(--color-foreground);
+  /* 同 file-item：大量冲突文件时跳过视口外渲染，避免卡顿 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 24px;
 }
 
 .conflict-file-item:hover {

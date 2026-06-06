@@ -144,3 +144,54 @@ describe("statusService.getWorkingFileContent / deleteFile", () => {
     await expect(fs.access(fp)).rejects.toBeTruthy();
   });
 });
+
+describe("statusService.discardFilesBatch / deleteFilesBatch · 批量文件操作", () => {
+  let repo: string;
+
+  beforeEach(async () => {
+    repo = await makeRepo();
+  });
+
+  afterEach(async () => {
+    await fs.rm(repo, { recursive: true, force: true });
+  });
+
+  it("空数组 → no-op，返回空结果", async () => {
+    await expect(statusService.discardFilesBatch(repo, [])).resolves.toEqual({ ok: [], failed: [] });
+    await expect(statusService.deleteFilesBatch(repo, [])).resolves.toEqual({ ok: [], failed: [] });
+  });
+
+  it("discardFilesBatch 一次回滚多个文件（staged + unstaged）到 HEAD", async () => {
+    await fs.writeFile(path.join(repo, "a.txt"), "A0\n");
+    await fs.writeFile(path.join(repo, "b.txt"), "B0\n");
+    await execFile("git", ["-C", repo, "add", "a.txt", "b.txt"], { encoding: "utf8" });
+    await execFile("git", ["-C", repo, "commit", "-q", "-m", "add ab"], { encoding: "utf8" });
+    // a.txt 改完已暂存；b.txt 改完未暂存
+    await fs.writeFile(path.join(repo, "a.txt"), "A-changed\n");
+    await fs.writeFile(path.join(repo, "b.txt"), "B-changed\n");
+    await execFile("git", ["-C", repo, "add", "a.txt"], { encoding: "utf8" });
+
+    const result = await statusService.discardFilesBatch(repo, ["a.txt", "b.txt"]);
+
+    expect([...result.ok].sort()).toEqual(["a.txt", "b.txt"]);
+    expect(result.failed).toEqual([]);
+    // trim 规避 Windows git autocrlf 把 \n 转成 \r\n 的平台差异
+    expect((await fs.readFile(path.join(repo, "a.txt"), "utf8")).trim()).toBe("A0");
+    expect((await fs.readFile(path.join(repo, "b.txt"), "utf8")).trim()).toBe("B0");
+    const s = await statusService.getStatus(repo);
+    expect(s.staged).toHaveLength(0);
+    expect(s.unstaged).toHaveLength(0);
+  });
+
+  it("deleteFilesBatch 一次删除多个文件；不存在的文件(ENOENT)也计入成功", async () => {
+    await fs.writeFile(path.join(repo, "x.txt"), "x");
+    await fs.writeFile(path.join(repo, "y.txt"), "y");
+
+    const result = await statusService.deleteFilesBatch(repo, ["x.txt", "y.txt", "ghost.txt"]);
+
+    expect([...result.ok].sort()).toEqual(["ghost.txt", "x.txt", "y.txt"]);
+    expect(result.failed).toEqual([]);
+    await expect(fs.access(path.join(repo, "x.txt"))).rejects.toBeTruthy();
+    await expect(fs.access(path.join(repo, "y.txt"))).rejects.toBeTruthy();
+  });
+});

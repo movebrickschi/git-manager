@@ -205,6 +205,11 @@ function onCheckboxClick(path: string): void {
   cursor: pointer;
   gap: 6px;
   font-size: 12px;
+  /* 大量文件时跳过视口外行的布局/绘制（Chromium content-visibility），
+     消除几百上千变更时的滚动/刷新卡顿；DOM 仍在，交互与 sticky header 不受影响。
+     contain-intrinsic-size 的 auto 让浏览器渲染过一次后记住真实高度，避免滚动条跳动。 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 22px;
 }
 
 .file-item:hover {

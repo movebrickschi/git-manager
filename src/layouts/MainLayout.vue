@@ -12,6 +12,7 @@ import { useBranchStore } from "@/stores/branchStore";
 import { commands, platform } from "@/utils/commands";
 import { useAutoFetch } from "@/composables/useAutoFetch";
 import { useToast } from "@/composables/useToast";
+import { refreshGit } from "@/composables/useGitRefresh";
 
 const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/ThreeWayMerge.vue"));
 
@@ -81,7 +82,7 @@ async function onGlobalConflictResolved() {
       branchStore.showToast("自动清理 stash 失败，请手动 drop stash@{0}", "err");
     }
   }
-  await branchStore.loadBranches();
+  await refreshGit();
   branchStore.showToast("冲突已解决", "ok");
 }
 

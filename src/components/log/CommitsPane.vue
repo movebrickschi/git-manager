@@ -14,6 +14,7 @@ import type { CommitInfo } from "@/utils/commands";
 import { commands } from "@/utils/commands";
 import { formatTimestamp } from "@/utils/format";
 import { errMsg } from "@/utils/error";
+import { refreshGit } from "@/composables/useGitRefresh";
 
 const logStore = useLogStore();
 const repoStore = useRepoStore();
@@ -113,7 +114,7 @@ async function handleCherryPick() {
   try {
     const result = await commands.cherryPick(repoStore.activeRepo.path, commit.id);
     if (result.success) {
-      await Promise.all([logStore.loadCommits(true), branchStore.loadBranches()]);
+      await refreshGit();
       showToast(`Cherry-pick 成功：${commit.shortId}`);
     } else {
       showToast(`Cherry-pick 产生冲突，请手动解决：${result.conflicts.join(", ")}`);
@@ -141,7 +142,7 @@ async function handleCherryPickMulti() {
       ordered.map((c) => c.id)
     );
     if (result.success) {
-      await Promise.all([logStore.loadCommits(true), branchStore.loadBranches()]);
+      await refreshGit();
       showToast(`已 cherry-pick ${ordered.length} 个 commit`);
     } else {
       showToast(
@@ -163,7 +164,7 @@ function handleCheckoutRevision() {
     if (!repoStore.activeRepo) return;
     try {
       await commands.checkoutBranch(repoStore.activeRepo.path, commit.id);
-      await Promise.all([logStore.loadCommits(true), branchStore.loadBranches()]);
+      await refreshGit();
       showToast(`已切换到 ${commit.shortId}`);
     } catch (e: any) {
       showToast(`Checkout 失败：${e.message}`);
@@ -183,7 +184,7 @@ function handleRevertCommit() {
     try {
       const result = await commands.revertCommit(repoStore.activeRepo.path, commit.id);
       if (result.success) {
-        await Promise.all([logStore.loadCommits(true), branchStore.loadBranches()]);
+        await refreshGit();
         showToast(`已成功 Revert ${commit.shortId}`);
       } else {
         showToast(`Revert 产生冲突，请手动解决：${result.conflicts.join(", ")}`);
@@ -208,7 +209,7 @@ async function doReset() {
   showResetDialog.value = false;
   try {
     await commands.resetToCommit(repoStore.activeRepo.path, commit.id, resetMode.value);
-    await Promise.all([logStore.loadCommits(true), branchStore.loadBranches()]);
+    await refreshGit();
     showToast(`已 Reset（${resetMode.value}）到 ${commit.shortId}`);
   } catch (e: any) {
     showToast(`Reset 失败：${e.message}`);
@@ -250,7 +251,7 @@ async function handleSquashCommits() {
   try {
     await commands.squashCommits(repoStore.activeRepo.path, count, message);
     logStore.clearSelection();
-    await Promise.all([logStore.loadCommits(true), branchStore.loadBranches()]);
+    await refreshGit();
     showToast(`已合并 ${count} 个 commit`);
   } catch (e: any) {
     showToast(`Squash 失败：${e.message}`);
@@ -282,7 +283,7 @@ async function handleFixupInto() {
   if (!ok) return;
   try {
     await commands.commitFixup(repoStore.activeRepo.path, commit.id);
-    await Promise.all([logStore.loadCommits(true), branchStore.loadBranches()]);
+    await refreshGit();
     showToast(`已创建 fixup! ${commit.shortId}`);
   } catch (e) {
     showToast(`Fixup 失败：${errMsg(e)}（请确认已暂存改动）`);
@@ -304,7 +305,7 @@ async function handleAutosquash() {
   try {
     const result = await commands.rebaseAutosquash(repoStore.activeRepo.path, commit.id);
     if (result.success) {
-      await Promise.all([logStore.loadCommits(true), branchStore.loadBranches()]);
+      await refreshGit();
       showToast("Autosquash 变基完成");
     } else if (result.conflicts.length > 0) {
       showToast(`Autosquash 产生冲突，请手动解决：${result.conflicts.join(", ")}`);
@@ -328,8 +329,7 @@ async function handleNewBranchFromCommit() {
   try {
     await branchStore.createBranch(name, commit.id);
     await branchStore.checkoutBranch(name);
-    await logStore.loadCommits(true);
-    await branchStore.loadBranches();
+    await refreshGit();
     showToast(`已从 ${commit.shortId} 创建并签出分支 '${name}'`);
   } catch (e: any) {
     showToast(`创建分支失败：${e.message}`);
@@ -347,7 +347,7 @@ async function handleCreateTagFromCommit() {
   if (!name) return;
   try {
     await branchStore.createTag(name, commit.id, "");
-    await branchStore.loadBranches();
+    await refreshGit({ branches: true, log: true });
     showToast(`已在 ${commit.shortId} 创建标签 '${name}'`);
   } catch (e: any) {
     showToast(`创建标签失败：${e.message}`);

@@ -10,6 +10,7 @@ import DiffViewer from "@/components/diff/DiffViewer.vue";
 import type { MenuItem } from "@/components/common/ContextMenu.vue";
 import type { StashEntry, FileStatus, DiffResult } from "@/utils/commands";
 import { commands } from "@/utils/commands";
+import { refreshGit } from "@/composables/useGitRefresh";
 import { formatTimestamp } from "@/utils/format";
 
 const repoStore = useRepoStore();
@@ -124,7 +125,8 @@ async function applyStash(stash: StashEntry) {
   if (!repoStore.activeRepo) return;
   try {
     await commands.stashApply(repoStore.activeRepo.path, stash.index);
-    await loadStashes();
+    // stash 内容回到工作区，刷新本地变更文件状态（旧实现只刷新 stash 列表）
+    await Promise.all([loadStashes(), refreshGit({ status: true, branches: false, log: false })]);
     showToast(`已应用: ${stashDisplayName(stash.message)}`);
   } catch (e: any) {
     showToast(`应用失败: ${e.message}`);
@@ -135,7 +137,8 @@ async function popStash(stash: StashEntry) {
   if (!repoStore.activeRepo) return;
   try {
     await commands.stashPop(repoStore.activeRepo.path, stash.index);
-    await loadStashes();
+    // stash 内容回到工作区，刷新本地变更文件状态（旧实现只刷新 stash 列表）
+    await Promise.all([loadStashes(), refreshGit({ status: true, branches: false, log: false })]);
     showToast(`已弹出: ${stashDisplayName(stash.message)}`);
   } catch (e: any) {
     showToast(`弹出失败: ${e.message}`);

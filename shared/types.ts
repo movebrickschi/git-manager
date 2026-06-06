@@ -103,6 +103,12 @@ export interface StatusResult {
   untracked: FileStatus[];
 }
 
+/** 批量文件操作（回滚 / 删除）的逐文件结果：ok 为成功路径，failed 携带失败原因。 */
+export interface BatchFileResult {
+  ok: string[];
+  failed: { path: string; error: string }[];
+}
+
 export interface DiffLine {
   lineType: "context" | "addition" | "deletion";
   content: string;
@@ -442,8 +448,12 @@ export interface Commands {
   cloneRepo(url: string, path: string): Promise<void>;
   getFileContent(repoPath: string, commitId: string, filePath: string): Promise<string>;
   discardFileChanges(repoPath: string, filePath: string): Promise<void>;
+  /** 一次性回滚 N 个文件到 HEAD（reset + checkout pathspec），返回逐文件成功/失败。 */
+  discardFilesBatch(repoPath: string, filePaths: string[]): Promise<BatchFileResult>;
   getFileDiffRaw(repoPath: string, filePath: string, staged: boolean): Promise<string>;
   deleteFile(repoPath: string, filePath: string): Promise<void>;
+  /** 一次性从磁盘删除 N 个文件（并发 unlink），返回逐文件成功/失败。 */
+  deleteFilesBatch(repoPath: string, filePaths: string[]): Promise<BatchFileResult>;
   stashFile(repoPath: string, filePath: string, message?: string): Promise<void>;
   stashFiles(repoPath: string, filePaths: string[], message?: string): Promise<void>;
   createTag(

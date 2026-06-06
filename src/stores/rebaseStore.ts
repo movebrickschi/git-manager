@@ -15,6 +15,7 @@ import { ref, computed, watch } from "vue";
 import { useRepoStore } from "./repoStore";
 import { useBranchStore } from "./branchStore";
 import { commands } from "@/utils/commands";
+import { refreshGit } from "@/composables/useGitRefresh";
 import type {
   CommitInfo,
   RebaseTodoEntry,
@@ -145,12 +146,14 @@ export const useRebaseStore = defineStore("rebase", () => {
       if (result.success) {
         close();
         branchStore.showToast(result.message || "Interactive rebase 完成", "ok");
-        await refreshStatus();
+        // rebase 改写历史/分支位置/工作区，必须刷新 log + 分支 + 文件状态，
+        // 否则提交图与 ahead/behind 箭头会严重滞后。
+        await Promise.all([refreshStatus(), refreshGit()]);
         return;
       }
       // 半成态：dialog 关闭，跳冲突 tab + 显示 toast + 启状态栏轮询
       close();
-      await refreshStatus();
+      await Promise.all([refreshStatus(), refreshGit()]);
       if (result.conflicts.length > 0) {
         branchStore.requestTabSwitch("commit");
         branchStore.showToast(
@@ -224,7 +227,7 @@ export const useRebaseStore = defineStore("rebase", () => {
     if (!repoStore.activeRepo) return;
     try {
       const result = await commands.continueOperation(repoStore.activeRepo.path, "rebase");
-      await refreshStatus();
+      await Promise.all([refreshStatus(), refreshGit()]);
       if (result.success) {
         branchStore.showToast(result.message || "Rebase continue 成功", "ok");
       } else if (result.conflicts.length > 0) {
@@ -248,7 +251,7 @@ export const useRebaseStore = defineStore("rebase", () => {
     if (!repoStore.activeRepo) return;
     try {
       await commands.abortOperation(repoStore.activeRepo.path, "rebase");
-      await refreshStatus();
+      await Promise.all([refreshStatus(), refreshGit()]);
       branchStore.showToast("已 Abort，仓库回到 rebase 前状态", "info");
     } catch (e: unknown) {
       branchStore.showToast(

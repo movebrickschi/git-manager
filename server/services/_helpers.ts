@@ -13,18 +13,25 @@ import type {
   RefInfo,
 } from "../git-service.js";
 
+/**
+ * 历史上的「本地命令」block 超时基数（毫秒）。
+ *
+ * 自从同一仓库的本地 + 联网命令合并为一个共享串行实例后，缓存实例统一使用
+ * REMOTE_GIT_TIMEOUT_MS（见 getOrCreateGit），此常量不再用于 getGit 实例本身，
+ * 仅保留作为：① repo.service clone 的超时基数（GIT_TIMEOUT_MS * 4）；
+ * ② git-timeout.test 的对比基准。
+ */
 export const GIT_TIMEOUT_MS = 30_000;
 
 /**
- * 联网 git 操作（fetch / pull / push）专用的 block 超时（毫秒）。
+ * 缓存 SimpleGit 实例统一使用的 block 超时（毫秒）。
  *
  * simple-git 的 timeout.block 语义是「子进程连续 N 毫秒没有任何 stdout/stderr
- * 输出就 kill 掉并抛 `block timeout reached`」。本地命令用 GIT_TIMEOUT_MS（30s）
- * 足够，但 fetch / pull / push 在认证等待、SSH/TLS 握手、慢网或代理、远端
- * counting objects 等阶段长时间无输出是正常现象，30s 会把进程误杀。
- *
- * 放宽到 120s（与 repo.service 的 clone 一致），既给足联网时间，又保留
- * 「彻底卡死」时的兜底 kill，避免无限挂起。
+ * 输出就 kill 掉并抛 `block timeout reached`」。本地命令正常秒级返回，120s 对其
+ * 无副作用；而 fetch / pull / push 在认证等待、SSH/TLS 握手、慢网或代理、远端
+ * counting objects 等阶段长时间无输出是正常现象，30s 会把进程误杀，故统一放宽到
+ * 120s（与 repo.service 的 clone 一致），既给足联网时间，又保留「彻底卡死」时的
+ * 兜底 kill，避免无限挂起。
  */
 export const REMOTE_GIT_TIMEOUT_MS = 120_000;
 
@@ -134,6 +141,10 @@ const RETRYABLE_PATTERNS = [
   /could not resolve/i,
   /unable to access/i,
   /server side error|service unavailable/i,
+  // index.lock / ref lock 冲突：消除应用自身并发（共享串行实例）后，残留的多是
+  // 「外部 git 进程的短暂持锁」或「上一条命令释放锁的临界窗口」，短退避重试通常能
+  // 等到锁释放。注意：不自动删锁 —— 与 IDEA 一致，自动删会破坏外部正在进行的 git。
+  /cannot lock ref|unable to create.*\.lock|index\.lock|another git process/i,
 ];
 
 export function shouldRetry(e: unknown): boolean {
@@ -175,27 +186,69 @@ export function errStr(e: unknown): string {
   return String(e);
 }
 
+/**
+ * 按 repoPath 缓存的 SimpleGit 实例池。
+ *
+ * 为什么必须缓存复用（而不是每次 new 一个）：simple-git 的命令排队是「按单个实例」
+ * 进行的，串行队列只在同一实例内生效。过去 getGit / getRemoteGit 每次都新建实例，
+ * 导致同一仓库的本地命令（status 轮询 / watcher 触发的 status）与联网命令（pull /
+ * fetch）分属不同实例、各自独立队列，彼此没有任何互斥 —— 后台刷新与手动 Pull 会
+ * 真正并发执行 git 子进程，争抢 `.git/index.lock` 与各 ref 的 `.lock`，表现为
+ * 「git 索引被锁定」。
+ *
+ * 现在同一仓库的所有命令（本地 + 联网）共用同一个实例，配合 maxConcurrentProcesses:1
+ * 形成一条 FIFO 串行队列，等价于 IntelliJ IDEA 对同仓库 git 操作串行化的并发保护。
+ * 不同仓库仍是各自独立实例，互不阻塞。
+ */
+const gitInstances = new Map<string, SimpleGit>();
+
+function instanceKey(repoPath: string): string {
+  return path.resolve(repoPath);
+}
+
+function getOrCreateGit(repoPath: string): SimpleGit {
+  const key = instanceKey(repoPath);
+  let git = gitInstances.get(key);
+  if (!git) {
+    git = simpleGit({
+      baseDir: repoPath,
+      binary: "git",
+      // 同一仓库严格串行：消除应用自身并发争抢 index.lock / ref lock 的根因。
+      maxConcurrentProcesses: 1,
+      // 统一用联网级 block 超时：block 语义是「连续无输出才 kill」，本地命令正常
+      // 秒级返回不受影响；而联网命令（fetch/pull/push）在认证 / 握手 / 慢网期间
+      // 长时间无输出时不会被 30s 误杀（见 REMOTE_GIT_TIMEOUT_MS 说明）。
+      timeout: { block: REMOTE_GIT_TIMEOUT_MS },
+    });
+    gitInstances.set(key, git);
+  }
+  return git;
+}
+
 export function getGit(repoPath: string): SimpleGit {
-  return simpleGit({
-    baseDir: repoPath,
-    binary: "git",
-    maxConcurrentProcesses: 6,
-    timeout: { block: GIT_TIMEOUT_MS },
-  });
+  return getOrCreateGit(repoPath);
 }
 
 /**
- * 联网 git 操作专用工厂：配置与 getGit 完全一致，仅把 block 超时放宽到
- * REMOTE_GIT_TIMEOUT_MS，供 remote.service 的 fetch / pull / push 等联网方法使用，
- * 避免慢网 / 认证等待 / 握手期间长时间无输出被 30s 的 block 超时误杀。
+ * 联网 git 操作工厂。历史上它有独立实例以放宽 block 超时；现已与 getGit 合并为
+ * 同一个缓存实例 —— 这是关键：只有本地命令与联网命令共用同一条串行队列，二者之间
+ * 才有互斥，否则后台 status 仍会与 pull / fetch 并发争锁。保留此命名仅为兼容
+ * remote.service 既有调用点的语义可读性。
  */
 export function getRemoteGit(repoPath: string): SimpleGit {
-  return simpleGit({
-    baseDir: repoPath,
-    binary: "git",
-    maxConcurrentProcesses: 6,
-    timeout: { block: REMOTE_GIT_TIMEOUT_MS },
-  });
+  return getOrCreateGit(repoPath);
+}
+
+/**
+ * 释放缓存的 SimpleGit 实例（仓库被移除 / 关闭时可回收；测试用于隔离）。
+ * 不传 repoPath 则清空全部。
+ */
+export function disposeGitInstances(repoPath?: string): void {
+  if (repoPath) {
+    gitInstances.delete(instanceKey(repoPath));
+  } else {
+    gitInstances.clear();
+  }
 }
 
 export function parseStatusCode(

@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref, watch } from "vue";
 import { useRepoStore } from "./repoStore";
 import { commands } from "@/utils/commands";
+import { refreshGit } from "@/composables/useGitRefresh";
 import type { BranchInfo, MergeResult, Submodule } from "@/utils/commands";
 
 /**
@@ -62,10 +63,16 @@ export const useBranchStore = defineStore("branch", () => {
   // 不动 favorites：星标分支跨仓库共享（产品决策，命名常重叠如 main/develop）
   watch(
     () => repoStore.activeRepo?.path,
-    () => {
+    (newPath) => {
       searchQuery.value = "";
       submodules.value = [];
       submodulesLoading.value = false;
+      // 立即清掉上一个仓库的分支/标签，避免切换瞬间残留显示旧仓库分支再"跳回"（闪烁）。
+      // 新仓库若已有缓存则同步回填（切回已访问仓库不空白）；无缓存则置空，等 loadBranches 拉取。
+      const cached = newPath ? branchCache.get(newPath) : undefined;
+      localBranches.value = cached?.local ?? [];
+      remoteBranches.value = cached?.remote ?? [];
+      tags.value = cached?.tags ?? [];
     }
   );
 
@@ -302,13 +309,15 @@ export const useBranchStore = defineStore("branch", () => {
   async function initSubmodule(path?: string) {
     if (!repoStore.activeRepo) return;
     await commands.initSubmodules(repoStore.activeRepo.path, path ? [path] : undefined);
-    await loadSubmodules();
+    // submodule 变化会反映为父仓库工作区改动，同步刷新文件状态
+    await Promise.all([loadSubmodules(), refreshGit({ status: true, branches: false, log: false })]);
   }
 
   async function updateSubmodule(path?: string) {
     if (!repoStore.activeRepo) return;
     await commands.updateSubmodules(repoStore.activeRepo.path, path ? [path] : undefined);
-    await loadSubmodules();
+    // submodule 变化会反映为父仓库工作区改动，同步刷新文件状态
+    await Promise.all([loadSubmodules(), refreshGit({ status: true, branches: false, log: false })]);
   }
 
   async function syncSubmodule(path?: string) {

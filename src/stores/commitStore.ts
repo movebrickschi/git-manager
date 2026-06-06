@@ -1,10 +1,10 @@
 import { defineStore } from "pinia";
 import { ref, watch } from "vue";
 import { useRepoStore } from "./repoStore";
-import { useBranchStore } from "./branchStore";
 import { commands } from "@/utils/commands";
-import type { FileStatus, StatusResult } from "@/utils/commands";
+import type { FileStatus, StatusResult, BatchFileResult } from "@/utils/commands";
 import { errMsg } from "@/utils/error";
+import { refreshGit } from "@/composables/useGitRefresh";
 import { useAbortable } from "@/composables/useAbortable";
 import { aiBridge } from "@/services/ai";
 import type { AiErrorCode } from "../../shared/ai/types";
@@ -19,7 +19,6 @@ function isAbortError(e: unknown): boolean {
 }
 
 export const useCommitStore = defineStore("commit", () => {
-  const branchStore = useBranchStore();
   const stagedFiles = ref<FileStatus[]>([]);
   const unstagedFiles = ref<FileStatus[]>([]);
   const untrackedFiles = ref<FileStatus[]>([]);
@@ -112,38 +111,18 @@ export const useCommitStore = defineStore("commit", () => {
     await loadStatus();
   }
 
-  async function discardFiles(
-    paths: string[]
-  ): Promise<{ ok: string[]; failed: { path: string; error: string }[] }> {
-    const result = { ok: [] as string[], failed: [] as { path: string; error: string }[] };
-    if (!repoStore.activeRepo || paths.length === 0) return result;
-    const repoPath = repoStore.activeRepo.path;
-    for (const p of paths) {
-      try {
-        await commands.discardFileChanges(repoPath, p);
-        result.ok.push(p);
-      } catch (e: unknown) {
-        result.failed.push({ path: p, error: errMsg(e) });
-      }
-    }
+  async function discardFiles(paths: string[]): Promise<BatchFileResult> {
+    if (!repoStore.activeRepo || paths.length === 0) return { ok: [], failed: [] };
+    // 一次 IPC 批量回滚（后端 pathspec 处理全部），替代逐个文件 N 次 IPC + N 次 git 进程。
+    const result = await commands.discardFilesBatch(repoStore.activeRepo.path, paths);
     await loadStatus();
     return result;
   }
 
-  async function deleteFiles(
-    paths: string[]
-  ): Promise<{ ok: string[]; failed: { path: string; error: string }[] }> {
-    const result = { ok: [] as string[], failed: [] as { path: string; error: string }[] };
-    if (!repoStore.activeRepo || paths.length === 0) return result;
-    const repoPath = repoStore.activeRepo.path;
-    for (const p of paths) {
-      try {
-        await commands.deleteFile(repoPath, p);
-        result.ok.push(p);
-      } catch (e: unknown) {
-        result.failed.push({ path: p, error: errMsg(e) });
-      }
-    }
+  async function deleteFiles(paths: string[]): Promise<BatchFileResult> {
+    if (!repoStore.activeRepo || paths.length === 0) return { ok: [], failed: [] };
+    // 一次 IPC 批量删除（后端并发 unlink），替代逐个文件 N 次 IPC。
+    const result = await commands.deleteFilesBatch(repoStore.activeRepo.path, paths);
     await loadStatus();
     return result;
   }
@@ -155,7 +134,7 @@ export const useCommitStore = defineStore("commit", () => {
     if (messageHistory.value.length > 20) messageHistory.value.pop();
     commitMessage.value = "";
     isAmend.value = false;
-    await Promise.all([loadStatus(), branchStore.loadBranches()]);
+    await refreshGit();
   }
 
   /** 仅提交指定 N 个文件（pathspec），不影响其它 staged 内容；返回新 commit 短 id。 */
@@ -168,7 +147,7 @@ export const useCommitStore = defineStore("commit", () => {
     );
     messageHistory.value.unshift(message.trim());
     if (messageHistory.value.length > 20) messageHistory.value.pop();
-    await Promise.all([loadStatus(), branchStore.loadBranches()]);
+    await refreshGit();
     return head;
   }
 

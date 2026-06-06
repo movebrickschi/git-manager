@@ -5,6 +5,7 @@ import { useI18n } from "vue-i18n";
 import { useCommitStore } from "@/stores/commitStore";
 import { useRepoStore } from "@/stores/repoStore";
 import { useToast } from "@/composables/useToast";
+import { refreshGit } from "@/composables/useGitRefresh";
 import Toolbar from "@/components/common/Toolbar.vue";
 import ToolbarButton from "@/components/common/ToolbarButton.vue";
 import FileTree from "@/components/common/FileTree.vue";
@@ -145,7 +146,8 @@ async function handleCommitAndPush() {
 
 async function onPushConfirmed() {
   showPushDialog.value = false;
-  await commitStore.loadStatus();
+  // 推送后必须刷新分支：ahead/behind 待推送箭头依赖 loadBranches 才会消失。
+  await refreshGit();
 }
 
 function onPushCancelled() {

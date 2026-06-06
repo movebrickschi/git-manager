@@ -1,5 +1,5 @@
 import * as fs from "fs";
-import type { FileStatus, StatusResult } from "../git-service.js";
+import type { BatchFileResult, FileStatus, StatusResult } from "../git-service.js";
 import { safeJoin } from "../utils/path-safe.js";
 import { getGit, parseStatusCode } from "./_helpers.js";
 
@@ -151,6 +151,63 @@ export const statusService = {
   async deleteFile(repoPath: string, filePath: string): Promise<void> {
     const fullPath = safeJoin(repoPath, filePath);
     await fsp.unlink(fullPath);
+  },
+
+  /**
+   * 一次性回滚 N 个文件到 HEAD：快路径用 `git reset HEAD -- p..` + `git checkout -- p..`
+   * （1~2 次 git 进程处理全部，替代前端逐个 IPC）；快路径整体失败时在后端逐个重试，
+   * 精确定位失败文件。返回逐文件 ok/failed，避免一个坏文件拖垮整批。
+   */
+  async discardFilesBatch(repoPath: string, filePaths: string[]): Promise<BatchFileResult> {
+    if (!Array.isArray(filePaths) || filePaths.length === 0) return { ok: [], failed: [] };
+    const git = getGit(repoPath);
+    try {
+      await git.raw(["reset", "HEAD", "--", ...filePaths]).catch(() => {});
+      await git.raw(["checkout", "--", ...filePaths]).catch(async () => {
+        await git.raw(["restore", "--", ...filePaths]);
+      });
+      return { ok: [...filePaths], failed: [] };
+    } catch {
+      const ok: string[] = [];
+      const failed: { path: string; error: string }[] = [];
+      for (const fp of filePaths) {
+        try {
+          await git.raw(["reset", "HEAD", "--", fp]).catch(() => {});
+          await git.raw(["checkout", "--", fp]).catch(async () => {
+            await git.raw(["restore", "--", fp]);
+          });
+          ok.push(fp);
+        } catch (e) {
+          failed.push({ path: fp, error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+      return { ok, failed };
+    }
+  },
+
+  /**
+   * 一次性从磁盘删除 N 个文件（并发 unlink）。文件已不存在（ENOENT）视为删除目标已达成，
+   * 计入 ok；其它错误（权限 / 占用）计入 failed。返回逐文件结果。
+   */
+  async deleteFilesBatch(repoPath: string, filePaths: string[]): Promise<BatchFileResult> {
+    if (!Array.isArray(filePaths) || filePaths.length === 0) return { ok: [], failed: [] };
+    const ok: string[] = [];
+    const failed: { path: string; error: string }[] = [];
+    await Promise.all(
+      filePaths.map(async (fp) => {
+        try {
+          await fsp.unlink(safeJoin(repoPath, fp));
+          ok.push(fp);
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException)?.code === "ENOENT") {
+            ok.push(fp);
+          } else {
+            failed.push({ path: fp, error: e instanceof Error ? e.message : String(e) });
+          }
+        }
+      })
+    );
+    return { ok, failed };
   },
 
   /**

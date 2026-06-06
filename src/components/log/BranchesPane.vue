@@ -9,6 +9,7 @@ import ContextMenu from "@/components/common/ContextMenu.vue";
 import type { MenuItem } from "@/components/common/ContextMenu.vue";
 import type { BranchInfo, Submodule } from "@/utils/commands";
 import { commands } from "@/utils/commands";
+import { refreshGit } from "@/composables/useGitRefresh";
 import { translateGitError } from "@/utils/git-error";
 import { SHORTCUTS, useKeyboardShortcuts } from "@/utils/keyboard";
 import { useUiStore } from "@/stores/uiStore";
@@ -302,9 +303,10 @@ async function resolveDefaultRemote(): Promise<string> {
 }
 
 async function refreshAfterGitOp() {
-  await branchStore.loadBranches();
-  await logStore.loadCommits(true);
-  // submodules 不需要每次都跟 git op 同步刷新（拉取代价较大），仅在 mount 加载
+  // 统一刷新：分支(ahead/behind 箭头) + 提交图 + 工作区文件状态。
+  // 旧实现漏了 loadStatus，导致 push/pull/merge 等操作后本地变更角标滞后。
+  // submodules 不在此同步刷新（拉取代价较大），仅在 mount 加载。
+  await refreshGit();
 }
 
 function clearActionError() {
