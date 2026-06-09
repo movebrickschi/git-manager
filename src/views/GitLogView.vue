@@ -58,6 +58,9 @@ const mergeFilePath = ref("");
 const mergeConflictFiles = ref<string[]>([]);
 
 onMounted(() => {
+  console.log(
+    `[bug-trace] ${performance.now().toFixed(1)} GitLogView.onMounted tab=${activeTab.value} repo=${repoStore.activeRepo?.path ?? "∅"}`
+  );
   if (repoStore.activeRepo) {
     if (activeTab.value === "log") {
       void logStore.loadCommits(true);
@@ -71,7 +74,10 @@ onMounted(() => {
 
 watch(
   () => repoStore.activeRepo?.path,
-  () => {
+  (newPath, oldPath) => {
+    console.log(
+      `[bug-trace] ${performance.now().toFixed(1)} GitLogView.WATCH old=${oldPath ?? "∅"} new=${newPath ?? "∅"} tab=${activeTab.value}`
+    );
     // logStore 内部 watch 会自行 swap per-repo 的 filter（含 branch/author/date/searchText 等）
     selectedFile.value = null;
     diffResult.value = null;

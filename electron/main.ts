@@ -129,6 +129,14 @@ function createWindow() {
     },
   });
 
+  // [诊断] 把 renderer 的 [bug-trace] 日志镜像到主进程终端，便于直接在终端日志中排查偶发竞态，
+  // 且不受 DevTools 页面 reload 清屏影响。仅转发 [bug-trace] 前缀以避免噪音。
+  mainWindow.webContents.on("console-message", (_event, _level, message) => {
+    if (typeof message === "string" && message.startsWith("[bug-trace]")) {
+      console.log(message);
+    }
+  });
+
   if (process.env.VITE_DEV_SERVER_URL) {
     const devUrl = process.env.VITE_DEV_SERVER_URL;
     // dev 下 electron 可能先于 Vite dev server ready 启动；loadURL 失败时短间隔重试，避免白屏。
@@ -239,12 +247,15 @@ ipcMain.handle("system:reveal_in_folder", async (_e, absPath: unknown) => {
   if (!path.isAbsolute(absPath)) {
     throw new Error(`INVALID_PATH: not absolute: ${absPath}`);
   }
+  // Windows 下 shell.showItemInFolder 遇正斜杠路径会静默失效（electron/electron#11617），
+  // 必须先规范化为原生分隔符；mac/Linux 上 path.normalize 保持正斜杠不变。
+  const nativePath = path.normalize(absPath);
   try {
-    await fs.access(absPath);
+    await fs.access(nativePath);
   } catch {
-    throw new Error(`INVALID_PATH: not found: ${absPath}`);
+    throw new Error(`INVALID_PATH: not found: ${nativePath}`);
   }
-  shell.showItemInFolder(absPath);
+  shell.showItemInFolder(nativePath);
 });
 
 for (const spec of COMMANDS) {

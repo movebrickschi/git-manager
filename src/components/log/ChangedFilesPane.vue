@@ -9,7 +9,9 @@ import FileTree from "@/components/common/FileTree.vue";
 import ContextMenu from "@/components/common/ContextMenu.vue";
 import type { MenuItem } from "@/components/common/ContextMenu.vue";
 import type { FileStatus } from "@/utils/commands";
-import { commands } from "@/utils/commands";
+import { commands, platform } from "@/utils/commands";
+import { useToast } from "@/composables/useToast";
+import { errMsg } from "@/utils/error";
 
 const emit = defineEmits<{
   select: [file: FileStatus];
@@ -30,6 +32,7 @@ const treeView = ref(false);
 const loadingCommit = ref(false);
 const contextMenuRef = ref<InstanceType<typeof ContextMenu>>();
 const contextFile = ref<FileStatus | null>(null);
+const { toastMessage, toastVisible, show: showToast } = useToast();
 
 const workingFiles = computed(() => [
   ...commitStore.stagedFiles,
@@ -108,6 +111,40 @@ function onContextMenu(event: MouseEvent, file: FileStatus) {
   contextMenuRef.value?.show(event);
 }
 
+/**
+ * repo.path 是绝对路径（git rev-parse --show-toplevel，全平台返回 POSIX 斜杠），
+ * file.path 相对仓库根，直接以 `/` 拼成绝对路径——Windows 资源管理器/终端同样接受正斜杠。
+ */
+function absPathOf(file: FileStatus): string | null {
+  const root = repoStore.activeRepo?.path;
+  return root ? `${root}/${file.path}` : null;
+}
+
+async function copyPath(file: FileStatus): Promise<void> {
+  const abs = absPathOf(file);
+  if (!abs) return;
+  try {
+    await navigator.clipboard.writeText(abs);
+    showToast("已复制绝对路径");
+  } catch (e: unknown) {
+    showToast(`复制失败：${errMsg(e) || "剪贴板不可用"}`);
+  }
+}
+
+/**
+ * 提交 tab 是历史版本文件：若该文件在工作区已被删/改名，主进程 fs.access 会失败并抛
+ * INVALID_PATH，这里捕获后给 toast 反馈，避免点击无响应。仅 Electron 可用（Web 菜单项已 disable）。
+ */
+async function revealFile(file: FileStatus): Promise<void> {
+  const abs = absPathOf(file);
+  if (!abs) return;
+  try {
+    await platform.revealInFolder(abs);
+  } catch (e: unknown) {
+    showToast(`无法在资源管理器中打开：${errMsg(e)}`);
+  }
+}
+
 const contextMenuItems = computed<MenuItem[]>(() => {
   if (!contextFile.value) return [];
   const file = contextFile.value;
@@ -122,7 +159,12 @@ const contextMenuItems = computed<MenuItem[]>(() => {
     { label: "查看 Diff", action: () => emit("dblclick", file) },
     { label: "Blame / Annotate", action: () => emit("blame", file.path) },
     { separator: true, label: "" },
-    { label: "复制路径", action: () => navigator.clipboard.writeText(file.path) }
+    { label: "复制路径", action: () => void copyPath(file) },
+    {
+      label: "在资源管理器中显示",
+      disabled: !platform.isElectron,
+      action: () => void revealFile(file),
+    }
   );
   if (listMode.value === "commit") {
     items.push(
@@ -215,6 +257,12 @@ const contextMenuItems = computed<MenuItem[]>(() => {
     </div>
 
     <ContextMenu ref="contextMenuRef" :items="contextMenuItems" />
+
+    <Teleport to="body">
+      <Transition name="toast">
+        <div v-if="toastVisible" class="toast">{{ toastMessage }}</div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -287,5 +335,35 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   font-size: 9px;
   font-weight: 600;
   line-height: 1;
+}
+
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-surface-active);
+  border: 1px solid var(--color-border);
+  color: var(--color-foreground);
+  font-size: 12px;
+  padding: 7px 16px;
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  z-index: 9999;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.toast-enter-active,
+.toast-leave-active {
+  transition:
+    opacity 0.2s,
+    transform 0.2s;
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(8px);
 }
 </style>

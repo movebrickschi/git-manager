@@ -48,6 +48,9 @@ watch(
 );
 
 useRepoWatcher((e) => {
+  console.log(
+    `[bug-trace] ${performance.now().toFixed(1)} useRepoWatcher event kind=${e.kind} activeRepo=${repoStore.activeRepo?.path ?? "∅"}`
+  );
   // 用户关闭了自动刷新 → 不处理事件（watcher 也应已关，是双保险）
   if (!settings.autoRefreshOnFsChange) return;
   if (e.kind === "work" || e.kind === "index") {

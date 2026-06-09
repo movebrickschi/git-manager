@@ -15,6 +15,7 @@ import {
   recoverMisdetectedBinaryDiff,
   parseNameStatus,
   parseRefs,
+  errStr,
   LOG_FORMAT,
 } from "./_helpers.js";
 
@@ -126,8 +127,11 @@ function parseLogEntries(raw: string, headBranch: string): CommitInfo[] {
 export const logService = {
   async getLog(repoPath: string, filter: LogFilter): Promise<LogResult> {
     const git = getGit(repoPath);
-    const branchSummary = await git.branch();
-    const headBranch = branchSummary.current;
+    // 仅需当前 HEAD 分支名给 parseRefs 标记 isHead。用轻量 rev-parse（O(1) 读 .git/HEAD）
+    // 取代 git.branch()——后者会枚举所有本地+远程分支，多分支大仓库下明显更慢，且是
+    // getLog 串行队列里排在 git log 之前的额外一跳。detached HEAD 返回 "HEAD"，不会误把
+    // 任何 local 分支标成 head（与 rebase.service 取 HEAD 的方式保持一致）。
+    const headBranch = (await git.revparse(["--abbrev-ref", "HEAD"]).catch(() => "")).trim();
 
     const args: string[] = [
       `--skip=${filter.skip}`,
@@ -136,8 +140,12 @@ export const logService = {
       `--format=${LOG_FORMAT}%x01`,
     ];
 
+    // 未显式选择分支时，只显示当前检出分支（HEAD）的历史，而非 `--all`。
+    // `--all` 会展开 refs/ 下所有引用（含 refs/stash 及其它本地/远程分支），导致日志
+    // 列表混入 stash 提交（On <b>/index on <b>/untracked files on <b>）与无关分支提交；
+    // 用户期望默认看到的是「当前分支的日志」。仍可在左侧分支栏点击分支按 filter.branch 切换。
     if (filter.branch) args.push(filter.branch);
-    else args.push("--all");
+    else args.push("HEAD");
 
     if (filter.author) args.push(`--author=${filter.author}`);
     if (filter.dateFrom) {
@@ -170,7 +178,22 @@ export const logService = {
       args.push(filter.path);
     }
 
-    const raw = await git.raw(["log", ...args]);
+    let raw: string;
+    try {
+      raw = await git.raw(["log", ...args]);
+    } catch (e) {
+      // 空仓库 / 尚无提交的 unborn 分支下 `git log HEAD` 会直接 fatal，而旧的 `--all`
+      // 在空仓库会安静返回空。仅当「未选分支（默认走 HEAD）+ 确属无提交」时吞掉错误返回
+      // 空日志，保持空仓库不报错的既有体验；其余真实错误（坏仓库 / 损坏 ref 等）照常上抛。
+      const noCommitsYet =
+        /does not have any commits yet|bad default revision|ambiguous argument '?HEAD'?|unknown revision|bad revision/i.test(
+          errStr(e)
+        );
+      if (!filter.branch && noCommitsYet) {
+        return { commits: [], graphRows: [] };
+      }
+      throw e;
+    }
     const commits = parseLogEntries(raw, headBranch);
     const graphRows = buildSimpleGraph(commits);
     return { commits, graphRows };

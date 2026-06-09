@@ -101,4 +101,49 @@ describe("logStore.loadCommits — race condition vs repo switching", () => {
     expect(() => logStore.cancelFetchLog()).not.toThrow();
     expect(() => logStore.cancelFetchLog()).not.toThrow();
   });
+
+  it("切回已访问仓库时立即回填缓存的日志（SWR：不空白），再后台刷新替换", async () => {
+    const repoStore = useRepoStore();
+    const logStore = useLogStore();
+
+    const repoAResult = makeLogResult("RA", 3);
+    const repoBResult = makeLogResult("RB", 2);
+    const repoARefreshed = makeLogResult("RA2", 4);
+
+    const mockedGetLog = vi.mocked(commands.getLog);
+
+    repoStore.repos = [
+      { path: "/repos/A", name: "A", currentBranch: "main", color: "#000" },
+      { path: "/repos/B", name: "B", currentBranch: "main", color: "#111" },
+    ];
+    repoStore.activeRepoIndex = 0;
+    // 等初始 watch（null→A）派发完，避免它的 cancelFetchLog 打断下面的首次加载
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // 仓库 A 首次加载 → 写入结果缓存
+    mockedGetLog.mockResolvedValueOnce(repoAResult);
+    await logStore.loadCommits(true);
+    expect(logStore.commits.map((c) => c.id)).toEqual(["RA-0", "RA-1", "RA-2"]);
+
+    // 切到 B 并加载
+    mockedGetLog.mockResolvedValueOnce(repoBResult);
+    repoStore.activeRepoIndex = 1;
+    await Promise.resolve();
+    await Promise.resolve();
+    await logStore.loadCommits(true);
+    expect(logStore.commits.map((c) => c.id)).toEqual(["RB-0", "RB-1"]);
+
+    // 切回 A：watch 同步回填缓存 → commits 立即为 RA（无需等待 getLog 返回）
+    repoStore.activeRepoIndex = 0;
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(logStore.commits.map((c) => c.id)).toEqual(["RA-0", "RA-1", "RA-2"]);
+
+    // 后台刷新（ensureLoaded → loadCommits）拿到新数据后整体替换
+    mockedGetLog.mockResolvedValueOnce(repoARefreshed);
+    logStore.ensureLoaded();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(logStore.commits.map((c) => c.id)).toEqual(["RA2-0", "RA2-1", "RA2-2", "RA2-3"]);
+  });
 });

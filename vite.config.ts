@@ -22,6 +22,10 @@ export default defineConfig({
   clearScreen: false,
   server: {
     port: 5173,
+    watch: {
+      // 诊断/会话状态目录写入不应触发前端整页 reload，否则会清掉 DevTools Console 里的 [bug-trace] 日志，干扰偶发竞态复现。
+      ignored: ["**/.work-resume/**", "**/dist-electron/**", "**/.cursor/**"],
+    },
     proxy: {
       "/api": {
         target: "http://localhost:3847",
