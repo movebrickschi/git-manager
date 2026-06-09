@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import { Splitpanes, Pane } from "splitpanes";
 import "splitpanes/dist/splitpanes.css";
 import { useRepoStore } from "@/stores/repoStore";
@@ -33,6 +33,10 @@ const includeUntracked = ref(true);
 const showRenameDialog = ref(false);
 const renameMessage = ref("");
 const renameTarget = ref<StashEntry | null>(null);
+
+const showRemoveFileDialog = ref(false);
+const removeFileTarget = ref<FileStatus | null>(null);
+const isLastFile = computed(() => stashFiles.value.length <= 1);
 
 const contextMenuRef = ref<InstanceType<typeof ContextMenu>>();
 const contextStash = ref<StashEntry | null>(null);
@@ -189,6 +193,51 @@ function showContextMenuForStash(event: MouseEvent, stash: StashEntry) {
   contextMenuRef.value?.show(event);
 }
 
+function showContextMenuForFile(event: MouseEvent, file: FileStatus) {
+  contextMenuItems.value = [
+    { label: "从搁置中移除", action: () => openRemoveFileDialog(file) },
+  ];
+  contextMenuRef.value?.show(event);
+}
+
+function openRemoveFileDialog(file: FileStatus) {
+  removeFileTarget.value = file;
+  showRemoveFileDialog.value = true;
+}
+
+async function confirmRemoveFile() {
+  if (!repoStore.activeRepo || !selectedStash.value || !removeFileTarget.value) return;
+  const repoPath = repoStore.activeRepo.path;
+  const file = removeFileTarget.value;
+  const stashIndex = selectedStash.value.index;
+  // 在调用前记录，因为后端可能把已清空的 stash 整体 drop
+  const wasLast = stashFiles.value.length <= 1;
+  try {
+    await commands.stashRemoveFile(repoPath, stashIndex, file.path);
+    showRemoveFileDialog.value = false;
+    removeFileTarget.value = null;
+    // 被删文件正被选中 → 清空右栏 diff
+    if (selectedFile.value?.path === file.path) {
+      selectedFile.value = null;
+      diffResult.value = null;
+    }
+    if (wasLast) {
+      // 整个 stash 被删除：重置选中状态
+      selectedStash.value = null;
+      stashFiles.value = [];
+      selectedFile.value = null;
+      diffResult.value = null;
+      showToast(`已移除 ${file.path}，搁置已清空并删除`);
+    } else {
+      stashFiles.value = await commands.getStashFiles(repoPath, stashIndex);
+      showToast(`已从搁置移除 ${file.path}`);
+    }
+    await loadStashes();
+  } catch (e: any) {
+    showToast(`移除失败: ${e.message}`);
+  }
+}
+
 function getStatusLetter(status: FileStatus["status"]): string {
   switch (status) {
     case "added":
@@ -316,11 +365,29 @@ function getStatusClass(status: FileStatus["status"]): string {
               class="file-item"
               :class="{ selected: selectedFile?.path === file.path }"
               @click="selectFile(file)"
+              @contextmenu.prevent="showContextMenuForFile($event, file)"
             >
               <span class="status-letter" :class="getStatusClass(file.status)">
                 {{ getStatusLetter(file.status) }}
               </span>
               <span class="file-path">{{ file.path }}</span>
+              <button
+                class="file-remove-btn"
+                title="从搁置中移除此文件"
+                @click.stop="openRemoveFileDialog(file)"
+              >
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+              </button>
             </div>
           </div>
         </div>
@@ -389,6 +456,34 @@ function getStatusClass(status: FileStatus["status"]): string {
           <div class="modal-footer">
             <button class="modal-btn" @click="showRenameDialog = false">取消</button>
             <button class="modal-btn primary" @click="confirmRename" :disabled="!renameMessage.trim()">确定</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 移除文件二次确认对话框 -->
+    <Teleport to="body">
+      <div
+        v-if="showRemoveFileDialog"
+        class="modal-overlay"
+        @click.self="showRemoveFileDialog = false"
+      >
+        <div class="modal-dialog">
+          <div class="modal-header">
+            <span class="modal-title">移除文件</span>
+            <button class="modal-close" @click="showRemoveFileDialog = false">✕</button>
+          </div>
+          <div class="modal-body">
+            <p class="remove-confirm-text">
+              确定从搁置中移除 <strong>{{ removeFileTarget?.path }}</strong> 吗？此文件的改动将被丢弃，不可恢复。
+            </p>
+            <p v-if="isLastFile" class="remove-confirm-warn">
+              这是该搁置中的最后一个文件，移除后整个搁置将一并删除。
+            </p>
+          </div>
+          <div class="modal-footer">
+            <button class="modal-btn" @click="showRemoveFileDialog = false">取消</button>
+            <button class="modal-btn danger" @click="confirmRemoveFile">移除</button>
           </div>
         </div>
       </div>
@@ -612,6 +707,27 @@ function getStatusClass(status: FileStatus["status"]): string {
   font-size: 12px;
 }
 
+.file-remove-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  color: var(--color-foreground-muted);
+  padding: 2px;
+  border-radius: 3px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.file-item:hover .file-remove-btn {
+  display: flex;
+}
+
+.file-remove-btn:hover {
+  background: var(--color-error, #e05252);
+  color: white;
+}
+
 /* ---- Diff 区域 ---- */
 .diff-content {
   flex: 1;
@@ -732,6 +848,34 @@ function getStatusClass(status: FileStatus["status"]): string {
 
 .modal-btn.primary:hover {
   opacity: 0.9;
+}
+
+.modal-btn.danger {
+  background: var(--color-error, #e05252);
+  color: white;
+  border-color: var(--color-error, #e05252);
+}
+
+.modal-btn.danger:hover {
+  opacity: 0.9;
+}
+
+.remove-confirm-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-foreground);
+}
+
+.remove-confirm-text strong {
+  font-weight: 600;
+}
+
+.remove-confirm-warn {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-error, #e05252);
 }
 
 /* ---- Toast ---- */

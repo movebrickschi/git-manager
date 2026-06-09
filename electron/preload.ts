@@ -84,6 +84,7 @@ const ALLOWED_CHANNELS = new Set<string>([
   "stash_rename",
   "get_stash_files",
   "get_stash_file_diff",
+  "stash_remove_file",
   "get_blame",
   "get_conflict_files",
   "get_conflict_content",

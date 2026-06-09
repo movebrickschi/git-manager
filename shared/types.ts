@@ -428,6 +428,8 @@ export interface Commands {
     index: number,
     filePath: string
   ): Promise<DiffResult>;
+  /** 从指定 stash 永久移除单个文件（重建 stash entry；移空则等价 drop）。 */
+  stashRemoveFile(repoPath: string, index: number, filePath: string): Promise<void>;
   getBlame(repoPath: string, filePath: string, commitId?: string): Promise<BlameInfo>;
   getConflictFiles(repoPath: string): Promise<string[]>;
   getConflictContent(repoPath: string, filePath: string): Promise<ConflictFile>;

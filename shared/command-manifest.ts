@@ -74,6 +74,7 @@ export const COMMANDS = [
   { method: "stashRename", ipc: "stash_rename", http: "/stash/rename", bodyKeys: ["repoPath", "index", "newMessage"] },
   { method: "getStashFiles", ipc: "get_stash_files", http: "/stash/files", bodyKeys: ["repoPath", "index"] },
   { method: "getStashFileDiff", ipc: "get_stash_file_diff", http: "/stash/file-diff", bodyKeys: ["repoPath", "index", "filePath"] },
+  { method: "stashRemoveFile", ipc: "stash_remove_file", http: "/stash/remove-file", bodyKeys: ["repoPath", "index", "filePath"] },
   { method: "getBlame", ipc: "get_blame", http: "/blame", bodyKeys: ["repoPath", "filePath", "commitId"] },
   { method: "getConflictFiles", ipc: "get_conflict_files", http: "/conflict/files", bodyKeys: ["repoPath"] },
   { method: "getConflictContent", ipc: "get_conflict_content", http: "/conflict/content", bodyKeys: ["repoPath", "filePath"] },
