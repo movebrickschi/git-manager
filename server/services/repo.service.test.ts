@@ -15,7 +15,7 @@ import * as path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { redactUrl, repoService } from "./repo.service.js";
+import { normalizeCurrentBranch, redactUrl, repoService } from "./repo.service.js";
 
 const execFile = promisify(execFileCb);
 
@@ -54,6 +54,43 @@ describe("redactUrl", () => {
 
   it("非 string 输入安全转字符串", () => {
     expect(redactUrl(123 as unknown as string)).toBe("123");
+  });
+});
+
+describe("normalizeCurrentBranch", () => {
+  const sha = async (): Promise<string | null> => "abc1234";
+
+  it("正常分支名原样返回", async () => {
+    expect(await normalizeCurrentBranch("main", sha)).toBe("main");
+    expect(await normalizeCurrentBranch("feat/x", sha)).toBe("feat/x");
+  });
+
+  it("空字符串 → (HEAD: sha)", async () => {
+    expect(await normalizeCurrentBranch("", sha)).toBe("(HEAD: abc1234)");
+  });
+
+  it("纯 sha（short / full）→ (HEAD: sha)", async () => {
+    expect(await normalizeCurrentBranch("1a2b3c4", sha)).toBe("(HEAD: abc1234)");
+    expect(await normalizeCurrentBranch("0123456789abcdef0123456789abcdef01234567", sha)).toBe(
+      "(HEAD: abc1234)"
+    );
+  });
+
+  it("(no branch …) porcelain 串 → (HEAD: sha)", async () => {
+    expect(await normalizeCurrentBranch("(no branch)", sha)).toBe("(HEAD: abc1234)");
+    expect(await normalizeCurrentBranch("(no branch, rebasing dev)", sha)).toBe("(HEAD: abc1234)");
+  });
+
+  it("(HEAD detached …) porcelain 串 → (HEAD: sha)", async () => {
+    expect(await normalizeCurrentBranch("(HEAD detached at 1a2b3c4)", sha)).toBe("(HEAD: abc1234)");
+    expect(await normalizeCurrentBranch("(HEAD detached from 1a2b3c4)", sha)).toBe(
+      "(HEAD: abc1234)"
+    );
+  });
+
+  it("unborn 仓库（sha 解析返回 null）→ 保持原值（空串）", async () => {
+    const noSha = async (): Promise<string | null> => null;
+    expect(await normalizeCurrentBranch("", noSha)).toBe("");
   });
 });
 

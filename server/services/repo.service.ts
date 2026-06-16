@@ -17,6 +17,31 @@ export function redactUrl(input: string): string {
   return input.replace(/(\b[a-z][a-z0-9+.-]*:\/\/)[^@/\s]+@/gi, "$1***@");
 }
 
+/**
+ * 把 simple-git `branch().current` 归一化为可显示的分支名。
+ *
+ * “不在分支上”（detached HEAD / rebase / bisect 等）时，simple-git 因版本而异会返回：
+ *  - 空字符串
+ *  - 7-40 位 short/full sha
+ *  - 括号包裹的 git porcelain 串：(no branch) / (no branch, rebasing dev) / (HEAD detached at <sha>) 等
+ * 这些都不是真实分支名，统一包装成 `(HEAD: <短sha>)`，避免前端把 sha 或 porcelain 串误显示成分支名。
+ *
+ * @param rawCurrent simple-git branchSummary.current 原值
+ * @param resolveShortSha 解析 `git rev-parse --short HEAD`（unborn / 失败返回 null）
+ */
+export async function normalizeCurrentBranch(
+  rawCurrent: string,
+  resolveShortSha: () => Promise<string | null>
+): Promise<string> {
+  const looksLikeBareSha = !!rawCurrent && /^[a-f0-9]{7,40}$/i.test(rawCurrent);
+  const looksLikeDetachedMarker = !!rawCurrent && rawCurrent.startsWith("(");
+  if (!rawCurrent || looksLikeBareSha || looksLikeDetachedMarker) {
+    const sha = await resolveShortSha();
+    if (sha) return `(HEAD: ${sha})`;
+  }
+  return rawCurrent;
+}
+
 export const repoService = {
   async openRepo(repoPath: string): Promise<RepoOpenResult> {
     if (typeof repoPath !== "string" || repoPath.trim().length === 0) {
@@ -44,20 +69,17 @@ export const repoService = {
     const rootGit = getGit(rootPath);
     const branchSummary = await rootGit.branch();
 
-    // detached HEAD 下 branchSummary.current 的实际值因 simple-git 版本而异：
-    //  - 部分版本：返回空字符串
-    //  - 部分版本：返回 7-40 位 short/full sha
-    // 都是 detached，需要统一包装成 `(HEAD: sha)` 让前端不会把 sha 误显示为分支名。
-    let currentBranch = branchSummary.current;
-    const looksLikeBareSha = !!currentBranch && /^[a-f0-9]{7,40}$/i.test(currentBranch);
-    if (!currentBranch || looksLikeBareSha) {
+    // detached / rebase / bisect 等“不在分支”状态统一归一成 `(HEAD: <短sha>)`，
+    // 详见 normalizeCurrentBranch（覆盖 空串 / 纯 sha / (no branch…) / (HEAD detached…) 各形态）。
+    const currentBranch = await normalizeCurrentBranch(branchSummary.current, async () => {
       try {
         const sha = (await rootGit.revparse(["--short", "HEAD"])).trim();
-        if (sha) currentBranch = `(HEAD: ${sha})`;
+        return sha || null;
       } catch {
-        // unborn 仓库（无任何 commit）连 HEAD 都没有，保持原值（可能为空字符串）
+        // unborn 仓库（无任何 commit）连 HEAD 都没有 → null，保持原值（可能为空字符串）
+        return null;
       }
-    }
+    });
 
     return {
       path: rootPath,
