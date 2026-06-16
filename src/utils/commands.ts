@@ -1,6 +1,7 @@
 import { createElectronAdapter, createElectronPlatform } from "./electron-adapter";
 import { createWebAdapter, createWebPlatform } from "./web-adapter";
 import { runGitWrite } from "./git-busy";
+import { runNetworkBusy } from "./network-busy";
 import type { CommandMethod } from "../../shared/command-manifest";
 import type { Commands, Platform } from "./types";
 
@@ -75,15 +76,32 @@ const WRITE_COMMANDS = new Set<CommandMethod>([
 ]);
 
 /**
- * 用 Proxy 包裹 adapter：拦截写命令，在调用期间维持 isGitWriting 信号；读命令零开销
- * 透传。一处接入即覆盖全部写操作，无需逐个 store 手动埋点。
+ * 「联网」写命令子集。这些命令额外点亮 isNetworkBusy（见 network-busy.ts），驱动状态栏
+ * 的「联网中…[中止]」指示器——让任意入口（PushDialog / 工具栏 Pull / 分支右键等）发起的
+ * push/pull/fetch 在卡住时都能一键 cancelNetworkOps。第一个参数恒为 repoPath。
+ */
+const NETWORK_COMMANDS = new Set<CommandMethod>([
+  "push", "pull", "forcePull", "fetch", "fetchAll", "fetchBranch", "previewPullConflicts",
+]);
+
+/**
+ * 用 Proxy 包裹 adapter：拦截写命令，在调用期间维持 isGitWriting 信号；联网写命令再额外
+ * 维持 isNetworkBusy（按 repoPath）。读命令零开销透传。一处接入即覆盖全部写操作，无需逐个
+ * store 手动埋点。
  */
 function withGitBusy(adapter: Commands): Commands {
   return new Proxy(adapter, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
       if (typeof value === "function" && WRITE_COMMANDS.has(prop as CommandMethod)) {
+        const method = prop as CommandMethod;
         const fn = value as (...args: unknown[]) => Promise<unknown>;
+        if (NETWORK_COMMANDS.has(method)) {
+          return (...args: unknown[]) => {
+            const repoPath = typeof args[0] === "string" ? args[0] : "";
+            return runGitWrite(() => runNetworkBusy(repoPath, () => fn.apply(target, args)));
+          };
+        }
         return (...args: unknown[]) => runGitWrite(() => fn.apply(target, args));
       }
       return value;

@@ -4,6 +4,8 @@ import { useRepoStore } from "@/stores/repoStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAutoFetch } from "@/composables/useAutoFetch";
 import { useUiStore } from "@/stores/uiStore";
+import { commands } from "@/utils/commands";
+import { isNetworkBusy, networkBusyRepos } from "@/utils/network-busy";
 
 const SystemSettingsDialog = defineAsyncComponent(
   () => import("@/components/common/SystemSettingsDialog.vue")
@@ -20,6 +22,17 @@ const intervalInputRef = ref<HTMLInputElement | null>(null);
 
 function toggleAutoFetch() {
   settings.setAutoFetchEnabled(!settings.autoFetchEnabled);
+}
+
+/** 中止所有在途联网 Git 操作（push/pull/fetch）——请求后端杀掉对应 git 子进程。 */
+async function cancelNetwork() {
+  for (const repo of networkBusyRepos.value) {
+    try {
+      await commands.cancelNetworkOps(repo);
+    } catch {
+      /* 取消失败无需打扰用户 */
+    }
+  }
 }
 
 function manualFetch() {
@@ -87,6 +100,19 @@ const fetchTitle = computed(() => {
         <span class="status-item repo-path">{{ repoStore.activeRepo.path }}</span>
       </template>
       <span v-else class="status-item">未打开仓库</span>
+      <Transition name="progress-capsule">
+        <span v-if="isNetworkBusy" class="net-busy-capsule">
+          <span class="progress-capsule-spinner" />
+          <span class="progress-capsule-label">联网中…</span>
+          <button
+            class="net-cancel-btn"
+            title="中止所有进行中的联网 Git 操作（push / pull / fetch）"
+            @click="cancelNetwork"
+          >
+            中止
+          </button>
+        </span>
+      </Transition>
     </div>
     <div class="status-bar-right">
       <div class="auto-fetch-wrapper">
@@ -456,5 +482,34 @@ const fetchTitle = computed(() => {
 .spin {
   animation: auto-fetch-spin 1.2s linear infinite;
   transform-origin: 50% 50%;
+}
+
+.net-busy-capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 16px;
+  padding: 0 4px 0 7px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-warning, #e0a020) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-warning, #e0a020) 35%, transparent);
+  font-size: 10px;
+  color: var(--color-warning, #e0a020);
+  letter-spacing: 0.2px;
+}
+
+.net-cancel-btn {
+  background: var(--color-error, #e05252);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+.net-cancel-btn:hover {
+  background: color-mix(in srgb, var(--color-error, #e05252) 85%, black);
 }
 </style>
