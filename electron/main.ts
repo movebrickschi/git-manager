@@ -6,6 +6,7 @@ import { COMMANDS } from "../shared/command-manifest";
 import { registerAiHandlers } from "./ai-handlers";
 import { registerReportHandlers } from "./report-handlers";
 import { attachRepoWatcherToWebContents } from "./repo-watcher";
+import { setupElectronCredentialStorage } from "./credential-store";
 
 let mainWindow: BrowserWindow | null = null;
 let repoWatcher: ReturnType<typeof attachRepoWatcherToWebContents> | null = null;
@@ -191,6 +192,7 @@ ipcMain.handle("repo:watch", async (_e, repoPath: unknown) => {
 });
 
 app.whenReady().then(() => {
+  setupElectronCredentialStorage();
   installCsp();
   installAppMenu();
   createWindow();

@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import * as path from "path";
 import type { RepoOpenResult } from "../git-service.js";
 import { getGit, withRetry, GIT_TIMEOUT_MS } from "./_helpers.js";
+import { buildAuthEnvForUrl } from "./credential.service.js";
 
 /**
  * 在日志/错误消息里隐藏 URL 中的 user:pass / token，避免落盘泄露。
@@ -97,6 +98,11 @@ export const repoService = {
       maxConcurrentProcesses: 1,
       timeout: { block: GIT_TIMEOUT_MS * 4 },
     });
+    // 命中应用内缓存凭据时，给 clone 子进程注入 GIT_ASKPASS 透明鉴权；无缓存 / SSH → {}。
+    const extraEnv = await buildAuthEnvForUrl(url.trim());
+    if (Object.keys(extraEnv).length > 0) {
+      git.env({ ...process.env, ...extraEnv } as Record<string, string>);
+    }
     try {
       await withRetry(() => git.clone(url.trim(), target), {
         tries: 3,

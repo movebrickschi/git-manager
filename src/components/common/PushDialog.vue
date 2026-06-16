@@ -4,7 +4,10 @@ import { commands } from "@/utils/commands";
 import { useBranchStore } from "@/stores/branchStore";
 import type { CommitInfo, FileStatus, PushOptions } from "@/utils/commands";
 import { formatTimestamp } from "@/utils/format";
+import { isAuthError } from "../../../shared/git/auth-error";
+import { resolveHost } from "../../../shared/git/host";
 import DivergenceDialog from "./DivergenceDialog.vue";
+import GitCredentialDialog from "./GitCredentialDialog.vue";
 
 const ThreeWayMerge = defineAsyncComponent(() => import("@/components/merge/ThreeWayMerge.vue"));
 
@@ -44,6 +47,12 @@ const divergenceAhead = ref(0);
 
 // Error display
 const pushError = ref("");
+
+// Git 凭据登录（联网鉴权失败时反应式弹出，保存后自动重试）
+const showCredentialDialog = ref(false);
+const credHost = ref("");
+const credUsername = ref("");
+let pendingAuthRetry: (() => Promise<void>) | null = null;
 
 // Conflict resolution state
 const showConflictResolver = ref(false);
@@ -114,7 +123,11 @@ async function doPush() {
     );
     emit("confirm");
   } catch (e: unknown) {
-    pushError.value = pushErrText(e);
+    const msg = e instanceof Error ? e.message : String(e);
+    pushing.value = false;
+    if (await maybePromptCredential(msg, doPush)) return;
+    pushError.value = isCancelled(msg) ? "" : msg;
+    return;
   } finally {
     pushing.value = false;
   }
@@ -137,6 +150,55 @@ function isCancelled(msg: string): boolean {
 function pushErrText(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
   return isCancelled(msg) ? "" : msg;
+}
+
+/** 解析当前远端 HTTPS 主机键，用于预填登录对话框；SSH / 无 remote → ""。 */
+async function resolveRepoHostFrontend(): Promise<string> {
+  try {
+    const remotes = await commands.getRemotes(props.repoPath);
+    const origin =
+      remotes.find((r) => r.name === remoteName.value) ??
+      remotes.find((r) => r.name === "origin") ??
+      remotes[0];
+    return resolveHost(origin?.url || origin?.fetchUrl || "") ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * 若错误信息是鉴权失败，弹 Git 登录对话框并暂存「保存后重试」动作，返回 true（调用方应 return，
+ * 不再以红条展示原始错误）；否则返回 false。
+ */
+async function maybePromptCredential(msg: string, retry: () => Promise<void>): Promise<boolean> {
+  if (!isAuthError(msg)) return false;
+  const host = await resolveRepoHostFrontend();
+  // SSH / 无法解析 host：走密钥体系，应用内 HTTPS 凭据帮不上忙，按普通错误展示。
+  if (!host) return false;
+  let username = "";
+  try {
+    const list = await commands.listGitCredentials();
+    username = list.find((c) => c.host === host)?.username ?? "";
+  } catch {
+    /* 列表失败不阻断登录 */
+  }
+  credHost.value = host;
+  credUsername.value = username;
+  pendingAuthRetry = retry;
+  showCredentialDialog.value = true;
+  return true;
+}
+
+async function onCredentialSaved() {
+  showCredentialDialog.value = false;
+  const retry = pendingAuthRetry;
+  pendingAuthRetry = null;
+  if (retry) await retry();
+}
+
+function onCredentialClose() {
+  showCredentialDialog.value = false;
+  pendingAuthRetry = null;
 }
 
 async function handlePush() {
@@ -180,8 +242,10 @@ async function handlePush() {
     pushing.value = false;
     await doPush();
   } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
     pushing.value = false;
-    pushError.value = pushErrText(e);
+    if (await maybePromptCredential(msg, handlePush)) return;
+    pushError.value = isCancelled(msg) ? "" : msg;
   }
 }
 
@@ -206,6 +270,7 @@ async function handleDivergenceRebase() {
     }
     if (!result.success) {
       pushing.value = false;
+      if (await maybePromptCredential(result.message, handleDivergenceRebase)) return;
       pushError.value = isCancelled(result.message) ? "" : result.message || "拉取失败";
       return;
     }
@@ -238,6 +303,7 @@ async function handleDivergenceMerge() {
     }
     if (!result.success) {
       pushing.value = false;
+      if (await maybePromptCredential(result.message, handleDivergenceMerge)) return;
       pushError.value = isCancelled(result.message) ? "" : result.message || "拉取失败";
       return;
     }
@@ -357,6 +423,16 @@ watch(
     @merge="handleDivergenceMerge"
     @force="handleDivergenceForce"
     @cancel="handleDivergenceCancel"
+  />
+
+  <!-- Git 凭据登录（鉴权失败时弹出，保存后自动重试） -->
+  <GitCredentialDialog
+    :visible="showCredentialDialog"
+    :host="credHost"
+    :username="credUsername"
+    hint="鉴权失败：请输入该主机的用户名与密码 / 访问令牌后重试。"
+    @saved="onCredentialSaved"
+    @close="onCredentialClose"
   />
 
   <!-- Conflict Resolver -->

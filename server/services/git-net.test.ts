@@ -59,6 +59,18 @@ describe("git-net runTracked / cancelNetworkGit", () => {
   it("cancelNetworkGit returns 0 when no op is active", () => {
     expect(cancelNetworkGit(path.join(os.tmpdir(), "gm-net-idle"))).toBe(0);
   });
+
+  it("merges opts.extraEnv into the child process env (GIT_ASKPASS credential passthrough)", async () => {
+    const repo = path.join(os.tmpdir(), "gm-net-env");
+    const out = await runTracked(
+      repo,
+      process.execPath,
+      ["-e", "process.stdout.write(process.env.GM_TEST_VAR || '')"],
+      { extraEnv: { GM_TEST_VAR: "injected-123" } }
+    );
+    expect(out).toBe("injected-123");
+    expect(hasActiveNetworkGit(repo)).toBe(false);
+  });
 });
 
 describe("git-net runNetworkGit", () => {

@@ -45,6 +45,11 @@ export class GitCancelledError extends Error {
 interface RunOpts {
   /** 连续无任何 stdout/stderr 输出超过该毫秒数即视为卡死并 kill（默认 120s）。 */
   blockTimeoutMs?: number;
+  /**
+   * 额外注入子进程的环境变量（在 process.env 之上合并）。
+   * 用于 GIT_ASKPASS 凭据透传（见 credential.service.buildAuthEnv）；不传则零影响。
+   */
+  extraEnv?: Record<string, string>;
 }
 
 /**
@@ -67,7 +72,11 @@ export function runTracked(
     try {
       child = spawn(binary, args, {
         windowsHide: true,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: process.env.GIT_TERMINAL_PROMPT ?? "0" },
+        env: {
+          ...process.env,
+          GIT_TERMINAL_PROMPT: process.env.GIT_TERMINAL_PROMPT ?? "0",
+          ...(opts.extraEnv ?? {}),
+        },
       });
     } catch (e) {
       reject(e instanceof Error ? e : new Error(String(e)));

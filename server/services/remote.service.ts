@@ -9,6 +9,7 @@ import {
   LOG_FORMAT,
 } from "./_helpers.js";
 import { cancelNetworkGit, runNetworkGit } from "./git-net.js";
+import { buildAuthEnv } from "./credential.service.js";
 
 export const remoteService = {
   async push(
@@ -25,7 +26,8 @@ export const remoteService = {
     if (options?.pushTags) args.push("--tags");
     if (remote) args.push(remote);
     if (branch) args.push(branch);
-    await withRetry(() => runNetworkGit(repoPath, args), {
+    const extraEnv = await buildAuthEnv(repoPath);
+    await withRetry(() => runNetworkGit(repoPath, args, { extraEnv }), {
       label: `push ${remote ?? ""} ${branch ?? ""}`,
     });
   },
@@ -86,7 +88,8 @@ export const remoteService = {
       const args: string[] = ["pull"];
       if (rebase) args.push("--rebase");
       if (remote) args.push(remote);
-      await runNetworkGit(repoPath, args);
+      const extraEnv = await buildAuthEnv(repoPath);
+      await runNetworkGit(repoPath, args, { extraEnv });
     } catch (e: unknown) {
       pullErr = e;
     }
@@ -177,7 +180,8 @@ export const remoteService = {
     const git = getRemoteGit(repoPath);
     let fetched: boolean;
     try {
-      await runNetworkGit(repoPath, remote ? ["fetch", remote] : ["fetch"]);
+      const extraEnv = await buildAuthEnv(repoPath);
+      await runNetworkGit(repoPath, remote ? ["fetch", remote] : ["fetch"], { extraEnv });
       fetched = true;
     } catch {
       fetched = false;
@@ -281,7 +285,8 @@ export const remoteService = {
       const args: string[] = ["pull"];
       if (rebase) args.push("--rebase");
       if (remote) args.push(remote);
-      await runNetworkGit(repoPath, args);
+      const extraEnv = await buildAuthEnv(repoPath);
+      await runNetworkGit(repoPath, args, { extraEnv });
     } catch (e: unknown) {
       const conflicts = await getConflictFiles(repoPath);
       if (conflicts.length > 0) {
@@ -328,18 +333,24 @@ export const remoteService = {
   },
 
   async fetch(repoPath: string, remote?: string): Promise<void> {
-    await withRetry(() => runNetworkGit(repoPath, remote ? ["fetch", remote] : ["fetch"]), {
-      label: `fetch ${remote ?? "(default)"}`,
-    });
+    const extraEnv = await buildAuthEnv(repoPath);
+    await withRetry(
+      () => runNetworkGit(repoPath, remote ? ["fetch", remote] : ["fetch"], { extraEnv }),
+      { label: `fetch ${remote ?? "(default)"}` }
+    );
   },
 
   async fetchAll(repoPath: string): Promise<void> {
-    await withRetry(() => runNetworkGit(repoPath, ["fetch", "--all"]), { label: "fetch --all" });
+    const extraEnv = await buildAuthEnv(repoPath);
+    await withRetry(() => runNetworkGit(repoPath, ["fetch", "--all"], { extraEnv }), {
+      label: "fetch --all",
+    });
   },
 
   async fetchBranch(repoPath: string, remote: string, branchName: string): Promise<void> {
+    const extraEnv = await buildAuthEnv(repoPath);
     await withRetry(
-      () => runNetworkGit(repoPath, ["fetch", remote, `${branchName}:${branchName}`]),
+      () => runNetworkGit(repoPath, ["fetch", remote, `${branchName}:${branchName}`], { extraEnv }),
       { label: `fetch ${remote} ${branchName}` }
     );
   },

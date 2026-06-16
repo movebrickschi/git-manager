@@ -15,6 +15,8 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useRepoStore } from "@/stores/repoStore";
 import { commands } from "@/utils/commands";
 import { parseRemoteUrl, type RemoteMeta } from "../../../shared/remote-host";
+import type { GitCredentialInfo } from "../../../shared/types";
+import GitCredentialDialog from "./GitCredentialDialog.vue";
 
 const AiSettingsDialog = defineAsyncComponent(
   () => import("@/components/commit/AiSettingsDialog.vue")
@@ -44,6 +46,7 @@ type Section =
   | "hooks"
   | "ai"
   | "integrations"
+  | "credentials"
   | "about";
 
 const activeSection = ref<Section>("appearance");
@@ -53,6 +56,39 @@ const showCompareDialog = ref(false);
 const showHooksDialog = ref(false);
 const remoteMeta = ref<RemoteMeta | null>(null);
 const remoteLoading = ref(false);
+
+// Git 凭据管理
+const credentials = ref<GitCredentialInfo[]>([]);
+const credLoading = ref(false);
+const credError = ref("");
+const showCredDialog = ref(false);
+
+async function loadCredentials() {
+  credLoading.value = true;
+  credError.value = "";
+  try {
+    credentials.value = await commands.listGitCredentials();
+  } catch (e) {
+    credError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    credLoading.value = false;
+  }
+}
+
+async function deleteCredential(host: string) {
+  if (!window.confirm(`确定要清除主机「${host}」的凭据吗？此操作不可撤销。`)) return;
+  try {
+    await commands.deleteGitCredential(host);
+    await loadCredentials();
+  } catch (e) {
+    credError.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+function onCredentialSaved() {
+  showCredDialog.value = false;
+  void loadCredentials();
+}
 
 const sections: { id: Section; label: string; icon: string }[] = [
   { id: "appearance", label: "外观", icon: "🎨" },
@@ -64,6 +100,7 @@ const sections: { id: Section; label: string; icon: string }[] = [
   { id: "hooks", label: "Git Hooks", icon: "🪝" },
   { id: "ai", label: "AI", icon: "✨" },
   { id: "integrations", label: "集成", icon: "🔗" },
+  { id: "credentials", label: "Git 凭据", icon: "🔑" },
   { id: "about", label: "关于", icon: "ℹ️" },
 ];
 
@@ -86,6 +123,7 @@ watch(
   () => [activeSection.value, repoStore.activeRepo?.path].join("|"),
   () => {
     if (activeSection.value === "integrations") void loadRemoteMeta();
+    if (activeSection.value === "credentials") void loadCredentials();
   }
 );
 
@@ -391,6 +429,39 @@ const appVersion = computed(() => __APP_VERSION__);
             </div>
           </div>
 
+          <!-- Git 凭据 -->
+          <div v-if="activeSection === 'credentials'" class="section">
+            <h3>Git 凭据（HTTPS）</h3>
+            <p>
+              按主机（host）缓存 HTTPS 用户名 + 密码 / 访问令牌，供 push / pull / fetch / clone
+              透明鉴权。Electron 下经 safeStorage 加密保存；列表只显示用户名，<strong>绝不回显
+              Token</strong>。也可在联网鉴权失败时由弹窗自动引导登录。
+            </p>
+            <div class="cred-actions">
+              <button class="ai-open-btn" @click="showCredDialog = true">➕ 添加凭据</button>
+              <button class="ai-open-btn" :disabled="credLoading" @click="loadCredentials">
+                ↻ 刷新
+              </button>
+            </div>
+            <div v-if="credError" class="field-desc cred-err">{{ credError }}</div>
+            <div v-if="credLoading" class="field-desc">读取凭据中…</div>
+            <div v-else-if="credentials.length === 0" class="field-desc">
+              尚未保存任何凭据。
+            </div>
+            <div v-else class="cred-list">
+              <div v-for="c in credentials" :key="c.host" class="cred-item">
+                <div class="cred-item-info">
+                  <span class="cred-item-host">{{ c.host }}</span>
+                  <span class="cred-item-user">{{ c.username || "(无用户名)" }}</span>
+                  <span class="cred-item-badge" :class="{ ok: c.hasToken }">
+                    {{ c.hasToken ? "已配置 Token" : "无 Token" }}
+                  </span>
+                </div>
+                <button class="cred-del-btn" @click="deleteCredential(c.host)">清除</button>
+              </div>
+            </div>
+          </div>
+
           <!-- AI -->
           <div v-if="activeSection === 'ai'" class="section">
             <h3>AI 设置</h3>
@@ -451,6 +522,13 @@ const appVersion = computed(() => __APP_VERSION__);
       :visible="showHooksDialog"
       :repo-path="repoStore.activeRepo.path"
       @update:visible="(v: boolean) => (showHooksDialog = v)"
+    />
+
+    <GitCredentialDialog
+      :visible="showCredDialog"
+      hint="新增 / 更新某主机的 HTTPS 凭据；保存后用于联网 git 透明鉴权。"
+      @saved="onCredentialSaved"
+      @close="showCredDialog = false"
     />
   </div>
 </template>
@@ -714,5 +792,82 @@ const appVersion = computed(() => __APP_VERSION__);
 
 .about-row a:hover {
   text-decoration: underline;
+}
+
+/* Git 凭据 */
+.cred-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.cred-err {
+  color: var(--color-error, #e05252);
+}
+
+.cred-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.cred-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-background);
+}
+
+.cred-item-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.cred-item-host {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--color-foreground);
+}
+
+.cred-item-user {
+  font-size: 12px;
+  color: var(--color-foreground-muted);
+}
+
+.cred-item-badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-foreground-muted) 20%, transparent);
+  color: var(--color-foreground-muted);
+}
+
+.cred-item-badge.ok {
+  background: color-mix(in srgb, #4caf50 18%, transparent);
+  color: #4caf50;
+}
+
+.cred-del-btn {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  background: var(--color-surface-active);
+  color: var(--color-error, #e05252);
+  border: 1px solid color-mix(in srgb, var(--color-error, #e05252) 40%, var(--color-border));
+}
+
+.cred-del-btn:hover {
+  background: color-mix(in srgb, var(--color-error, #e05252) 12%, transparent);
 }
 </style>

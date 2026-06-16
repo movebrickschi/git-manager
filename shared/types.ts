@@ -322,6 +322,18 @@ export interface HookInfo {
   size: number | null;
 }
 
+/**
+ * 应用内 Git HTTPS 凭据的**非敏感**视图：只含 host / 用户名 / 是否存在 token。
+ * 列表 API 绝不回 token 明文（见 server/services/credential.service.ts）。
+ */
+export interface GitCredentialInfo {
+  /** 归一化后的主机键（小写，含非默认端口，如 `gitlab.example.com:8443`）。 */
+  host: string;
+  username: string;
+  /** 是否已为该 host 存过 token（用于 UI 区分「已配置 / 未配置」，不暴露明文）。 */
+  hasToken: boolean;
+}
+
 export interface Commands {
   openRepo(path: string): Promise<RepoOpenResult>;
   getLog(repoPath: string, filter: LogFilter): Promise<LogResult>;
@@ -477,6 +489,16 @@ export interface Commands {
   initSubmodules(repoPath: string, paths?: string[]): Promise<void>;
   updateSubmodules(repoPath: string, paths?: string[]): Promise<void>;
   syncSubmodules(repoPath: string, paths?: string[]): Promise<void>;
+
+  /**
+   * 应用内 Git HTTPS 凭据（按 host 缓存）。仅用于联网 git 经 GIT_ASKPASS 透明鉴权。
+   * - save：保存/覆盖某 host 的用户名 + token（Electron safeStorage 加密 / Web 明文）
+   * - list：列出已存凭据（只回 host/username/hasToken，**绝不回 token**）
+   * - delete：清除某 host 的凭据
+   */
+  saveGitCredential(host: string, username: string, token: string): Promise<void>;
+  listGitCredentials(): Promise<GitCredentialInfo[]>;
+  deleteGitCredential(host: string): Promise<void>;
 }
 
 export interface Platform {

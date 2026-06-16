@@ -105,6 +105,9 @@ export const COMMANDS = [
   { method: "initSubmodules", ipc: "init_submodules", http: "/submodules/init", bodyKeys: ["repoPath", "paths"] },
   { method: "updateSubmodules", ipc: "update_submodules", http: "/submodules/update", bodyKeys: ["repoPath", "paths"] },
   { method: "syncSubmodules", ipc: "sync_submodules", http: "/submodules/sync", bodyKeys: ["repoPath", "paths"] },
+  { method: "saveGitCredential", ipc: "save_git_credential", http: "/credential/save", bodyKeys: ["host", "username", "token"] },
+  { method: "listGitCredentials", ipc: "list_git_credentials", http: "/credential/list", bodyKeys: [] },
+  { method: "deleteGitCredential", ipc: "delete_git_credential", http: "/credential/delete", bodyKeys: ["host"] },
 ] as const satisfies readonly CommandSpec[];
 
 export type CommandMethod = (typeof COMMANDS)[number]["method"];
