@@ -61,6 +61,16 @@ export const useRebaseStore = defineStore("rebase", () => {
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
 
+  /**
+   * Continue / Abort 是否正在执行中。
+   *
+   * 后端同仓库 git 命令是单实例串行队列：若此刻有联网命令（push/pull/fetch）卡在
+   * 队列里，continue/abort 会排队等待、迟迟不返回。没有这个标志时，用户点了按钮却
+   * 看不到任何变化，体感是「点击无反应」。用它把按钮置为「处理中…」并禁用，既给出
+   * 明确反馈，又避免重复点击把多条 --continue/--abort 压进队列。
+   */
+  const actionPending = ref(false);
+
   const isOpen = computed(() => dialog.value.visible);
   const hasRebaseInProgress = computed(() => status.value.inProgress);
 
@@ -230,6 +240,8 @@ export const useRebaseStore = defineStore("rebase", () => {
 
   async function continueRebase(): Promise<void> {
     if (!repoStore.activeRepo) return;
+    if (actionPending.value) return;
+    actionPending.value = true;
     try {
       const result = await commands.continueOperation(repoStore.activeRepo.path, "rebase");
       await Promise.all([refreshStatus(), refreshGit()]);
@@ -249,11 +261,15 @@ export const useRebaseStore = defineStore("rebase", () => {
         `Continue 失败：${e instanceof Error ? e.message : String(e)}`,
         "err"
       );
+    } finally {
+      actionPending.value = false;
     }
   }
 
   async function abortRebase(): Promise<void> {
     if (!repoStore.activeRepo) return;
+    if (actionPending.value) return;
+    actionPending.value = true;
     try {
       await commands.abortOperation(repoStore.activeRepo.path, "rebase");
       await Promise.all([refreshStatus(), refreshGit()]);
@@ -263,12 +279,15 @@ export const useRebaseStore = defineStore("rebase", () => {
         `Abort 失败：${e instanceof Error ? e.message : String(e)}`,
         "err"
       );
+    } finally {
+      actionPending.value = false;
     }
   }
 
   return {
     dialog,
     status,
+    actionPending,
     isOpen,
     hasRebaseInProgress,
     openSequencer,

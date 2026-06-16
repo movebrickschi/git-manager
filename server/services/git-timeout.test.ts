@@ -86,3 +86,12 @@ describe("git instance cache + serialized queue (lock-race fix)", () => {
     expect(simpleGitSpy).toHaveBeenCalledTimes(2);
   });
 });
+
+// Regression guard：无 TTY 时若 git 回退到终端凭据 prompt，子进程会一直阻塞到 block
+// 超时（120s），并把同仓库串行队列堵死——随后的 rebase --continue / --abort 排队不返回，
+// 表现为「点 Continue/Abort 无反应」。导入 _helpers 时必须已把终端凭据交互关掉。
+describe("git 终端凭据交互（防无 TTY 卡死）", () => {
+  it("导入服务层后 GIT_TERMINAL_PROMPT 默认为 '0'", () => {
+    expect(process.env.GIT_TERMINAL_PROMPT).toBe("0");
+  });
+});

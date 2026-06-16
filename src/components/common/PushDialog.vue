@@ -250,21 +250,41 @@ function openConflictResolver(files: string[]) {
 
 async function onConflictResolved() {
   showConflictResolver.value = false;
-  if (pendingPushAfterResolve.value) {
-    pendingPushAfterResolve.value = false;
-    pushing.value = true;
-    pushError.value = "";
-    try {
-      const mergeState = await commands.getMergeState(props.repoPath);
-      if (mergeState.state !== "none") {
-        await commands.continueOperation(props.repoPath, mergeState.state);
+  if (!pendingPushAfterResolve.value) return;
+  pushing.value = true;
+  pushError.value = "";
+  try {
+    const mergeState = await commands.getMergeState(props.repoPath);
+    if (mergeState.state !== "none") {
+      // continueOperation 不会抛错——它按 git 状态机返回 MergeResult。
+      // 旧实现忽略返回值直接 doPush，会在「continue 后仍有下一批冲突 / 停在 edit」
+      // 等 rebase 半成态下执行 push（推送的是变基中途的错误 ref）。必须先判定：
+      const result = await commands.continueOperation(props.repoPath, mergeState.state);
+      if (!result.success) {
+        pushing.value = false;
+        if (result.conflicts.length > 0) {
+          // 多 commit rebase 常见：continue 推进到下一个 commit 又冲突。
+          // 重开三栏继续解决（openConflictResolver 会保持 pendingPushAfterResolve=true），
+          // 解决完会再次回到这里——绝不在半成态下推送。
+          openConflictResolver(result.conflicts);
+        } else {
+          // 停在 edit 步骤或其它未完成：放弃自动推送，交回底部 Rebase 状态栏处理。
+          pendingPushAfterResolve.value = false;
+          pushError.value =
+            result.message ||
+            "变基尚未完成（可能停在 edit 步骤），请在底部 Rebase 状态栏 Continue/Abort 后再推送";
+        }
+        return;
       }
-      pushing.value = false;
-      await doPush();
-    } catch (e: unknown) {
-      pushing.value = false;
-      pushError.value = e instanceof Error ? e.message : String(e);
     }
+    // 到这里：merge/rebase 半成态已彻底结束 → 安全推送
+    pendingPushAfterResolve.value = false;
+    pushing.value = false;
+    await doPush();
+  } catch (e: unknown) {
+    pendingPushAfterResolve.value = false;
+    pushing.value = false;
+    pushError.value = e instanceof Error ? e.message : String(e);
   }
 }
 

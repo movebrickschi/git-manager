@@ -14,6 +14,30 @@ import type {
 } from "../git-service.js";
 
 /**
+ * 关闭 git 的「终端交互式凭据询问」。
+ *
+ * 桌面 GUI 与 Express 后端都没有可用的控制终端（TTY）。当某次 fetch / pull / push
+ * 缺少凭据、且没有可用的 credential.helper 时，git 默认会回退到在终端里 prompt
+ * `Username/Password`，子进程因读不到输入而长时间阻塞——直到 simple-git 的 block
+ * 超时（REMOTE_GIT_TIMEOUT_MS = 120s）才把它杀掉。这正是「推送中…」假死的根因。
+ *
+ * 更严重的连锁反应：同一仓库的所有 git 命令共享一条串行队列（见 getOrCreateGit），
+ * 这条卡死的联网命令会一直占着唯一的队列槽，导致随后的本地恢复命令
+ * （rebase --continue / --abort、merge --abort 等）排在队尾迟迟无法执行——
+ * 用户在 Rebase 状态栏点 Continue / Abort「毫无反应」。
+ *
+ * 设为 "0" 后：缺凭据会**立刻失败**并抛出可读的鉴权错误，串行队列随即释放，
+ * 恢复命令能正常执行。这不会削弱任何**可用**的鉴权路径——GUI 下本就无法用终端
+ * prompt 完成鉴权（那条路径只会卡死），正常鉴权依赖 credential.helper（如
+ * Git Credential Manager）或 SSH 密钥，二者均不受此开关影响。
+ *
+ * 仅在未显式设置时写入，尊重高级用户的环境覆盖。
+ */
+if (!process.env.GIT_TERMINAL_PROMPT) {
+  process.env.GIT_TERMINAL_PROMPT = "0";
+}
+
+/**
  * 历史上的「本地命令」block 超时基数（毫秒）。
  *
  * 自从同一仓库的本地 + 联网命令合并为一个共享串行实例后，缓存实例统一使用

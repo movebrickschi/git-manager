@@ -16,6 +16,7 @@ import { useRebaseStore } from "@/stores/rebaseStore";
 const rebaseStore = useRebaseStore();
 
 const status = computed(() => rebaseStore.status);
+const actionPending = computed(() => rebaseStore.actionPending);
 const conflictCount = computed(() => status.value.conflictFiles.length);
 const stepLabel = computed(() => {
   if (status.value.total > 0) {
@@ -62,7 +63,10 @@ async function onAbort(): Promise<void> {
           · 当前 action：<code>{{ status.currentAction }}</code>
         </span>
       </div>
-      <div v-if="conflictCount > 0" class="rb-status-conflict">
+      <div v-if="actionPending" class="rb-status-hint">
+        ⏳ 正在执行，请稍候…（若上一步联网操作卡住，会在其超时/失败后继续）
+      </div>
+      <div v-else-if="conflictCount > 0" class="rb-status-conflict">
         ⚠ {{ conflictCount }} 个文件冲突，请先解决再 Continue
       </div>
       <div v-else-if="status.currentAction === 'edit'" class="rb-status-hint">
@@ -70,10 +74,18 @@ async function onAbort(): Promise<void> {
       </div>
     </div>
     <div class="rb-status-actions">
-      <button class="rb-status-btn rb-status-btn--primary" @click="onContinue">
-        Continue
+      <button
+        class="rb-status-btn rb-status-btn--primary"
+        :disabled="actionPending"
+        @click="onContinue"
+      >
+        {{ actionPending ? "处理中…" : "Continue" }}
       </button>
-      <button class="rb-status-btn rb-status-btn--danger" @click="onAbort">
+      <button
+        class="rb-status-btn rb-status-btn--danger"
+        :disabled="actionPending"
+        @click="onAbort"
+      >
         Abort
       </button>
     </div>
@@ -158,6 +170,11 @@ async function onAbort(): Promise<void> {
 
 .rb-status-btn:hover {
   background: var(--color-surface-hover);
+}
+
+.rb-status-btn:disabled {
+  opacity: 0.55;
+  cursor: progress;
 }
 
 .rb-status-btn--primary {
