@@ -80,6 +80,11 @@ export interface BranchesResult {
   local: BranchInfo[];
   remote: BranchInfo[];
   tags: string[];
+  /**
+   * 当前 HEAD 的短 sha；正常 / detached 都有，unborn 仓库（无任何 commit）为 null。
+   * 供前端在 detached（无 isHead 本地分支）时把状态栏分支显示为 (HEAD: <sha>)。
+   */
+  headSha: string | null;
 }
 
 export interface FileStatus {

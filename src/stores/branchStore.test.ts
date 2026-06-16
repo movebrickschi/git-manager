@@ -40,6 +40,7 @@ function makeBranches(prefix: string): BranchesResult {
     local: [makeBranch(`${prefix}-main`, true), makeBranch(`${prefix}-dev`)],
     remote: [makeBranch(`origin/${prefix}-main`)],
     tags: [`${prefix}-v1`],
+    headSha: `${prefix}aaaaa`,
   };
 }
 
@@ -199,5 +200,48 @@ describe("branchStore — 多仓库切换时不残留旧仓库分支", () => {
     // 关键：A 的晚到结果不能覆盖当前 B 的 submodule 列表
     expect(branchStore.submodules).toEqual(subB);
     expect(branchStore.submodules.some((s) => s.name.startsWith("A-"))).toBe(false);
+  });
+});
+
+describe("branchStore — loadBranches 回写 activeRepo.currentBranch（消除状态栏 staleness）", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+
+  it("正常分支：回写为 isHead 分支名（覆盖旧的陈旧值）", async () => {
+    const repoStore = useRepoStore();
+    const branchStore = useBranchStore();
+    repoStore.repos = [{ path: "/repos/A", name: "A", currentBranch: "stale-old", color: "#000" }];
+    repoStore.activeRepoIndex = 0;
+
+    vi.mocked(commands.getBranches).mockResolvedValue({
+      local: [makeBranch("dev", true), makeBranch("main")],
+      remote: [],
+      tags: [],
+      headSha: "abc1234",
+    });
+    await branchStore.loadBranches();
+
+    expect(repoStore.activeRepo?.currentBranch).toBe("dev");
+  });
+
+  it("detached（无 isHead 本地分支）：回写为 (HEAD: sha)，清掉残留的 (no branch…)", async () => {
+    const repoStore = useRepoStore();
+    const branchStore = useBranchStore();
+    repoStore.repos = [
+      { path: "/repos/A", name: "A", currentBranch: "(no branch, rebasing dev)", color: "#000" },
+    ];
+    repoStore.activeRepoIndex = 0;
+
+    vi.mocked(commands.getBranches).mockResolvedValue({
+      local: [makeBranch("dev"), makeBranch("main")],
+      remote: [],
+      tags: [],
+      headSha: "abc1234",
+    });
+    await branchStore.loadBranches();
+
+    expect(repoStore.activeRepo?.currentBranch).toBe("(HEAD: abc1234)");
   });
 });

@@ -4,6 +4,7 @@ import { useRepoStore } from "./repoStore";
 import { commands } from "@/utils/commands";
 import { refreshGit } from "@/composables/useGitRefresh";
 import type { BranchInfo, MergeResult, Submodule } from "@/utils/commands";
+import { resolveDisplayBranch } from "../../shared/git/display-branch";
 
 /**
  * 冲突解决信号：IDEA 风格「无冲突静默、有冲突直接开三栏」。
@@ -99,6 +100,12 @@ export const useBranchStore = defineStore("branch", () => {
       localBranches.value = result.local;
       remoteBranches.value = result.remote;
       tags.value = result.tags;
+      // 同步状态栏分支指示器（activeRepo.currentBranch）：refreshGit 不碰它，过去 rebase /
+      // 切 tag 后会残留旧值。这里用同一份 getBranches 结果回写，detached 时显示 (HEAD: <sha>)。
+      const display = resolveDisplayBranch(result.local, result.headSha);
+      if (display && repoStore.activeRepo) {
+        repoStore.activeRepo.currentBranch = display;
+      }
     } finally {
       // 同理：仅当结束的是"当前仓库"的请求才复位 loading，避免旧请求关掉新请求的 loading 态。
       if (repoStore.activeRepo?.path === repoPath) {

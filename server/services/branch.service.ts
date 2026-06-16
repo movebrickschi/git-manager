@@ -160,7 +160,16 @@ export const branchService = {
     } catch {
       // no tags
     }
-    return { local, remote, tags };
+
+    // 当前 HEAD 短 sha：供前端在 detached（无 isHead 本地分支）时显示 (HEAD: <sha>)。
+    let headSha: string | null = null;
+    try {
+      headSha = (await git.revparse(["--short", "HEAD"])).trim() || null;
+    } catch {
+      // unborn 仓库（无任何 commit）连 HEAD 都没有
+    }
+
+    return { local, remote, tags, headSha };
   },
 
   async createBranch(repoPath: string, name: string, startPoint?: string): Promise<void> {
