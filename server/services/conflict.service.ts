@@ -4,7 +4,8 @@ import * as path from "path";
 import { promisify } from "node:util";
 import type { ConflictFile, MergeResult } from "../git-service.js";
 import { safeJoin } from "../utils/path-safe.js";
-import { decodeBufferToText, errStr, getConflictFiles, getGit } from "./_helpers.js";
+import { decodeBufferToText, errStr, getConflictFiles, getGit, withRetry } from "./_helpers.js";
+import { cancelNetworkGit } from "./git-net.js";
 
 const execFile = promisify(execFileCb);
 
@@ -93,16 +94,23 @@ export const conflictService = {
   },
 
   async continueOperation(repoPath: string, op: MergeOp): Promise<MergeResult> {
+    // 抢占式恢复：先终止该仓库在途联网命令（push/pull/fetch）。它已不在 simple-git
+    // 串行队列上（见 git-net），但可能正握着 .git 锁；杀掉后本地 continue 立即可跑。
+    // withRetry 兜住「被杀进程释放锁的临界窗口」——真正的冲突/edit 是 NON_RETRYABLE，
+    // 不会被重试，会原样落入 catch 走 MergeResult 分支。
+    cancelNetworkGit(repoPath);
     const git = getGit(repoPath);
     try {
       if (op === "merge") {
-        await git.raw(["commit", "--no-edit"]);
+        await withRetry(() => git.raw(["commit", "--no-edit"]), { label: "merge --continue" });
       } else if (op === "rebase") {
-        await git.raw(["rebase", "--continue"]);
+        await withRetry(() => git.raw(["rebase", "--continue"]), { label: "rebase --continue" });
       } else if (op === "cherry-pick") {
-        await git.raw(["cherry-pick", "--continue"]);
+        await withRetry(() => git.raw(["cherry-pick", "--continue"]), {
+          label: "cherry-pick --continue",
+        });
       } else {
-        await git.raw(["revert", "--continue"]);
+        await withRetry(() => git.raw(["revert", "--continue"]), { label: "revert --continue" });
       }
       return { success: true, conflicts: [], message: `${op} continued` };
     } catch (e: unknown) {
@@ -116,10 +124,10 @@ export const conflictService = {
   },
 
   async abortOperation(repoPath: string, op: MergeOp): Promise<void> {
+    // 抢占式恢复：先终止在途联网命令，避免它握着 index.lock 让 --abort 排队/失败。
+    cancelNetworkGit(repoPath);
     const git = getGit(repoPath);
-    if (op === "merge") await git.raw(["merge", "--abort"]);
-    else if (op === "rebase") await git.raw(["rebase", "--abort"]);
-    else if (op === "cherry-pick") await git.raw(["cherry-pick", "--abort"]);
-    else await git.raw(["revert", "--abort"]);
+    // git 子命令名与 op 一致（merge/rebase/cherry-pick/revert），可直接拼。
+    await withRetry(() => git.raw([op, "--abort"]), { label: `${op} --abort` });
   },
 };

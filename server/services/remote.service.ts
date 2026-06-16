@@ -8,6 +8,7 @@ import {
   withRetry,
   LOG_FORMAT,
 } from "./_helpers.js";
+import { cancelNetworkGit, runNetworkGit } from "./git-net.js";
 
 export const remoteService = {
   async push(
@@ -16,7 +17,6 @@ export const remoteService = {
     branch?: string,
     options?: PushOptions
   ): Promise<void> {
-    const git = getRemoteGit(repoPath);
     const args: string[] = ["push"];
     // forceWithLease 优先于 force（与 shared/types.ts 的契约一致）
     if (options?.forceWithLease) args.push("--force-with-lease");
@@ -25,7 +25,9 @@ export const remoteService = {
     if (options?.pushTags) args.push("--tags");
     if (remote) args.push(remote);
     if (branch) args.push(branch);
-    await withRetry(() => git.raw(args), { label: `push ${remote ?? ""} ${branch ?? ""}` });
+    await withRetry(() => runNetworkGit(repoPath, args), {
+      label: `push ${remote ?? ""} ${branch ?? ""}`,
+    });
   },
 
   /**
@@ -84,7 +86,7 @@ export const remoteService = {
       const args: string[] = ["pull"];
       if (rebase) args.push("--rebase");
       if (remote) args.push(remote);
-      await git.raw(args);
+      await runNetworkGit(repoPath, args);
     } catch (e: unknown) {
       pullErr = e;
     }
@@ -175,11 +177,7 @@ export const remoteService = {
     const git = getRemoteGit(repoPath);
     let fetched: boolean;
     try {
-      if (remote) {
-        await git.fetch(remote);
-      } else {
-        await git.fetch();
-      }
+      await runNetworkGit(repoPath, remote ? ["fetch", remote] : ["fetch"]);
       fetched = true;
     } catch {
       fetched = false;
@@ -283,7 +281,7 @@ export const remoteService = {
       const args: string[] = ["pull"];
       if (rebase) args.push("--rebase");
       if (remote) args.push(remote);
-      await git.raw(args);
+      await runNetworkGit(repoPath, args);
     } catch (e: unknown) {
       const conflicts = await getConflictFiles(repoPath);
       if (conflicts.length > 0) {
@@ -330,22 +328,28 @@ export const remoteService = {
   },
 
   async fetch(repoPath: string, remote?: string): Promise<void> {
-    const git = getRemoteGit(repoPath);
-    await withRetry(() => (remote ? git.fetch(remote) : git.fetch()), {
+    await withRetry(() => runNetworkGit(repoPath, remote ? ["fetch", remote] : ["fetch"]), {
       label: `fetch ${remote ?? "(default)"}`,
     });
   },
 
   async fetchAll(repoPath: string): Promise<void> {
-    const git = getRemoteGit(repoPath);
-    await withRetry(() => git.fetch(["--all"]), { label: "fetch --all" });
+    await withRetry(() => runNetworkGit(repoPath, ["fetch", "--all"]), { label: "fetch --all" });
   },
 
   async fetchBranch(repoPath: string, remote: string, branchName: string): Promise<void> {
-    const git = getRemoteGit(repoPath);
-    await withRetry(() => git.raw(["fetch", remote, `${branchName}:${branchName}`]), {
-      label: `fetch ${remote} ${branchName}`,
-    });
+    await withRetry(
+      () => runNetworkGit(repoPath, ["fetch", remote, `${branchName}:${branchName}`]),
+      { label: `fetch ${remote} ${branchName}` }
+    );
+  },
+
+  /**
+   * 终止该仓库所有在途联网 git 子进程（push / pull / fetch）。返回被终止的进程数。
+   * 供「取消推送 / 拉取」按钮与 abort/continue 抢占式恢复调用。
+   */
+  async cancelNetworkOps(repoPath: string): Promise<number> {
+    return cancelNetworkGit(repoPath);
   },
 
   async getRemotes(repoPath: string): Promise<RemoteInfo[]> {

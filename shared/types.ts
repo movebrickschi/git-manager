@@ -447,6 +447,8 @@ export interface Commands {
     repoPath: string,
     op: "merge" | "rebase" | "cherry-pick" | "revert"
   ): Promise<void>;
+  /** 终止该仓库所有在途联网 git 子进程（push/pull/fetch），返回被终止的进程数。 */
+  cancelNetworkOps(repoPath: string): Promise<number>;
   cloneRepo(url: string, path: string): Promise<void>;
   getFileContent(repoPath: string, commitId: string, filePath: string): Promise<string>;
   discardFileChanges(repoPath: string, filePath: string): Promise<void>;

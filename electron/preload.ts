@@ -93,6 +93,7 @@ const ALLOWED_CHANNELS = new Set<string>([
   "get_merge_state",
   "continue_operation",
   "abort_operation",
+  "cancel_network_ops",
   "clone_repo",
   "get_file_content",
   "discard_file_changes",

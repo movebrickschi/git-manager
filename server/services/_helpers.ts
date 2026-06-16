@@ -172,6 +172,9 @@ const RETRYABLE_PATTERNS = [
 ];
 
 export function shouldRetry(e: unknown): boolean {
+  // 用户主动取消（cancelNetworkGit）绝不重试——否则重试会重新 spawn 联网子进程，
+  // 让「取消」形同虚设。GitCancelledError 带 cancelled:true 标记。
+  if (e && typeof e === "object" && (e as { cancelled?: unknown }).cancelled === true) return false;
   const msg = e instanceof Error ? e.message : String(e);
   if (NON_RETRYABLE_PATTERNS.some((p) => p.test(msg))) return false;
   return RETRYABLE_PATTERNS.some((p) => p.test(msg));

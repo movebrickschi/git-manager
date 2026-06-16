@@ -114,10 +114,29 @@ async function doPush() {
     );
     emit("confirm");
   } catch (e: unknown) {
-    pushError.value = e instanceof Error ? e.message : String(e);
+    pushError.value = pushErrText(e);
   } finally {
     pushing.value = false;
   }
+}
+
+/** 中止正在进行的联网命令（push/pull/fetch）——请求后端杀掉对应 git 子进程。 */
+async function cancelInflight() {
+  try {
+    await commands.cancelNetworkOps(props.repoPath);
+  } catch {
+    /* 取消本身失败无需再打扰用户 */
+  }
+}
+
+/** 用户主动取消导致的错误（信息含「已取消/cancel」）不当作红色错误条展示。 */
+function isCancelled(msg: string): boolean {
+  return /已取消|cancel/i.test(msg);
+}
+
+function pushErrText(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  return isCancelled(msg) ? "" : msg;
 }
 
 async function handlePush() {
@@ -162,7 +181,7 @@ async function handlePush() {
     await doPush();
   } catch (e: unknown) {
     pushing.value = false;
-    pushError.value = e instanceof Error ? e.message : String(e);
+    pushError.value = pushErrText(e);
   }
 }
 
@@ -187,14 +206,14 @@ async function handleDivergenceRebase() {
     }
     if (!result.success) {
       pushing.value = false;
-      pushError.value = result.message || "拉取失败";
+      pushError.value = isCancelled(result.message) ? "" : result.message || "拉取失败";
       return;
     }
     pushing.value = false;
     await doPush();
   } catch (e: unknown) {
     pushing.value = false;
-    pushError.value = e instanceof Error ? e.message : String(e);
+    pushError.value = pushErrText(e);
   }
 }
 
@@ -219,14 +238,14 @@ async function handleDivergenceMerge() {
     }
     if (!result.success) {
       pushing.value = false;
-      pushError.value = result.message || "拉取失败";
+      pushError.value = isCancelled(result.message) ? "" : result.message || "拉取失败";
       return;
     }
     pushing.value = false;
     await doPush();
   } catch (e: unknown) {
     pushing.value = false;
-    pushError.value = e instanceof Error ? e.message : String(e);
+    pushError.value = pushErrText(e);
   }
 }
 
@@ -284,7 +303,7 @@ async function onConflictResolved() {
   } catch (e: unknown) {
     pendingPushAfterResolve.value = false;
     pushing.value = false;
-    pushError.value = e instanceof Error ? e.message : String(e);
+    pushError.value = pushErrText(e);
   }
 }
 
@@ -494,7 +513,8 @@ watch(
 
         <!-- Footer -->
         <div class="push-footer">
-          <button class="push-btn" :disabled="pushing" @click="handleClose">取消</button>
+          <button v-if="pushing" class="push-btn" @click="cancelInflight">中止</button>
+          <button v-else class="push-btn" @click="handleClose">取消</button>
           <button
             class="push-btn primary"
             :class="{ 'push-btn-danger': optForce }"

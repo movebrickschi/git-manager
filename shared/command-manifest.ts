@@ -83,6 +83,7 @@ export const COMMANDS = [
   { method: "getMergeState", ipc: "get_merge_state", http: "/merge-state", bodyKeys: ["repoPath"] },
   { method: "continueOperation", ipc: "continue_operation", http: "/merge-op/continue", bodyKeys: ["repoPath", "op"] },
   { method: "abortOperation", ipc: "abort_operation", http: "/merge-op/abort", bodyKeys: ["repoPath", "op"] },
+  { method: "cancelNetworkOps", ipc: "cancel_network_ops", http: "/net/cancel", bodyKeys: ["repoPath"] },
   { method: "cloneRepo", ipc: "clone_repo", http: "/clone", bodyKeys: ["url", "path"] },
   { method: "getFileContent", ipc: "get_file_content", http: "/file/content", bodyKeys: ["repoPath", "commitId", "filePath"] },
   { method: "discardFileChanges", ipc: "discard_file_changes", http: "/file/discard", bodyKeys: ["repoPath", "filePath"] },
