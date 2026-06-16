@@ -7,7 +7,7 @@ import { useI18n } from "vue-i18n";
 import { useCommitStore } from "@/stores/commitStore";
 import { useFilterStore } from "@/stores/filterStore";
 import { useRepoStore } from "@/stores/repoStore";
-import { commands, platform } from "@/utils/commands";
+import { commands } from "@/utils/commands";
 import type { DiffResult, FileStatus } from "@/utils/commands";
 import DiffViewer from "@/components/diff/DiffViewer.vue";
 import ContextMenu from "@/components/common/ContextMenu.vue";
@@ -15,6 +15,7 @@ import type { MenuItem } from "@/components/common/ContextMenu.vue";
 import PushDialog from "@/components/common/PushDialog.vue";
 import AiSettingsDialog from "@/components/commit/AiSettingsDialog.vue";
 import { errMsg } from "@/utils/error";
+import { revealOrCopyPath } from "@/utils/reveal";
 import { refreshGit } from "@/composables/useGitRefresh";
 import { useBulkActions } from "@/composables/useBulkActions";
 import { useConfirmDialog } from "@/composables/useConfirmDialog";
@@ -678,11 +679,7 @@ function handleCopyPath(): void {
 async function handleRevealInFolder(): Promise<void> {
   if (!contextFile.value || !repoStore.activeRepo) return;
   const absPath = `${repoStore.activeRepo.path}/${contextFile.value.path}`;
-  try {
-    await platform.revealInFolder(absPath);
-  } catch (e: unknown) {
-    showToast(`无法在资源管理器中打开: ${errMsg(e)}`);
-  }
+  await revealOrCopyPath(absPath, showToast);
 }
 
 /**
@@ -841,7 +838,6 @@ const contextMenuItems = computed<MenuItem[]>(() => {
     items.push({ label: "复制路径", action: handleCopyPath });
     items.push({
       label: "在资源管理器中显示",
-      disabled: !platform.isElectron,
       action: handleRevealInFolder,
     });
   }

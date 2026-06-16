@@ -9,9 +9,10 @@ import FileTree from "@/components/common/FileTree.vue";
 import ContextMenu from "@/components/common/ContextMenu.vue";
 import type { MenuItem } from "@/components/common/ContextMenu.vue";
 import type { FileStatus } from "@/utils/commands";
-import { commands, platform } from "@/utils/commands";
+import { commands } from "@/utils/commands";
 import { useToast } from "@/composables/useToast";
 import { errMsg } from "@/utils/error";
+import { revealOrCopyPath } from "@/utils/reveal";
 
 const emit = defineEmits<{
   select: [file: FileStatus];
@@ -138,11 +139,7 @@ async function copyPath(file: FileStatus): Promise<void> {
 async function revealFile(file: FileStatus): Promise<void> {
   const abs = absPathOf(file);
   if (!abs) return;
-  try {
-    await platform.revealInFolder(abs);
-  } catch (e: unknown) {
-    showToast(`无法在资源管理器中打开：${errMsg(e)}`);
-  }
+  await revealOrCopyPath(abs, showToast);
 }
 
 const contextMenuItems = computed<MenuItem[]>(() => {
@@ -162,7 +159,6 @@ const contextMenuItems = computed<MenuItem[]>(() => {
     { label: "复制路径", action: () => void copyPath(file) },
     {
       label: "在资源管理器中显示",
-      disabled: !platform.isElectron,
       action: () => void revealFile(file),
     }
   );
