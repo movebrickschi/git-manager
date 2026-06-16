@@ -1,4 +1,4 @@
-import type { GraphRow, GraphEdge } from "./commands";
+import type { GraphRow } from "./commands";
 
 const GRAPH_COLORS = [
   "var(--color-graph-0)",

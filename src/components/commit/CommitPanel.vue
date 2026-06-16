@@ -8,7 +8,6 @@ import { useToast } from "@/composables/useToast";
 import { refreshGit } from "@/composables/useGitRefresh";
 import Toolbar from "@/components/common/Toolbar.vue";
 import ToolbarButton from "@/components/common/ToolbarButton.vue";
-import FileTree from "@/components/common/FileTree.vue";
 import PushDialog from "@/components/common/PushDialog.vue";
 import AiSettingsDialog from "@/components/commit/AiSettingsDialog.vue";
 import type { FileStatus } from "@/utils/commands";

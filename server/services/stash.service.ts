@@ -218,7 +218,7 @@ export const stashService = {
     const baseSha = (await gitRaw(repoPath, ["rev-parse", `${stashRef}^1`])).trim();
     const workCommit = (await gitRaw(repoPath, ["rev-parse", stashRef])).trim();
     const indexCommit = (await gitRaw(repoPath, ["rev-parse", `${stashRef}^2`])).trim();
-    let untrackedCommit: string | null = null;
+    let untrackedCommit: string | null;
     try {
       const u = (await gitRaw(repoPath, ["rev-parse", "--verify", "-q", `${stashRef}^3`])).trim();
       untrackedCommit = u || null;

@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from "vue";
+import { ref, computed, watch } from "vue";
 import { useCommitStore } from "@/stores/commitStore";
 import { useRepoStore } from "@/stores/repoStore";
 import { useFilterStore } from "@/stores/filterStore";
 import { commands } from "@/utils/commands";
 import type { FileStatus, DiffResult } from "@/utils/commands";
 import DiffViewer from "@/components/diff/DiffViewer.vue";
-import Toolbar from "@/components/common/Toolbar.vue";
 import ToolbarButton from "@/components/common/ToolbarButton.vue";
 import ContextMenu from "@/components/common/ContextMenu.vue";
 import type { MenuItem } from "@/components/common/ContextMenu.vue";

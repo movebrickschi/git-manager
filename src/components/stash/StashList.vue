@@ -3,8 +3,6 @@ import { ref, computed, onMounted, watch } from "vue";
 import { Splitpanes, Pane } from "splitpanes";
 import "splitpanes/dist/splitpanes.css";
 import { useRepoStore } from "@/stores/repoStore";
-import Toolbar from "@/components/common/Toolbar.vue";
-import ToolbarButton from "@/components/common/ToolbarButton.vue";
 import ContextMenu from "@/components/common/ContextMenu.vue";
 import DiffViewer from "@/components/diff/DiffViewer.vue";
 import type { MenuItem } from "@/components/common/ContextMenu.vue";

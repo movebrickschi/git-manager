@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { computed, ref } from "vue";
+import { ref } from "vue";
 import { compilePatterns, type IgnoreMatcher } from "@/utils/ignore-matcher";
 
 const STORAGE_KEY = "git-manager:change-filters";
