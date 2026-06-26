@@ -33,6 +33,19 @@ export const remoteService = {
   },
 
   /**
+   * 删除远程分支：`git push <remote> --delete <name>`。
+   * 联网 + 破坏性（远端立即丢失该分支），调用方 UI 必须先二次确认。
+   * git 会同步删除本地对应的 remote-tracking ref，前端 loadBranches 后即消失。
+   */
+  async deleteRemoteBranch(repoPath: string, remote: string, name: string): Promise<void> {
+    const extraEnv = await buildAuthEnv(repoPath);
+    await withRetry(
+      () => runNetworkGit(repoPath, ["push", remote, "--delete", name], { extraEnv }),
+      { label: `push ${remote} --delete ${name}` }
+    );
+  },
+
+  /**
    * Smart Pull —— 仿 IntelliJ IDEA「Update Project (Stash)」默认行为。
    *
    * 流程：

@@ -56,6 +56,7 @@ const PATTERN_MAP: Array<[RegExp, string]> = [
   [/fatal: not a git repository/i, "不是 git 仓库"],
   [/destination path .* already exists and is not an empty directory/i, "目标目录已存在且不为空"],
   [/remote rejected/i, "远端拒绝了推送"],
+  [/not fully merged/i, "分支尚未完全合并，删除会丢失其独有提交（可选择强制删除）"],
   [/HEAD detached/i, "当前处于游离 HEAD 状态"],
   [/early eof/i, "网络中断（git 提前 EOF）"],
   [/timeout|timed out/i, "操作超时"],

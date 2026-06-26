@@ -263,6 +263,12 @@ export const useBranchStore = defineStore("branch", () => {
     await loadBranches();
   }
 
+  async function deleteRemoteBranch(remote: string, name: string) {
+    if (!repoStore.activeRepo) return;
+    await commands.deleteRemoteBranch(repoStore.activeRepo.path, remote, name);
+    await loadBranches();
+  }
+
   async function renameBranch(oldName: string, newName: string) {
     if (!repoStore.activeRepo) return;
     await commands.renameBranch(repoStore.activeRepo.path, oldName, newName);
@@ -368,6 +374,7 @@ export const useBranchStore = defineStore("branch", () => {
     checkoutBranch,
     forceCheckout,
     deleteBranch,
+    deleteRemoteBranch,
     renameBranch,
     mergeBranch,
     createTag,

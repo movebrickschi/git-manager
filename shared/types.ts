@@ -358,6 +358,8 @@ export interface Commands {
     dirtyFiles: string[]
   ): Promise<{ wouldConflict: string[]; safe: string[]; untrackedConflict: string[] }>;
   deleteBranch(repoPath: string, name: string, force: boolean): Promise<void>;
+  /** 删除远程分支（`git push <remote> --delete <name>`）。联网 + 破坏性，调用方须先二次确认。 */
+  deleteRemoteBranch(repoPath: string, remote: string, name: string): Promise<void>;
   renameBranch(repoPath: string, oldName: string, newName: string): Promise<void>;
   mergeBranch(repoPath: string, name: string): Promise<MergeResult>;
   rebaseBranch(repoPath: string, upstream: string): Promise<MergeResult>;

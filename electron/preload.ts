@@ -32,6 +32,7 @@ const ALLOWED_CHANNELS = new Set<string>([
   "smart_checkout_branch",
   "preview_checkout_conflicts",
   "delete_branch",
+  "delete_remote_branch",
   "rename_branch",
   "merge_branch",
   "rebase_branch",

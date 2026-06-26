@@ -752,6 +752,8 @@ const contextMenuItems = computed<MenuItem[]>(() => {
         label: branchStore.favorites.includes(branch.name) ? "取消收藏" : "收藏",
         action: () => branchStore.toggleFavorite(branch.name),
       },
+      { separator: true, label: "" },
+      { label: "删除远程分支…", action: () => handleDeleteRemoteBranch(branch) },
     ];
   }
 
@@ -841,7 +843,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   });
   items.push({
     label: "删除(D)",
-    action: () => branchStore.deleteBranch(branch.name),
+    action: () => handleDeleteBranch(branch),
     disabled: isHead,
   });
 
@@ -987,6 +989,80 @@ async function onRenameConfirmed() {
     actionError.value = e instanceof Error ? e.message : String(e);
   } finally {
     actionLoading.value = false;
+  }
+}
+
+/** git branch -d 删除未合并分支会报 "not fully merged"，据此提示是否强制删除。 */
+function isNotFullyMergedError(e: unknown): boolean {
+  const msg =
+    e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e ?? "");
+  return /not fully merged/i.test(msg);
+}
+
+/**
+ * 删除本地分支：二次确认 → git branch -d；未合并失败时再问是否强制 git branch -D。
+ * 旧实现直接裸调 branchStore.deleteBranch，无 await/无 catch/无刷新，未合并分支删除
+ * 静默失败被用户感知为"删除功能失效"。
+ */
+async function handleDeleteBranch(branch: BranchInfo) {
+  if (branch.isHead) return;
+  if (!window.confirm(`确认删除本地分支 '${branch.name}'？`)) return;
+  clearActionError();
+  actionLoading.value = true;
+  ui.startProgress(`删除分支 ${branch.name}…`);
+  try {
+    await branchStore.deleteBranch(branch.name);
+    await refreshAfterGitOp();
+    ui.showToast(`已删除分支 '${branch.name}'`);
+  } catch (e: unknown) {
+    if (isNotFullyMergedError(e)) {
+      if (
+        window.confirm(
+          `分支 '${branch.name}' 尚未完全合并，删除将丢失其独有提交。\n确定强制删除（git branch -D）吗？`
+        )
+      ) {
+        try {
+          await branchStore.deleteBranch(branch.name, true);
+          await refreshAfterGitOp();
+          ui.showToast(`已强制删除分支 '${branch.name}'`);
+        } catch (e2: unknown) {
+          actionError.value = friendlyErr(e2);
+        }
+      }
+    } else {
+      actionError.value = friendlyErr(e);
+    }
+  } finally {
+    actionLoading.value = false;
+    ui.stopProgress();
+  }
+}
+
+/** 删除远程分支：git push <remote> --delete <branch>。联网 + 破坏性，先二次确认。 */
+async function handleDeleteRemoteBranch(branch: BranchInfo) {
+  const parsed = parseRemoteRef(branch.name);
+  if (!parsed) {
+    actionError.value = `无法解析远程分支：${branch.name}`;
+    return;
+  }
+  if (
+    !window.confirm(
+      `确认删除远程分支 '${branch.name}'？\n该操作会向 '${parsed.remote}' 推送 --delete，远端将立即丢失此分支，不可撤销。`
+    )
+  )
+    return;
+  clearActionError();
+  actionLoading.value = true;
+  ui.startProgress(`删除远程分支 ${branch.name}…`);
+  try {
+    await branchStore.deleteRemoteBranch(parsed.remote, parsed.branch);
+    await refreshAfterGitOp();
+    ui.showToast(`已删除远程分支 '${branch.name}'`);
+  } catch (e: unknown) {
+    actionError.value = friendlyErr(e);
+  } finally {
+    actionLoading.value = false;
+    ui.stopProgress();
   }
 }
 

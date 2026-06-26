@@ -51,7 +51,7 @@ const isElectron = typeof window !== "undefined" && !!window.electronAPI;
 const WRITE_COMMANDS = new Set<CommandMethod>([
   // 分支 / 提交历史变更
   "createBranch", "checkoutBranch", "forceCheckoutBranch", "smartCheckoutBranch",
-  "deleteBranch", "renameBranch", "mergeBranch", "rebaseBranch", "rebaseAutosquash",
+  "deleteBranch", "deleteRemoteBranch", "renameBranch", "mergeBranch", "rebaseBranch", "rebaseAutosquash",
   "cherryPick", "cherryPickRange", "revertCommit", "resetToCommit", "squashCommits",
   "startInteractiveRebase",
   // 暂存区 / 工作区
@@ -82,6 +82,7 @@ const WRITE_COMMANDS = new Set<CommandMethod>([
  */
 const NETWORK_COMMANDS = new Set<CommandMethod>([
   "push", "pull", "forcePull", "fetch", "fetchAll", "fetchBranch", "previewPullConflicts",
+  "deleteRemoteBranch",
 ]);
 
 /**

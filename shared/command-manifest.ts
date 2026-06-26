@@ -22,6 +22,7 @@ export const COMMANDS = [
   { method: "smartCheckoutBranch", ipc: "smart_checkout_branch", http: "/branch/checkout-smart", bodyKeys: ["repoPath", "name"] },
   { method: "previewCheckoutConflicts", ipc: "preview_checkout_conflicts", http: "/branch/checkout-preview", bodyKeys: ["repoPath", "branch", "dirtyFiles"] },
   { method: "deleteBranch", ipc: "delete_branch", http: "/branch/delete", bodyKeys: ["repoPath", "name", "force"] },
+  { method: "deleteRemoteBranch", ipc: "delete_remote_branch", http: "/branch/delete-remote", bodyKeys: ["repoPath", "remote", "name"] },
   { method: "renameBranch", ipc: "rename_branch", http: "/branch/rename", bodyKeys: ["repoPath", "oldName", "newName"] },
   { method: "mergeBranch", ipc: "merge_branch", http: "/branch/merge", bodyKeys: ["repoPath", "name"] },
   { method: "rebaseBranch", ipc: "rebase_branch", http: "/branch/rebase", bodyKeys: ["repoPath", "upstream"] },
