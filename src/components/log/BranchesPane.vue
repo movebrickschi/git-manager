@@ -62,6 +62,7 @@ const busyBranches = ref<Set<string>>(new Set());
 const showPushDialog = ref(false);
 const pushDialogRemote = ref<string | undefined>(undefined);
 const pushDialogBranch = ref<string | undefined>(undefined);
+const pushBusyBranch = ref<string | undefined>(undefined);
 
 // 冲突解决弹窗
 const showConflictDialog = ref(false);
@@ -425,6 +426,18 @@ async function onPushConfirmed() {
 
 function onPushCancelled() {
   showPushDialog.value = false;
+}
+
+/** PushDialog 推送中状态联动：在推送目标分支（或当前 HEAD）条目显示 spinner。 */
+function onPushBusy(busy: boolean) {
+  if (busy) {
+    pushBusyBranch.value =
+      pushDialogBranch.value ?? branchStore.localBranches.find((b) => b.isHead)?.name;
+    setBranchBusy(pushBusyBranch.value, true);
+  } else {
+    setBranchBusy(pushBusyBranch.value, false);
+    pushBusyBranch.value = undefined;
+  }
 }
 
 async function fetchForRemoteBranch(fullName: string) {
@@ -1840,6 +1853,7 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
       :branch="pushDialogBranch"
       @confirm="onPushConfirmed"
       @close="onPushCancelled"
+      @busy="onPushBusy"
     />
 
     <!-- 强制拉取二次确认 -->

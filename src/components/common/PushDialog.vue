@@ -23,6 +23,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: [];
   confirm: [];
+  busy: [value: boolean];
 }>();
 
 const branchStore = useBranchStore();
@@ -67,6 +68,9 @@ watch(optForce, (v) => {
 watch(optForceWithLease, (v) => {
   if (v) optForce.value = false;
 });
+
+// 推送进行中状态回传父组件，用于在对应分支条目显示 spinner
+watch(pushing, (v) => emit("busy", v));
 
 const remoteName = computed(() => props.remote ?? "origin");
 const branchName = computed(() => props.branch ?? props.targetBranch ?? "");
