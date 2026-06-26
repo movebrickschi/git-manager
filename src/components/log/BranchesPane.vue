@@ -55,6 +55,8 @@ const selectedSidebarBranch = ref<{
 
 const actionLoading = ref(false);
 const actionError = ref("");
+/** 正在执行拉取/更新的分支名集合 —— 用于在分支条目图标位显示 loading spinner。 */
+const busyBranches = ref<Set<string>>(new Set());
 
 // 推送确认弹框
 const showPushDialog = ref(false);
@@ -221,6 +223,8 @@ async function handleForcePullConfirm() {
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
+  const forceBranch = forceConfirmBranch.value;
+  setBranchBusy(forceBranch, true);
   ui.startProgress("强制拉取中…");
   try {
     const remote = await resolveDefaultRemote();
@@ -237,6 +241,7 @@ async function handleForcePullConfirm() {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
+    setBranchBusy(forceBranch, false);
     ui.stopProgress();
   }
 }
@@ -313,11 +318,26 @@ function clearActionError() {
   actionError.value = "";
 }
 
+/** 切换某分支的"拉取中"状态。替换 Set 引用以确保模板响应式刷新。 */
+function setBranchBusy(name: string | undefined, busy: boolean) {
+  if (!name) return;
+  const next = new Set(busyBranches.value);
+  if (busy) next.add(name);
+  else next.delete(name);
+  busyBranches.value = next;
+}
+
+function isBranchBusy(name: string): boolean {
+  return busyBranches.value.has(name);
+}
+
 async function handleFetch() {
   const path = repoStore.activeRepo?.path;
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
+  const fetchTarget = selectedSidebarBranch.value?.name;
+  setBranchBusy(fetchTarget, true);
   ui.startProgress("Fetch 中…");
   try {
     if (selectedSidebarBranch.value?.kind === "remote") {
@@ -336,6 +356,7 @@ async function handleFetch() {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
+    setBranchBusy(fetchTarget, false);
     ui.stopProgress();
   }
 }
@@ -346,6 +367,8 @@ async function handlePull() {
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
+  const headName = headBranch.value?.name;
+  setBranchBusy(headName, true);
   ui.startProgress("拉取中…");
   try {
     const head = headBranch.value;
@@ -373,6 +396,7 @@ async function handlePull() {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
+    setBranchBusy(headName, false);
     ui.stopProgress();
   }
 }
@@ -408,6 +432,7 @@ async function fetchForRemoteBranch(fullName: string) {
   if (!parsed) return;
   clearActionError();
   actionLoading.value = true;
+  setBranchBusy(fullName, true);
   try {
     await commands.fetch(path, parsed.remote);
     await refreshAfterGitOp();
@@ -415,6 +440,7 @@ async function fetchForRemoteBranch(fullName: string) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
+    setBranchBusy(fullName, false);
   }
 }
 
@@ -423,6 +449,7 @@ async function pullForLocalBranch(branch: BranchInfo) {
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
+  setBranchBusy(branch.name, true);
   ui.startProgress(`拉取 ${branch.name}…`);
   try {
     if (!branch.isHead) {
@@ -454,6 +481,7 @@ async function pullForLocalBranch(branch: BranchInfo) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
+    setBranchBusy(branch.name, false);
     ui.stopProgress();
   }
 }
@@ -473,6 +501,7 @@ async function updateBranchWithoutCheckout(branch: BranchInfo) {
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
+  setBranchBusy(branch.name, true);
   ui.startProgress(`更新 ${branch.name}…`);
   try {
     if (branch.isHead) {
@@ -507,6 +536,7 @@ async function updateBranchWithoutCheckout(branch: BranchInfo) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
+    setBranchBusy(branch.name, false);
     ui.stopProgress();
   }
 }
@@ -956,6 +986,7 @@ async function handleSetTracking(branchName: string) {
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
+  setBranchBusy(branchName, true);
   try {
     const remote = await resolveDefaultRemote();
     await commands.push(path, remote, branchName);
@@ -964,6 +995,7 @@ async function handleSetTracking(branchName: string) {
     actionError.value = e instanceof Error ? e.message : String(e);
   } finally {
     actionLoading.value = false;
+    setBranchBusy(branchName, false);
   }
 }
 
@@ -1053,6 +1085,7 @@ async function handleDeleteRemoteBranch(branch: BranchInfo) {
     return;
   clearActionError();
   actionLoading.value = true;
+  setBranchBusy(branch.name, true);
   ui.startProgress(`删除远程分支 ${branch.name}…`);
   try {
     await branchStore.deleteRemoteBranch(parsed.remote, parsed.branch);
@@ -1062,6 +1095,7 @@ async function handleDeleteRemoteBranch(branch: BranchInfo) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
+    setBranchBusy(branch.name, false);
     ui.stopProgress();
   }
 }
@@ -1390,7 +1424,19 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
             @contextmenu.prevent="showContextMenu($event, node.branch, 'local')"
           >
             <svg
-              v-if="node.branch.isHead"
+              v-if="isBranchBusy(node.branch.name)"
+              class="branch-spinner"
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--color-branch-head)"
+              stroke-width="2.5"
+            >
+              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+            <svg
+              v-else-if="node.branch.isHead"
               width="12"
               height="12"
               viewBox="0 0 24 24"
@@ -1529,7 +1575,19 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
             @contextmenu.prevent="showContextMenu($event, node.branch, 'remote')"
           >
             <svg
-              v-if="node.branch.isHead"
+              v-if="isBranchBusy(node.branch.name)"
+              class="branch-spinner"
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--color-branch-remote)"
+              stroke-width="2.5"
+            >
+              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+            <svg
+              v-else-if="node.branch.isHead"
               width="12"
               height="12"
               viewBox="0 0 24 24"
@@ -2150,6 +2208,21 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
 
 .chevron-open {
   transform: rotate(90deg);
+}
+
+.branch-spinner {
+  flex-shrink: 0;
+  transform-origin: center;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ---- Rename dialog ---- */
