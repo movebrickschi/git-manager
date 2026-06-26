@@ -88,23 +88,37 @@ export const useRepoStore = defineStore("repo", () => {
   async function openRepo(path: string) {
     const settings = useSettingsStore();
     const info = await commands.openRepo(path);
-    if (settings.fetchOnOpen) {
-      await commands.fetchAll(info.path);
-    }
     rememberRepo(info.path, info.currentBranch);
     const existing = repos.value.findIndex((r) => r.path === info.path);
     if (existing >= 0) {
       activeRepoIndex.value = existing;
       repos.value[existing].currentBranch = info.currentBranch;
-      return;
+    } else {
+      repos.value.push({
+        path: info.path,
+        name: info.name,
+        currentBranch: info.currentBranch,
+        color: REPO_COLORS[repos.value.length % REPO_COLORS.length],
+      });
+      activeRepoIndex.value = repos.value.length - 1;
     }
-    repos.value.push({
-      path: info.path,
-      name: info.name,
-      currentBranch: info.currentBranch,
-      color: REPO_COLORS[repos.value.length % REPO_COLORS.length],
-    });
-    activeRepoIndex.value = repos.value.length - 1;
+    // 打开与 fetch 解耦：fetch 不再阻塞打开流程（慢网/重试会卡死全屏遮罩），改为后台
+    // 异步执行，完成后只刷新分支 ahead/behind。
+    if (settings.fetchOnOpen) {
+      void backgroundFetchOnOpen(info.path);
+    }
+  }
+
+  async function backgroundFetchOnOpen(repoPath: string) {
+    try {
+      await commands.fetchAll(repoPath);
+      // 仅当用户仍停留在该仓库时刷新，避免串台到已切换的其它仓库
+      if (activeRepo.value?.path !== repoPath) return;
+      const { refreshGit } = await import("@/composables/useGitRefresh");
+      await refreshGit({ branches: true, status: false, log: false });
+    } catch {
+      // 后台 fetch / 刷新失败不打扰打开流程；用户可在仓库内手动 Fetch
+    }
   }
 
   function closeRepo(index: number) {
