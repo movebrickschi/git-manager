@@ -284,6 +284,7 @@ async function checkoutRemoteAsLocal(fullName: string) {
   if (!parsed) return;
   clearActionError();
   actionLoading.value = true;
+  setBranchBusy(fullName, true);
   try {
     await branchStore.createBranch(parsed.branch, fullName);
     await branchStore.checkoutBranch(parsed.branch);
@@ -292,6 +293,7 @@ async function checkoutRemoteAsLocal(fullName: string) {
     actionError.value = e instanceof Error ? e.message : String(e);
   } finally {
     actionLoading.value = false;
+    setBranchBusy(fullName, false);
   }
 }
 
@@ -794,7 +796,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   const items: MenuItem[] = [];
 
   if (!isHead) {
-    items.push({ label: "签出", action: () => branchStore.checkoutBranch(branch.name) });
+    items.push({ label: "签出", action: () => handleCheckout(branch.name) });
     items.push({
       label: "强制签出（丢弃本地修改）",
       action: () => forceCheckout(branch.name),
@@ -891,6 +893,7 @@ function handleNewBranchFrom(fromBranch: string) {
 async function onNewBranchConfirmed(name: string, fromBranch: string) {
   showNewBranchDialog.value = false;
   actionLoading.value = true;
+  setBranchBusy(name, true);
   try {
     await branchStore.createBranch(name, fromBranch);
     await branchStore.checkoutBranch(name);
@@ -899,6 +902,23 @@ async function onNewBranchConfirmed(name: string, fromBranch: string) {
     actionError.value = e instanceof Error ? e.message : String(e);
   } finally {
     actionLoading.value = false;
+    setBranchBusy(name, false);
+  }
+}
+
+/** 签出分支：包一层 try/catch + 错误提示 + 分支 spinner，避免裸调 store 失败时无反馈。 */
+async function handleCheckout(name: string) {
+  clearActionError();
+  actionLoading.value = true;
+  setBranchBusy(name, true);
+  try {
+    await branchStore.checkoutBranch(name);
+    await refreshAfterGitOp();
+  } catch (e: unknown) {
+    actionError.value = friendlyErr(e);
+  } finally {
+    actionLoading.value = false;
+    setBranchBusy(name, false);
   }
 }
 
@@ -910,6 +930,7 @@ async function forceCheckout(name: string) {
   clearActionError();
   actionLoading.value = true;
   ui.startProgress(`强制签出 ${name}…`);
+  setBranchBusy(name, true);
   try {
     await branchStore.forceCheckout(name);
     await refreshAfterGitOp();
@@ -918,6 +939,7 @@ async function forceCheckout(name: string) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
+    setBranchBusy(name, false);
     ui.stopProgress();
   }
 }
@@ -927,6 +949,7 @@ async function handleCheckoutAndRebase(branchToCheckout: string, rebaseOnto: str
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
+  setBranchBusy(branchToCheckout, true);
   try {
     await branchStore.checkoutBranch(branchToCheckout);
     await commands.rebaseBranch(path, rebaseOnto);
@@ -935,6 +958,7 @@ async function handleCheckoutAndRebase(branchToCheckout: string, rebaseOnto: str
     actionError.value = e instanceof Error ? e.message : String(e);
   } finally {
     actionLoading.value = false;
+    setBranchBusy(branchToCheckout, false);
   }
 }
 
@@ -943,6 +967,7 @@ async function handleRebaseHeadOnto(targetBranch: string) {
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
+  setBranchBusy(targetBranch, true);
   try {
     await commands.rebaseBranch(path, targetBranch);
     await refreshAfterGitOp();
@@ -950,6 +975,7 @@ async function handleRebaseHeadOnto(targetBranch: string) {
     actionError.value = e instanceof Error ? e.message : String(e);
   } finally {
     actionLoading.value = false;
+    setBranchBusy(targetBranch, false);
   }
 }
 
@@ -958,6 +984,7 @@ async function handleMergeBranchIntoHead(sourceBranch: string) {
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
+  setBranchBusy(sourceBranch, true);
   try {
     const result = await commands.mergeBranch(path, sourceBranch);
     await refreshAfterGitOp();
@@ -968,6 +995,7 @@ async function handleMergeBranchIntoHead(sourceBranch: string) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
+    setBranchBusy(sourceBranch, false);
   }
 }
 
@@ -1014,6 +1042,7 @@ async function onRenameConfirmed() {
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
+  setBranchBusy(oldName, true);
   try {
     await commands.renameBranch(path, oldName, newName);
     await refreshAfterGitOp();
@@ -1021,6 +1050,7 @@ async function onRenameConfirmed() {
     actionError.value = e instanceof Error ? e.message : String(e);
   } finally {
     actionLoading.value = false;
+    setBranchBusy(oldName, false);
   }
 }
 
@@ -1042,6 +1072,7 @@ async function handleDeleteBranch(branch: BranchInfo) {
   clearActionError();
   actionLoading.value = true;
   ui.startProgress(`删除分支 ${branch.name}…`);
+  setBranchBusy(branch.name, true);
   try {
     await branchStore.deleteBranch(branch.name);
     await refreshAfterGitOp();
@@ -1066,6 +1097,7 @@ async function handleDeleteBranch(branch: BranchInfo) {
     }
   } finally {
     actionLoading.value = false;
+    setBranchBusy(branch.name, false);
     ui.stopProgress();
   }
 }
