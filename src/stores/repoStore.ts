@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { useSettingsStore } from "./settingsStore";
 import { commands } from "@/utils/commands";
+import { refreshGit } from "@/composables/useGitRefresh";
 
 export interface RepoInfo {
   path: string;
@@ -114,7 +115,6 @@ export const useRepoStore = defineStore("repo", () => {
       await commands.fetchAll(repoPath);
       // 仅当用户仍停留在该仓库时刷新，避免串台到已切换的其它仓库
       if (activeRepo.value?.path !== repoPath) return;
-      const { refreshGit } = await import("@/composables/useGitRefresh");
       await refreshGit({ branches: true, status: false, log: false });
     } catch {
       // 后台 fetch / 刷新失败不打扰打开流程；用户可在仓库内手动 Fetch
