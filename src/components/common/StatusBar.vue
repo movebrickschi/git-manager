@@ -5,7 +5,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useAutoFetch } from "@/composables/useAutoFetch";
 import { useUiStore } from "@/stores/uiStore";
 import { commands } from "@/utils/commands";
-import { isNetworkBusy, networkBusyRepos } from "@/utils/network-busy";
+import { isRepoNetworkBusy } from "@/utils/network-busy";
 
 const SystemSettingsDialog = defineAsyncComponent(
   () => import("@/components/common/SystemSettingsDialog.vue")
@@ -24,14 +24,17 @@ function toggleAutoFetch() {
   settings.setAutoFetchEnabled(!settings.autoFetchEnabled);
 }
 
-/** 中止所有在途联网 Git 操作（push/pull/fetch）——请求后端杀掉对应 git 子进程。 */
+/** 仅当「当前激活仓库」有在途联网操作时点亮指示器，避免后台别的仓库联网时也常亮误导。 */
+const activeRepoNetworkBusy = computed(() => isRepoNetworkBusy(repoStore.activeRepo?.path));
+
+/** 中止「当前激活仓库」在途的联网 Git 操作（push/pull/fetch）——请求后端杀掉对应 git 子进程。 */
 async function cancelNetwork() {
-  for (const repo of networkBusyRepos.value) {
-    try {
-      await commands.cancelNetworkOps(repo);
-    } catch {
-      /* 取消失败无需打扰用户 */
-    }
+  const repo = repoStore.activeRepo?.path;
+  if (!repo) return;
+  try {
+    await commands.cancelNetworkOps(repo);
+  } catch {
+    /* 取消失败无需打扰用户 */
   }
 }
 
@@ -101,12 +104,12 @@ const fetchTitle = computed(() => {
       </template>
       <span v-else class="status-item">未打开仓库</span>
       <Transition name="progress-capsule">
-        <span v-if="isNetworkBusy" class="net-busy-capsule">
+        <span v-if="activeRepoNetworkBusy" class="net-busy-capsule">
           <span class="progress-capsule-spinner" />
           <span class="progress-capsule-label">联网中…</span>
           <button
             class="net-cancel-btn"
-            title="中止所有进行中的联网 Git 操作（push / pull / fetch）"
+            title="中止当前仓库进行中的联网 Git 操作（push / pull / fetch）"
             @click="cancelNetwork"
           >
             中止

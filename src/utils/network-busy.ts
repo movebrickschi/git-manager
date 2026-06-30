@@ -26,6 +26,18 @@ export const networkBusyRepos = computed(() => {
   return out;
 });
 
+/**
+ * 指定仓库当前是否有在途联网操作。
+ *
+ * 在 Vue computed / 渲染函数内调用即具响应式：reactive Map 的 `get(key)` 会被依赖追踪，
+ * 后续 begin/endNetwork 的 set/delete 触发重算（对调用时尚不存在的 key 同样生效）。
+ * 状态栏据此把「联网中…」收窄为只跟随当前激活仓库，而非任意仓库。
+ */
+export function isRepoNetworkBusy(repoPath: string | null | undefined): boolean {
+  if (!repoPath) return false;
+  return (counts.get(repoPath) ?? 0) > 0;
+}
+
 export function beginNetwork(repoPath: string): void {
   if (!repoPath) return;
   counts.set(repoPath, (counts.get(repoPath) ?? 0) + 1);

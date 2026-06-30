@@ -4,6 +4,7 @@ import {
   beginNetwork,
   endNetwork,
   isNetworkBusy,
+  isRepoNetworkBusy,
   networkBusyRepos,
   runNetworkBusy,
 } from "./network-busy";
@@ -61,5 +62,20 @@ describe("network-busy", () => {
   it("空 repoPath 不计数", () => {
     beginNetwork("");
     expect(isNetworkBusy.value).toBe(false);
+  });
+
+  it("isRepoNetworkBusy 只反映指定仓库且仓库间互不影响", () => {
+    expect(isRepoNetworkBusy("/a")).toBe(false);
+    beginNetwork("/a");
+    expect(isRepoNetworkBusy("/a")).toBe(true);
+    expect(isRepoNetworkBusy("/b")).toBe(false);
+    endNetwork("/a");
+    expect(isRepoNetworkBusy("/a")).toBe(false);
+  });
+
+  it("isRepoNetworkBusy 对空/缺省入参返回 false", () => {
+    expect(isRepoNetworkBusy("")).toBe(false);
+    expect(isRepoNetworkBusy(null)).toBe(false);
+    expect(isRepoNetworkBusy(undefined)).toBe(false);
   });
 });
