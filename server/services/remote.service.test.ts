@@ -239,6 +239,64 @@ describe("remoteService.pull · Smart Pull", () => {
       extraEnv: {},
     });
   });
+
+  // -------------------------------------------------------------------------
+  // 5) 无上游分支的 Pull 兜底：显式 pull <remote> <branch> + 建立 upstream
+  // -------------------------------------------------------------------------
+
+  it("【14】无 upstream + 远端有同名分支 → pull origin <branch> 且成功后建立 upstream", async () => {
+    mockGit.status.mockResolvedValue(statusClean());
+    mockGit.raw.mockImplementation((args: string[]) => {
+      const a = args.join(" ");
+      if (a.includes("rev-parse --abbrev-ref HEAD")) return Promise.resolve("dev\n");
+      if (a.includes("@{u}")) return Promise.reject(new Error("fatal: no upstream configured"));
+      if (a.startsWith("show-ref")) return Promise.resolve(""); // refs/remotes/origin/dev 存在
+      if (a.includes("--set-upstream-to")) return Promise.resolve("");
+      return Promise.resolve("");
+    });
+
+    const r = await remoteService.pull("/repo", "origin");
+
+    expect(r.success).toBe(true);
+    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "origin", "dev"], { extraEnv: {} });
+    expect(mockGit.raw).toHaveBeenCalledWith(["branch", "--set-upstream-to=origin/dev"]);
+  });
+
+  it("【15】无 upstream + 远端无同名分支 → 维持 pull origin（不带分支、不建 upstream）", async () => {
+    mockGit.status.mockResolvedValue(statusClean());
+    mockGit.raw.mockImplementation((args: string[]) => {
+      const a = args.join(" ");
+      if (a.includes("rev-parse --abbrev-ref HEAD")) return Promise.resolve("dev\n");
+      if (a.includes("@{u}")) return Promise.reject(new Error("fatal: no upstream configured"));
+      if (a.startsWith("show-ref")) return Promise.reject(new Error("not a valid ref")); // 远端无同名分支
+      return Promise.resolve("");
+    });
+
+    await remoteService.pull("/repo", "origin");
+
+    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "origin"], { extraEnv: {} });
+    expect(mockGit.raw).not.toHaveBeenCalledWith(
+      expect.arrayContaining(["branch", "--set-upstream-to=origin/dev"])
+    );
+  });
+
+  it("【16】已有 upstream → pull origin（不追加显式分支、不建 upstream）", async () => {
+    mockGit.status.mockResolvedValue(statusClean());
+    mockGit.raw.mockImplementation((args: string[]) => {
+      const a = args.join(" ");
+      if (a.includes("rev-parse --abbrev-ref HEAD")) return Promise.resolve("dev\n");
+      if (a.includes("@{u}")) return Promise.resolve("origin/dev\n"); // 已有 upstream
+      return Promise.resolve("");
+    });
+
+    await remoteService.pull("/repo", "origin");
+
+    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "origin"], { extraEnv: {} });
+    // 已有 upstream：不应查 show-ref，也不应建 upstream
+    expect(mockGit.raw).not.toHaveBeenCalledWith(
+      expect.arrayContaining(["show-ref"])
+    );
+  });
 });
 
 describe("remoteService.previewPullConflicts · IDEA-style preview", () => {

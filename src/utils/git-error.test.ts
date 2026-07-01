@@ -81,6 +81,17 @@ describe("translateGitError", () => {
         )
       ).toMatch(/上游/);
     });
+    it("pull 未指定分支（无上游）· git 真实按列折行的多行 stderr", () => {
+      // git 实际输出会在 ~80 列硬折行，把 "did not specify" 与 "a branch" 用换行拆开，
+      // 依赖连续空格的正则会漏匹配 —— 这条用例锁死回归。
+      expect(
+        translateGitError(
+          "You asked to pull from the remote 'origin', but did not specify\n" +
+            "a branch. Because this is not the default configured remote\n" +
+            "for your current branch, you must specify a branch on the command line."
+        )
+      ).toMatch(/上游/);
+    });
     it("there is no tracking information", () => {
       expect(
         translateGitError("There is no tracking information for the current branch.")

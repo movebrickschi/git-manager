@@ -112,11 +112,44 @@ export const remoteService = {
       }
     }
 
+    // 无上游分支的 Pull 兜底：分支没有配置 upstream 时，`git pull <remote>`（不带分支）会报
+    // "You asked to pull from the remote 'origin', but did not specify a branch"。若远端存在
+    // 同名分支，则改为显式 `git pull <remote> <branch>` 让它直接成功，并在成功后建立 upstream，
+    // 使后续 Pull/Push 无需再指定分支（对齐 IDEA「Update Project」体验）。
+    let pullBranch: string | undefined;
+    let upstreamToSet: string | undefined;
+    if (remote) {
+      try {
+        const cur = (await git.raw(["rev-parse", "--abbrev-ref", "HEAD"])).trim();
+        if (cur && cur !== "HEAD") {
+          let hasUpstream = false;
+          try {
+            await git.raw(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
+            hasUpstream = true;
+          } catch {
+            hasUpstream = false;
+          }
+          if (!hasUpstream) {
+            try {
+              await git.raw(["show-ref", "--verify", "--quiet", `refs/remotes/${remote}/${cur}`]);
+              pullBranch = cur;
+              upstreamToSet = `${remote}/${cur}`;
+            } catch {
+              // 远端无同名分支：维持原行为，交由用户先 Push（错误提示已中文化）
+            }
+          }
+        }
+      } catch {
+        // rev-parse 失败（游离 HEAD / 空仓库等）：维持原行为
+      }
+    }
+
     let pullErr: unknown = null;
     try {
       const args: string[] = ["pull"];
       if (rebase) args.push("--rebase");
       if (remote) args.push(remote);
+      if (pullBranch) args.push(pullBranch);
       const extraEnv = await buildAuthEnv(repoPath);
       await runNetworkGit(repoPath, args, { extraEnv });
     } catch (e: unknown) {
@@ -146,6 +179,15 @@ export const remoteService = {
         conflicts: [],
         message: errStr(pullErr) || "拉取失败",
       };
+    }
+
+    // Pull 成功且原本无上游：补建 upstream，使后续 Pull/Push 与 ahead/behind 计算直接生效。
+    if (upstreamToSet) {
+      try {
+        await git.raw(["branch", `--set-upstream-to=${upstreamToSet}`]);
+      } catch {
+        // best-effort：设置失败不影响本次已成功的 Pull
+      }
     }
 
     if (autoStashed) {

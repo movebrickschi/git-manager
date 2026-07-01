@@ -119,8 +119,12 @@ function translateRaw(msg: string): string {
   // 生产模式下后端只回错误码字符串（见 server/routes.ts wrap），这里按裸 code 兜底翻译
   const trimmed = msg.trim();
   if (CODE_MAP[trimmed]) return CODE_MAP[trimmed];
+  // git 的 stderr 常按 ~80 列硬折行，会把「did not specify a branch」拆成
+  // 「did not specify\na branch」，令依赖连续空格的正则漏匹配。匹配前把连续空白
+  // （含换行）折叠成单空格，兜底仍返回原文以保留原始换行格式。
+  const collapsed = msg.replace(/\s+/g, " ");
   for (const [pat, zh] of PATTERN_MAP) {
-    if (pat.test(msg)) return zh;
+    if (pat.test(msg) || pat.test(collapsed)) return zh;
   }
   return msg;
 }
