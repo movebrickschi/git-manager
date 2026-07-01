@@ -16,6 +16,8 @@ import { useRepoStore } from "./repoStore";
 import { useBranchStore } from "./branchStore";
 import { commands } from "@/utils/commands";
 import { refreshGit } from "@/composables/useGitRefresh";
+import { errText } from "@/utils/error";
+import { translateGitError } from "@/utils/git-error";
 import type {
   CommitInfo,
   RebaseTodoEntry,
@@ -121,7 +123,7 @@ export const useRebaseStore = defineStore("rebase", () => {
       dialog.value.loadingPreview = false;
     } catch (e: unknown) {
       dialog.value.loadingPreview = false;
-      dialog.value.errorMessage = e instanceof Error ? e.message : String(e);
+      dialog.value.errorMessage = errText(e);
     }
   }
 
@@ -155,7 +157,10 @@ export const useRebaseStore = defineStore("rebase", () => {
       );
       if (result.success) {
         close();
-        branchStore.showToast(result.message || "Interactive rebase 完成", "ok");
+        branchStore.showToast(
+          result.message ? translateGitError(result.message) : "Interactive rebase 完成",
+          "ok"
+        );
         // rebase 改写历史/分支位置/工作区，必须刷新 log + 分支 + 文件状态，
         // 否则提交图与 ahead/behind 箭头会严重滞后。
         await Promise.all([refreshStatus(), refreshGit()]);
@@ -172,11 +177,14 @@ export const useRebaseStore = defineStore("rebase", () => {
         );
       } else {
         branchStore.requestTabSwitch("commit");
-        branchStore.showToast(result.message || "Rebase 在 edit 步骤暂停，请继续", "info");
+        branchStore.showToast(
+          result.message ? translateGitError(result.message) : "Rebase 在 edit 步骤暂停，请继续",
+          "info"
+        );
       }
     } catch (e: unknown) {
       dialog.value.pending = false;
-      dialog.value.errorMessage = e instanceof Error ? e.message : String(e);
+      dialog.value.errorMessage = errText(e);
     }
   }
 
@@ -246,7 +254,10 @@ export const useRebaseStore = defineStore("rebase", () => {
       const result = await commands.continueOperation(repoStore.activeRepo.path, "rebase");
       await Promise.all([refreshStatus(), refreshGit()]);
       if (result.success) {
-        branchStore.showToast(result.message || "Rebase continue 成功", "ok");
+        branchStore.showToast(
+          result.message ? translateGitError(result.message) : "Rebase continue 成功",
+          "ok"
+        );
       } else if (result.conflicts.length > 0) {
         branchStore.requestTabSwitch("commit");
         branchStore.showToast(
@@ -254,13 +265,13 @@ export const useRebaseStore = defineStore("rebase", () => {
           "err"
         );
       } else {
-        branchStore.showToast(result.message || "Continue 仍未完成", "err");
+        branchStore.showToast(
+          result.message ? translateGitError(result.message) : "Continue 仍未完成",
+          "err"
+        );
       }
     } catch (e: unknown) {
-      branchStore.showToast(
-        `Continue 失败：${e instanceof Error ? e.message : String(e)}`,
-        "err"
-      );
+      branchStore.showToast(`Continue 失败：${errText(e)}`, "err");
     } finally {
       actionPending.value = false;
     }
@@ -275,10 +286,7 @@ export const useRebaseStore = defineStore("rebase", () => {
       await Promise.all([refreshStatus(), refreshGit()]);
       branchStore.showToast("已 Abort，仓库回到 rebase 前状态", "info");
     } catch (e: unknown) {
-      branchStore.showToast(
-        `Abort 失败：${e instanceof Error ? e.message : String(e)}`,
-        "err"
-      );
+      branchStore.showToast(`Abort 失败：${errText(e)}`, "err");
     } finally {
       actionPending.value = false;
     }

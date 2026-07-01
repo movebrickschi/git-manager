@@ -18,7 +18,7 @@ import type {
   FileStatus,
   LogFilter,
 } from "@/utils/commands";
-import { errMsg } from "@/utils/error";
+import { errText } from "@/utils/error";
 
 const props = defineProps<{
   visible: boolean;
@@ -55,7 +55,7 @@ async function loadBranches() {
       if (main && main.name !== targetBranch.value) baseBranch.value = main.name;
     }
   } catch (e) {
-    error.value = errMsg(e);
+    error.value = errText(e);
   }
 }
 
@@ -92,7 +92,7 @@ async function reload() {
       selectedFile.value = files.value[0]!;
     }
   } catch (e) {
-    error.value = errMsg(e);
+    error.value = errText(e);
   } finally {
     loading.value = false;
   }
@@ -122,7 +122,7 @@ async function loadDiff(file: FileStatus | null) {
       diff.value = result;
     }
   } catch (e) {
-    error.value = errMsg(e);
+    error.value = errText(e);
     diff.value = null;
   } finally {
     diffLoading.value = false;

@@ -1,6 +1,7 @@
 import { ref } from "vue";
 import { commands } from "@/utils/commands";
-import { errMsg } from "@/utils/error";
+import { errMsg, errText } from "@/utils/error";
+import { translateGitError } from "@/utils/git-error";
 
 export type MergeOp = "merge" | "rebase" | "cherry-pick" | "revert";
 
@@ -43,12 +44,12 @@ export function useMergeState(opts: {
     mergeBusy.value = true;
     try {
       const result = await commands.continueOperation(repoPath, mergeState.value.state);
-      if (!result.success) notify(`继续失败：${result.message}`);
+      if (!result.success) notify(`继续失败：${translateGitError(result.message)}`);
       else notify(`${mergeState.value.state} 已继续完成`);
       await refresh();
       await opts.onAfterAction?.();
     } catch (e: unknown) {
-      notify(`继续失败：${errMsg(e)}`);
+      notify(`继续失败：${errText(e)}`);
     } finally {
       mergeBusy.value = false;
     }
@@ -64,7 +65,7 @@ export function useMergeState(opts: {
       await refresh();
       await opts.onAfterAction?.();
     } catch (e: unknown) {
-      notify(`中止失败：${errMsg(e)}`);
+      notify(`中止失败：${errText(e)}`);
     } finally {
       mergeBusy.value = false;
     }

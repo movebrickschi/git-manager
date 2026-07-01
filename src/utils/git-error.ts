@@ -46,6 +46,45 @@ const PATTERN_MAP: Array<[RegExp, string]> = [
     /pull completed.*local changes auto-stashed and restored/i,
     "拉取完成（本地改动已自动暂存并还原）",
   ],
+  // ── 分支上游 / tracking 缺失（Pull / Push 最常见）──────────────
+  [
+    /you asked to pull from the remote.*did not specify a branch/is,
+    "当前分支未设置上游分支，无法确定要拉取哪个远程分支。请先 Push 建立上游，或右键分支指定拉取来源。",
+  ],
+  [
+    /there is no tracking information for the current branch/i,
+    "当前分支没有跟踪信息（未设置上游）。请先 Push 建立上游后再 Pull。",
+  ],
+  [
+    /the current branch .* has no upstream branch/i,
+    "当前分支没有上游分支。请先用「Push」推送并建立上游。",
+  ],
+  [/no candidate for merging|no source branch/i, "找不到可合并的远程分支，请检查分支的上游设置。"],
+  [/couldn'?t find remote ref/i, "远端找不到该引用（分支 / 标签可能已被删除）。"],
+  // ── Push 相关 ────────────────────────────────────────────────
+  [/failed to push some refs/i, "推送失败：远端有新提交，请先 Pull 合并后再 Push。"],
+  [/updates were rejected/i, "推送被拒绝：远端有新提交，请先 Pull 合并。"],
+  [/everything up-to-date/i, "已是最新，无需推送。"],
+  [/src refspec .* does not match any/i, "本地没有可推送的该分支 / 引用。"],
+  [/already up[- ]to[- ]date/i, "已是最新。"],
+  // ── 合并 / 检出覆盖 / 路径 ────────────────────────────────────
+  [/automatic merge failed|fix conflicts and then commit/i, "自动合并失败，存在冲突，请解决后再提交。"],
+  [/pathspec .* did not match any file/i, "找不到匹配的文件或分支。"],
+  // ── 提交 / 身份 ──────────────────────────────────────────────
+  [/nothing to commit/i, "没有需要提交的改动。"],
+  [
+    /please tell me who you are|unable to auto-detect email address|empty ident name/i,
+    "请先配置 git 用户名和邮箱（user.name / user.email）。",
+  ],
+  // ── 属主 / 证书 / 访问 ───────────────────────────────────────
+  [
+    /detected dubious ownership/i,
+    "检测到仓库属主可疑（safe.directory），请把该仓库路径加入 git 的 safe.directory 配置。",
+  ],
+  [/ssl certificate problem/i, "SSL 证书校验失败，请检查系统时间 / 证书 / 代理设置。"],
+  [/the requested url returned error: 403/i, "远端拒绝访问（403），请检查账号权限。"],
+  [/the requested url returned error: 401/i, "认证失败（401），请检查账号 / 令牌。"],
+  [/unable to access/i, "无法访问远端仓库，请检查网络 / 地址 / 认证。"],
   [/cannot lock ref|unable to create.*lock/i, "git 索引被锁定，请关闭其他 git 进程后重试"],
   [/cannot remove untracked file/i, "无法移除未跟踪文件"],
   [/untracked working tree files.*would be overwritten/i, "未跟踪文件会被覆盖，请先备份或删除"],
@@ -53,7 +92,7 @@ const PATTERN_MAP: Array<[RegExp, string]> = [
   [/index\.lock|\.git\/index\.lock/i, "git 索引被锁定，可能有其它进程占用"],
   [/fatal: bad revision/i, "无效的 git 引用"],
   [/fatal: ambiguous argument/i, "git 参数歧义"],
-  [/fatal: not a git repository/i, "不是 git 仓库"],
+  [/not a git repository/i, "不是 git 仓库"],
   [/destination path .* already exists and is not an empty directory/i, "目标目录已存在且不为空"],
   [/remote rejected/i, "远端拒绝了推送"],
   [/not fully merged/i, "分支尚未完全合并，删除会丢失其独有提交（可选择强制删除）"],
@@ -77,6 +116,9 @@ export function translateGitError(
 
 function translateRaw(msg: string): string {
   if (!msg) return "未知错误";
+  // 生产模式下后端只回错误码字符串（见 server/routes.ts wrap），这里按裸 code 兜底翻译
+  const trimmed = msg.trim();
+  if (CODE_MAP[trimmed]) return CODE_MAP[trimmed];
   for (const [pat, zh] of PATTERN_MAP) {
     if (pat.test(msg)) return zh;
   }

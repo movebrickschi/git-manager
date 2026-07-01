@@ -10,6 +10,8 @@ import RebaseStatusBar from "@/components/rebase/RebaseStatusBar.vue";
 import { useRepoStore } from "@/stores/repoStore";
 import { useBranchStore } from "@/stores/branchStore";
 import { commands, platform } from "@/utils/commands";
+import { errText } from "@/utils/error";
+import { translateGitError } from "@/utils/git-error";
 import { useAutoFetch } from "@/composables/useAutoFetch";
 import { useToast } from "@/composables/useToast";
 import { refreshGit } from "@/composables/useGitRefresh";
@@ -162,10 +164,10 @@ async function onPatchFilePicked(e: Event) {
       };
     } else {
       const tail = result.conflicts.length > 0 ? `\n冲突：${result.conflicts.join(", ")}` : "";
-      applyPatchMessage.value = { kind: "err", text: `${result.message}${tail}` };
+      applyPatchMessage.value = { kind: "err", text: `${translateGitError(result.message)}${tail}` };
     }
-  } catch (err: any) {
-    applyPatchMessage.value = { kind: "err", text: err?.message ?? String(err) };
+  } catch (err: unknown) {
+    applyPatchMessage.value = { kind: "err", text: errText(err) };
   } finally {
     applyPatchBusy.value = false;
   }
@@ -254,8 +256,8 @@ async function cloneRepo() {
       cloneUrl.value = "";
       clonePath.value = "";
     }
-  } catch (e: any) {
-    cloneError.value = e.message || "克隆失败";
+  } catch (e: unknown) {
+    cloneError.value = errText(e) || "克隆失败";
   } finally {
     cloneLoading.value = false;
   }

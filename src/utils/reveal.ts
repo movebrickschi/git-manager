@@ -1,5 +1,5 @@
 import { platform } from "./commands";
-import { errMsg } from "./error";
+import { errText } from "./error";
 
 /**
  * 在文件管理器中定位文件，跨模式统一入口。
@@ -20,7 +20,7 @@ export async function revealOrCopyPath(
     try {
       await platform.revealInFolder(absPath);
     } catch (e: unknown) {
-      showToast(`无法在资源管理器中打开：${errMsg(e)}`);
+      showToast(`无法在资源管理器中打开：${errText(e)}`);
     }
     return;
   }

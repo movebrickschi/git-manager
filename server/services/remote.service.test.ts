@@ -68,7 +68,7 @@ describe("remoteService.pull · Smart Pull", () => {
 
     const r = await remoteService.pull("/repo");
 
-    expect(r).toEqual({ success: true, conflicts: [], message: "Pull completed" });
+    expect(r).toEqual({ success: true, conflicts: [], message: "拉取完成" });
     expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull"], { extraEnv: {} });
     expect(mockGit.raw).not.toHaveBeenCalled();
   });
@@ -403,5 +403,50 @@ describe("remoteService.forcePull · 丢弃本地改动强制拉取", () => {
     expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "--rebase", "origin"], {
       extraEnv: {},
     });
+  });
+});
+
+describe("remoteService.push · 自动建立上游跟踪", () => {
+  let mockGit: MockGit;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGit = makeMockGit();
+    vi.mocked(getGit).mockReturnValue(mockGit as never);
+    vi.mocked(runNetworkGit).mockResolvedValue("");
+  });
+
+  it("分支无 upstream → 自动带 --set-upstream", async () => {
+    // rev-parse <branch>@{u} 抛错 = 无 upstream
+    mockGit.raw.mockRejectedValue(new Error("no upstream configured"));
+
+    await remoteService.push("/repo", "origin", "dev");
+
+    expect(runNetworkGit).toHaveBeenCalledWith(
+      "/repo",
+      ["push", "--set-upstream", "origin", "dev"],
+      { extraEnv: {} }
+    );
+  });
+
+  it("分支已有 upstream → 不重复加 --set-upstream", async () => {
+    mockGit.raw.mockResolvedValue("origin/dev");
+
+    await remoteService.push("/repo", "origin", "dev");
+
+    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["push", "origin", "dev"], {
+      extraEnv: {},
+    });
+  });
+
+  it("显式 setUpstream → 直接带 --set-upstream，且不再查 upstream", async () => {
+    await remoteService.push("/repo", "origin", "dev", { setUpstream: true });
+
+    expect(mockGit.raw).not.toHaveBeenCalled();
+    expect(runNetworkGit).toHaveBeenCalledWith(
+      "/repo",
+      ["push", "--set-upstream", "origin", "dev"],
+      { extraEnv: {} }
+    );
   });
 });

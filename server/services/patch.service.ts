@@ -24,7 +24,7 @@ export const patchService = {
 
   async applyPatch(repoPath: string, patchContent: string): Promise<MergeResult> {
     if (typeof patchContent !== "string" || patchContent.length === 0) {
-      throw new Error("patchContent is empty");
+      throw new Error("补丁内容为空");
     }
     const git = getGit(repoPath);
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "gm-patch-"));
@@ -32,7 +32,7 @@ export const patchService = {
     await fs.writeFile(tmpFile, patchContent, "utf8");
     try {
       await git.raw(["apply", "--3way", "--whitespace=nowarn", tmpFile]);
-      return { success: true, conflicts: [], message: "Patch applied" };
+      return { success: true, conflicts: [], message: "补丁已应用" };
     } catch (e: unknown) {
       const conflicts = await getConflictFiles(repoPath);
       return {

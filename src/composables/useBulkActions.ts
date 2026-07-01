@@ -1,7 +1,7 @@
 import { computed, type ComputedRef, type Ref } from "vue";
 import { useCommitStore } from "@/stores/commitStore";
 import type { DiffResult, FileStatus } from "@/utils/commands";
-import { errMsg } from "@/utils/error";
+import { errText } from "@/utils/error";
 import type { ConfirmDialogOptions } from "@/composables/useConfirmDialog";
 
 export type SectionKey = "staged" | "unstaged" | "untracked";
@@ -82,7 +82,7 @@ export function useBulkActions(opts: BulkActionsOptions) {
       opts.onMessage(`已暂存 ${paths.length} 个文件`);
       opts.clearSelection();
     } catch (e: unknown) {
-      opts.onMessage(`暂存失败: ${errMsg(e)}`);
+      opts.onMessage(`暂存失败: ${errText(e)}`);
     }
   }
 
@@ -94,7 +94,7 @@ export function useBulkActions(opts: BulkActionsOptions) {
       opts.onMessage(`已取消暂存 ${paths.length} 个文件`);
       opts.clearSelection();
     } catch (e: unknown) {
-      opts.onMessage(`取消暂存失败: ${errMsg(e)}`);
+      opts.onMessage(`取消暂存失败: ${errText(e)}`);
     }
   }
 
@@ -164,7 +164,7 @@ export function useBulkActions(opts: BulkActionsOptions) {
       await navigator.clipboard.writeText(paths.join("\n"));
       opts.onMessage(`已复制 ${paths.length} 个路径`);
     } catch (e: unknown) {
-      opts.onMessage(`复制失败: ${errMsg(e) || "剪贴板不可用"}`);
+      opts.onMessage(`复制失败: ${errText(e) || "剪贴板不可用"}`);
     }
   }
 
@@ -212,7 +212,7 @@ export function useBulkActions(opts: BulkActionsOptions) {
       clearPreviewIfMatch(paths);
       opts.clearSelection();
     } catch (e: unknown) {
-      opts.onMessage(`搁置失败: ${errMsg(e)}`);
+      opts.onMessage(`搁置失败: ${errText(e)}`);
     }
   }
 

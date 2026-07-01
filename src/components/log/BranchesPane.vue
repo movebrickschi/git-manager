@@ -291,7 +291,7 @@ async function checkoutRemoteAsLocal(fullName: string) {
     await branchStore.checkoutBranch(parsed.branch);
     await refreshAfterGitOp();
   } catch (e: unknown) {
-    actionError.value = e instanceof Error ? e.message : String(e);
+    actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
     setBranchBusy(fullName, false);
@@ -912,7 +912,7 @@ async function onNewBranchConfirmed(name: string, fromBranch: string) {
     await branchStore.checkoutBranch(name);
     await refreshAfterGitOp();
   } catch (e: unknown) {
-    actionError.value = e instanceof Error ? e.message : String(e);
+    actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
     setBranchBusy(name, false);
@@ -968,7 +968,7 @@ async function handleCheckoutAndRebase(branchToCheckout: string, rebaseOnto: str
     await commands.rebaseBranch(path, rebaseOnto);
     await refreshAfterGitOp();
   } catch (e: unknown) {
-    actionError.value = e instanceof Error ? e.message : String(e);
+    actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
     setBranchBusy(branchToCheckout, false);
@@ -985,7 +985,7 @@ async function handleRebaseHeadOnto(targetBranch: string) {
     await commands.rebaseBranch(path, targetBranch);
     await refreshAfterGitOp();
   } catch (e: unknown) {
-    actionError.value = e instanceof Error ? e.message : String(e);
+    actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
     setBranchBusy(targetBranch, false);
@@ -1033,7 +1033,7 @@ async function handleSetTracking(branchName: string) {
     await commands.push(path, remote, branchName);
     await refreshAfterGitOp();
   } catch (e: unknown) {
-    actionError.value = e instanceof Error ? e.message : String(e);
+    actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
     setBranchBusy(branchName, false);
@@ -1060,7 +1060,7 @@ async function onRenameConfirmed() {
     await commands.renameBranch(path, oldName, newName);
     await refreshAfterGitOp();
   } catch (e: unknown) {
-    actionError.value = e instanceof Error ? e.message : String(e);
+    actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
     setBranchBusy(oldName, false);

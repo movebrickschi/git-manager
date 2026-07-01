@@ -21,7 +21,7 @@ import { useCommitStore } from "@/stores/commitStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import type { FileStatus, DiffResult } from "@/utils/commands";
 import { commands } from "@/utils/commands";
-import { errMsg } from "@/utils/error";
+import { errText } from "@/utils/error";
 
 const repoStore = useRepoStore();
 const logStore = useLogStore();
@@ -136,7 +136,7 @@ async function onFileSelect(file: FileStatus) {
       diffResult.value = null;
       showDiffViewer.value = false; // 加载失败不残留半开弹框
       lastDiffKey = ""; // 失败后允许重试同一文件
-      branchStore.showToast(`加载 diff 失败: ${errMsg(e)}`, "err");
+      branchStore.showToast(`加载 diff 失败: ${errText(e)}`, "err");
     }
   }
 }

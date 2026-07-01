@@ -11,7 +11,7 @@ import type { MenuItem } from "@/components/common/ContextMenu.vue";
 import type { FileStatus } from "@/utils/commands";
 import { commands } from "@/utils/commands";
 import { useToast } from "@/composables/useToast";
-import { errMsg } from "@/utils/error";
+import { errText } from "@/utils/error";
 import { revealOrCopyPath } from "@/utils/reveal";
 
 const emit = defineEmits<{
@@ -128,7 +128,7 @@ async function copyPath(file: FileStatus): Promise<void> {
     await navigator.clipboard.writeText(abs);
     showToast("已复制绝对路径");
   } catch (e: unknown) {
-    showToast(`复制失败：${errMsg(e) || "剪贴板不可用"}`);
+    showToast(`复制失败：${errText(e) || "剪贴板不可用"}`);
   }
 }
 

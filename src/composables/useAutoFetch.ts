@@ -3,6 +3,7 @@ import { useBranchStore } from "@/stores/branchStore";
 import { useRepoStore } from "@/stores/repoStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { commands } from "@/utils/commands";
+import { errText } from "@/utils/error";
 
 /**
  * 后台定时 fetch 所有打开的仓库的 remote。
@@ -35,8 +36,8 @@ async function tick() {
       try {
         await commands.fetchAll(repo.path);
         lastErrors.value.delete(repo.path);
-      } catch (e: any) {
-        lastErrors.value.set(repo.path, String(e?.message ?? e));
+      } catch (e: unknown) {
+        lastErrors.value.set(repo.path, errText(e));
       }
     }
     await branchStore.loadBranches();

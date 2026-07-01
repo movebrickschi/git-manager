@@ -16,7 +16,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { commands } from "@/utils/commands";
 import type { WorktreeInfo } from "@/utils/types";
-import { errMsg } from "@/utils/error";
+import { errText } from "@/utils/error";
 
 const props = defineProps<{
   visible: boolean;
@@ -41,7 +41,7 @@ async function reload() {
   try {
     list.value = await commands.listWorktrees(props.repoPath);
   } catch (e) {
-    error.value = errMsg(e);
+    error.value = errText(e);
   } finally {
     loading.value = false;
   }
@@ -63,7 +63,7 @@ async function handleAdd() {
     showAddForm.value = false;
     await reload();
   } catch (e) {
-    error.value = errMsg(e);
+    error.value = errText(e);
   } finally {
     addBusy.value = false;
   }
@@ -76,7 +76,7 @@ async function handleRemove(wt: WorktreeInfo, force = false) {
     await commands.removeWorktree(props.repoPath, wt.path, force);
     await reload();
   } catch (e) {
-    error.value = errMsg(e);
+    error.value = errText(e);
   }
 }
 
@@ -86,7 +86,7 @@ async function handleLockToggle(wt: WorktreeInfo) {
     else await commands.lockWorktree(props.repoPath, wt.path);
     await reload();
   } catch (e) {
-    error.value = errMsg(e);
+    error.value = errText(e);
   }
 }
 
@@ -96,7 +96,7 @@ async function handlePrune() {
     await commands.pruneWorktrees(props.repoPath);
     await reload();
   } catch (e) {
-    error.value = errMsg(e);
+    error.value = errText(e);
   }
 }
 

@@ -13,7 +13,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { commands } from "@/utils/commands";
 import type { HookInfo } from "@/utils/types";
-import { errMsg } from "@/utils/error";
+import { errText } from "@/utils/error";
 
 const props = defineProps<{ visible: boolean; repoPath: string }>();
 const emit = defineEmits<{ (e: "update:visible", v: boolean): void }>();
@@ -45,7 +45,7 @@ async function reload() {
   try {
     list.value = await commands.listHooks(props.repoPath);
   } catch (e) {
-    error.value = errMsg(e);
+    error.value = errText(e);
   } finally {
     loading.value = false;
   }
@@ -56,7 +56,7 @@ async function handleEnable(h: HookInfo) {
     await commands.enableHook(props.repoPath, h.name);
     await reload();
   } catch (e) {
-    error.value = errMsg(e);
+    error.value = errText(e);
   }
 }
 
@@ -65,7 +65,7 @@ async function handleDisable(h: HookInfo) {
     await commands.disableHook(props.repoPath, h.name);
     await reload();
   } catch (e) {
-    error.value = errMsg(e);
+    error.value = errText(e);
   }
 }
 
@@ -81,7 +81,7 @@ async function openEditor(h: HookInfo) {
   try {
     editContent.value = await commands.readHookContent(props.repoPath, h.name);
   } catch (e) {
-    editError.value = errMsg(e);
+    editError.value = errText(e);
     editContent.value = DEFAULT_TEMPLATE;
   } finally {
     editBusy.value = false;
@@ -97,7 +97,7 @@ async function saveEditor() {
     editingHook.value = null;
     await reload();
   } catch (e) {
-    editError.value = errMsg(e);
+    editError.value = errText(e);
   } finally {
     editBusy.value = false;
   }

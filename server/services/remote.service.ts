@@ -22,7 +22,23 @@ export const remoteService = {
     // forceWithLease 优先于 force（与 shared/types.ts 的契约一致）
     if (options?.forceWithLease) args.push("--force-with-lease");
     else if (options?.force) args.push("--force");
-    if (options?.setUpstream) args.push("--set-upstream");
+
+    // 自动建立上游跟踪：用户显式勾选 setUpstream，或该分支当前还没有 upstream 时，
+    // 都带上 --set-upstream。首次推送即写入 branch.<name>.remote/merge，之后 ahead/behind
+    // 与推送预览（getUnpushedCommits 的 @{u} 分支）才能正确计算。
+    let setUpstream = options?.setUpstream === true;
+    if (!setUpstream && remote) {
+      const git = getGit(repoPath);
+      try {
+        const target = branch && branch.trim() ? `${branch}@{u}` : "@{u}";
+        await git.raw(["rev-parse", "--abbrev-ref", "--symbolic-full-name", target]);
+        // 解析成功 = 已有 upstream，无需自动设置
+      } catch {
+        setUpstream = true;
+      }
+    }
+    if (setUpstream) args.push("--set-upstream");
+
     if (options?.pushTags) args.push("--tags");
     if (remote) args.push(remote);
     if (branch) args.push(branch);
@@ -113,7 +129,7 @@ export const remoteService = {
         return {
           success: false,
           conflicts,
-          message: errStr(pullErr) || "Pull produced merge conflicts",
+          message: errStr(pullErr) || "拉取产生了合并冲突",
           // 若之前 auto-stash 过：stash 仍保留（未 pop），里面是本地改动，解决 merge 后需 pop 恢复
           autoStash: autoStashed ? { kind: "merge" } : null,
         };
@@ -128,7 +144,7 @@ export const remoteService = {
       return {
         success: false,
         conflicts: [],
-        message: errStr(pullErr) || "Pull failed",
+        message: errStr(pullErr) || "拉取失败",
       };
     }
 
@@ -163,7 +179,7 @@ export const remoteService = {
       }
     }
 
-    return { success: true, conflicts: [], message: "Pull completed" };
+    return { success: true, conflicts: [], message: "拉取完成" };
   },
 
   /**
@@ -306,13 +322,13 @@ export const remoteService = {
         return {
           success: false,
           conflicts,
-          message: errStr(e) || "Pull produced merge conflicts after force reset",
+          message: errStr(e) || "强制重置后拉取仍产生冲突",
         };
       }
       return {
         success: false,
         conflicts: [],
-        message: errStr(e) || "Force pull failed",
+        message: errStr(e) || "强制拉取失败",
       };
     }
     return {
@@ -393,24 +409,29 @@ export const remoteService = {
   ): Promise<CommitInfo[]> {
     const git = getGit(repoPath);
 
-    let rangeArg: string;
-    try {
-      if (remote && branch) {
-        rangeArg = `${remote}/${branch}..HEAD`;
-      } else {
-        await git.raw(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
-        rangeArg = "@{u}..HEAD";
+    // 列出“会被 push 出去的提交”。
+    // 关键修复：远端还没有该分支（首次推送，refs/remotes/<remote>/<branch> 不存在）时，
+    // `<remote>/<branch>..HEAD` 会因未知 revision 直接报错，旧实现 catch 后吞成空列表 →
+    // 推送预览误显示“无待推送的提交”。改为：先按正常区间取，git log 失败再回退到
+    // `HEAD --not --remotes=<remote>`（= 首次推送将发送的全部提交）。用 git log 自身的
+    // 成败判断比 `rev-parse --verify` 更可靠（不依赖 --quiet 的退出码语义）。
+    const tryLog = async (logArgs: string[]): Promise<string | null> => {
+      try {
+        return await git.raw(["log", ...logArgs, `--format=${LOG_FORMAT}%x01`]);
+      } catch {
+        return null;
       }
-    } catch {
-      return [];
-    }
+    };
 
-    let raw: string;
-    try {
-      raw = await git.raw(["log", rangeArg, `--format=${LOG_FORMAT}%x01`]);
-    } catch {
-      return [];
+    let raw: string | null;
+    if (remote && branch) {
+      raw = await tryLog([`${remote}/${branch}..HEAD`]);
+      if (raw === null) raw = await tryLog(["HEAD", "--not", `--remotes=${remote}`]);
+    } else {
+      raw = await tryLog(["@{u}..HEAD"]);
+      if (raw === null) raw = await tryLog(["HEAD", "--not", "--remotes"]);
     }
+    if (raw === null) return [];
 
     const branchSummary = await git.branch();
     const headBranch = branchSummary.current;

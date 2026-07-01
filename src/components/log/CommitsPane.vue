@@ -13,7 +13,8 @@ import type { MenuItem } from "@/components/common/ContextMenu.vue";
 import type { CommitInfo } from "@/utils/commands";
 import { commands } from "@/utils/commands";
 import { formatTimestamp } from "@/utils/format";
-import { errMsg } from "@/utils/error";
+import { errText } from "@/utils/error";
+import { translateGitError } from "@/utils/git-error";
 import { refreshGit } from "@/composables/useGitRefresh";
 
 const logStore = useLogStore();
@@ -119,8 +120,8 @@ async function handleCherryPick() {
     } else {
       showToast(`Cherry-pick 产生冲突，请手动解决：${result.conflicts.join(", ")}`);
     }
-  } catch (e: any) {
-    showToast(`Cherry-pick 失败：${e.message}`);
+  } catch (e: unknown) {
+    showToast(`Cherry-pick 失败：${errText(e)}`);
   }
 }
 
@@ -149,8 +150,8 @@ async function handleCherryPickMulti() {
         `Cherry-pick 在 ${ordered[0]?.shortId} 附近产生冲突：${result.conflicts.join(", ")}`
       );
     }
-  } catch (e: any) {
-    showToast(`批量 Cherry-pick 失败：${e.message}`);
+  } catch (e: unknown) {
+    showToast(`批量 Cherry-pick 失败：${errText(e)}`);
   }
 }
 
@@ -166,8 +167,8 @@ function handleCheckoutRevision() {
       await commands.checkoutBranch(repoStore.activeRepo.path, commit.id);
       await refreshGit();
       showToast(`已切换到 ${commit.shortId}`);
-    } catch (e: any) {
-      showToast(`Checkout 失败：${e.message}`);
+    } catch (e: unknown) {
+      showToast(`Checkout 失败：${errText(e)}`);
     }
   };
   showConfirmDialog.value = true;
@@ -189,8 +190,8 @@ function handleRevertCommit() {
       } else {
         showToast(`Revert 产生冲突，请手动解决：${result.conflicts.join(", ")}`);
       }
-    } catch (e: any) {
-      showToast(`Revert 失败：${e.message}`);
+    } catch (e: unknown) {
+      showToast(`Revert 失败：${errText(e)}`);
     }
   };
   showConfirmDialog.value = true;
@@ -211,8 +212,8 @@ async function doReset() {
     await commands.resetToCommit(repoStore.activeRepo.path, commit.id, resetMode.value);
     await refreshGit();
     showToast(`已 Reset（${resetMode.value}）到 ${commit.shortId}`);
-  } catch (e: any) {
-    showToast(`Reset 失败：${e.message}`);
+  } catch (e: unknown) {
+    showToast(`Reset 失败：${errText(e)}`);
   }
 }
 
@@ -253,8 +254,8 @@ async function handleSquashCommits() {
     logStore.clearSelection();
     await refreshGit();
     showToast(`已合并 ${count} 个 commit`);
-  } catch (e: any) {
-    showToast(`Squash 失败：${e.message}`);
+  } catch (e: unknown) {
+    showToast(`Squash 失败：${errText(e)}`);
   }
 }
 
@@ -286,7 +287,7 @@ async function handleFixupInto() {
     await refreshGit();
     showToast(`已创建 fixup! ${commit.shortId}`);
   } catch (e) {
-    showToast(`Fixup 失败：${errMsg(e)}（请确认已暂存改动）`);
+    showToast(`Fixup 失败：${errText(e)}（请确认已暂存改动）`);
   }
 }
 
@@ -310,10 +311,10 @@ async function handleAutosquash() {
     } else if (result.conflicts.length > 0) {
       showToast(`Autosquash 产生冲突，请手动解决：${result.conflicts.join(", ")}`);
     } else {
-      showToast(`Autosquash 失败：${result.message}`);
+      showToast(`Autosquash 失败：${translateGitError(result.message)}`);
     }
   } catch (e) {
-    showToast(`Autosquash 失败：${errMsg(e)}`);
+    showToast(`Autosquash 失败：${errText(e)}`);
   }
 }
 
@@ -331,8 +332,8 @@ async function handleNewBranchFromCommit() {
     await branchStore.checkoutBranch(name);
     await refreshGit();
     showToast(`已从 ${commit.shortId} 创建并签出分支 '${name}'`);
-  } catch (e: any) {
-    showToast(`创建分支失败：${e.message}`);
+  } catch (e: unknown) {
+    showToast(`创建分支失败：${errText(e)}`);
   }
 }
 
@@ -349,8 +350,8 @@ async function handleCreateTagFromCommit() {
     await branchStore.createTag(name, commit.id, "");
     await refreshGit({ branches: true, log: true });
     showToast(`已在 ${commit.shortId} 创建标签 '${name}'`);
-  } catch (e: any) {
-    showToast(`创建标签失败：${e.message}`);
+  } catch (e: unknown) {
+    showToast(`创建标签失败：${errText(e)}`);
   }
 }
 
@@ -371,8 +372,8 @@ async function handleSaveAsPatch() {
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 5_000);
     showToast(`已导出 patch：${filename}`);
-  } catch (e: any) {
-    showToast(`导出 patch 失败：${e.message}`);
+  } catch (e: unknown) {
+    showToast(`导出 patch 失败：${errText(e)}`);
   }
 }
 

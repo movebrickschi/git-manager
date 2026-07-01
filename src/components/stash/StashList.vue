@@ -10,6 +10,7 @@ import type { StashEntry, FileStatus, DiffResult } from "@/utils/commands";
 import { commands } from "@/utils/commands";
 import { refreshGit } from "@/composables/useGitRefresh";
 import { formatTimestamp } from "@/utils/format";
+import { errText } from "@/utils/error";
 
 const repoStore = useRepoStore();
 
@@ -119,7 +120,7 @@ async function saveStash() {
     await loadStashes();
     showToast("已创建搁置");
   } catch (e: any) {
-    showToast(`搁置失败: ${e.message}`);
+    showToast(`搁置失败: ${errText(e)}`);
   }
 }
 
@@ -131,7 +132,7 @@ async function applyStash(stash: StashEntry) {
     await Promise.all([loadStashes(), refreshGit({ status: true, branches: false, log: false })]);
     showToast(`已应用: ${stashDisplayName(stash.message)}`);
   } catch (e: any) {
-    showToast(`应用失败: ${e.message}`);
+    showToast(`应用失败: ${errText(e)}`);
   }
 }
 
@@ -143,7 +144,7 @@ async function popStash(stash: StashEntry) {
     await Promise.all([loadStashes(), refreshGit({ status: true, branches: false, log: false })]);
     showToast(`已弹出: ${stashDisplayName(stash.message)}`);
   } catch (e: any) {
-    showToast(`弹出失败: ${e.message}`);
+    showToast(`弹出失败: ${errText(e)}`);
   }
 }
 
@@ -154,7 +155,7 @@ async function dropStash(stash: StashEntry) {
     await loadStashes();
     showToast(`已删除: ${stashDisplayName(stash.message)}`);
   } catch (e: any) {
-    showToast(`删除失败: ${e.message}`);
+    showToast(`删除失败: ${errText(e)}`);
   }
 }
 
@@ -174,7 +175,7 @@ async function confirmRename() {
     await loadStashes();
     showToast("已重命名");
   } catch (e: any) {
-    showToast(`重命名失败: ${e.message}`);
+    showToast(`重命名失败: ${errText(e)}`);
   }
 }
 
@@ -232,7 +233,7 @@ async function confirmRemoveFile() {
     }
     await loadStashes();
   } catch (e: any) {
-    showToast(`移除失败: ${e.message}`);
+    showToast(`移除失败: ${errText(e)}`);
   }
 }
 

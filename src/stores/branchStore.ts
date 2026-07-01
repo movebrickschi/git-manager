@@ -3,6 +3,7 @@ import { ref, watch } from "vue";
 import { useRepoStore } from "./repoStore";
 import { commands } from "@/utils/commands";
 import { refreshGit } from "@/composables/useGitRefresh";
+import { translateGitError } from "@/utils/git-error";
 import type { BranchInfo, MergeResult, Submodule } from "@/utils/commands";
 import { resolveDisplayBranch } from "../../shared/git/display-branch";
 
@@ -229,7 +230,10 @@ export const useBranchStore = defineStore("branch", () => {
     if (result.success) {
       repoStore.activeRepo.currentBranch = name;
       await loadBranches();
-      showToast(result.message || `已切换到 '${name}' 并恢复本地修改`, "ok");
+      showToast(
+        result.message ? translateGitError(result.message) : `已切换到 '${name}' 并恢复本地修改`,
+        "ok"
+      );
       return;
     }
     if (result.conflicts.length > 0) {
@@ -245,7 +249,7 @@ export const useBranchStore = defineStore("branch", () => {
       return;
     }
     // stash / checkout / 备份阶段失败 → 仍在原分支
-    showToast(result.message || `切换到 '${name}' 失败`, "err");
+    showToast(result.message ? translateGitError(result.message) : `切换到 '${name}' 失败`, "err");
   }
 
   /** 强制签出（丢弃本地未提交修改）。供分支右键「强制签出」入口，调用方需先二次确认。 */

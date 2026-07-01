@@ -73,6 +73,51 @@ describe("translateGitError", () => {
     });
   });
 
+  describe("无上游 / Push / 身份 等新增模式", () => {
+    it("pull 未指定分支（无上游）", () => {
+      expect(
+        translateGitError(
+          "You asked to pull from the remote 'origin', but did not specify a branch. Because this is not the default configured remote for your current branch, you must specify a branch on the command line."
+        )
+      ).toMatch(/上游/);
+    });
+    it("there is no tracking information", () => {
+      expect(
+        translateGitError("There is no tracking information for the current branch.")
+      ).toMatch(/跟踪信息|上游/);
+    });
+    it("has no upstream branch", () => {
+      expect(
+        translateGitError("fatal: The current branch feat/x has no upstream branch.")
+      ).toMatch(/上游/);
+    });
+    it("failed to push some refs", () => {
+      expect(translateGitError("error: failed to push some refs to 'origin'")).toMatch(
+        /推送失败/
+      );
+    });
+    it("everything up-to-date", () => {
+      expect(translateGitError("Everything up-to-date")).toMatch(/已是最新/);
+    });
+    it("please tell me who you are", () => {
+      expect(
+        translateGitError("*** Please tell me who you are. Run git config --global user.email")
+      ).toMatch(/用户名和邮箱/);
+    });
+    it("dubious ownership", () => {
+      expect(
+        translateGitError("fatal: detected dubious ownership in repository at 'C:/repo'")
+      ).toMatch(/safe\.directory|属主/);
+    });
+    it("not a git repository（无 fatal 前缀也能命中）", () => {
+      expect(translateGitError("Not a git repository: C:/x")).toMatch(/不是 git/);
+    });
+    it("裸错误码字符串（生产模式）→ 中文", () => {
+      expect(translateGitError("GIT_ERR")).toMatch(/git 内部错误/);
+      expect(translateGitError("AUTH_FAILED")).toMatch(/认证/);
+    });
+  });
+
   describe("边界", () => {
     it('空字符串返回 "未知错误"', () => {
       expect(translateGitError("")).toBe("未知错误");

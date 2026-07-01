@@ -356,7 +356,7 @@ export const branchService = {
     const git = getGit(repoPath);
     try {
       await git.rebase([upstream]);
-      return { success: true, conflicts: [], message: "Rebase completed" };
+      return { success: true, conflicts: [], message: "变基完成" };
     } catch (e: unknown) {
       const conflicts = await getConflictFiles(repoPath);
       return {
@@ -392,7 +392,7 @@ export const branchService = {
           maxBuffer: 16 * 1024 * 1024,
         }
       );
-      return { success: true, conflicts: [], message: "Autosquash rebase completed" };
+      return { success: true, conflicts: [], message: "自动压缩变基完成" };
     } catch (e: unknown) {
       const conflicts = await getConflictFiles(repoPath);
       return {
@@ -407,7 +407,7 @@ export const branchService = {
     const git = getGit(repoPath);
     try {
       await git.raw(["cherry-pick", commitId]);
-      return { success: true, conflicts: [], message: "Cherry-pick completed" };
+      return { success: true, conflicts: [], message: "拣选（Cherry-pick）完成" };
     } catch (e: unknown) {
       const conflicts = await getConflictFiles(repoPath);
       return {
@@ -436,7 +436,7 @@ export const branchService = {
       return {
         success: true,
         conflicts: [],
-        message: `Cherry-pick ${commitIds.length} commit(s) completed`,
+        message: `拣选（Cherry-pick）${commitIds.length} 个提交完成`,
       };
     } catch (e: unknown) {
       const conflicts = await getConflictFiles(repoPath);
@@ -452,7 +452,7 @@ export const branchService = {
     const git = getGit(repoPath);
     try {
       await git.raw(["revert", "--no-edit", commitId]);
-      return { success: true, conflicts: [], message: "Revert completed" };
+      return { success: true, conflicts: [], message: "回滚（Revert）完成" };
     } catch (e: unknown) {
       const conflicts = await getConflictFiles(repoPath);
       return {

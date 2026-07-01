@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, defineAsyncComponent } from "vue";
 import { commands } from "@/utils/commands";
+import { translateGitError } from "@/utils/git-error";
 import { useBranchStore } from "@/stores/branchStore";
 import type { CommitInfo, FileStatus, PushOptions } from "@/utils/commands";
 import { formatTimestamp } from "@/utils/format";
@@ -130,7 +131,7 @@ async function doPush() {
     const msg = e instanceof Error ? e.message : String(e);
     pushing.value = false;
     if (await maybePromptCredential(msg, doPush)) return;
-    pushError.value = isCancelled(msg) ? "" : msg;
+    pushError.value = isCancelled(msg) ? "" : translateGitError(msg);
     return;
   } finally {
     pushing.value = false;
@@ -153,7 +154,7 @@ function isCancelled(msg: string): boolean {
 
 function pushErrText(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
-  return isCancelled(msg) ? "" : msg;
+  return isCancelled(msg) ? "" : translateGitError(msg);
 }
 
 /** 解析当前远端 HTTPS 主机键，用于预填登录对话框；SSH / 无 remote → ""。 */
@@ -249,7 +250,7 @@ async function handlePush() {
     const msg = e instanceof Error ? e.message : String(e);
     pushing.value = false;
     if (await maybePromptCredential(msg, handlePush)) return;
-    pushError.value = isCancelled(msg) ? "" : msg;
+    pushError.value = isCancelled(msg) ? "" : translateGitError(msg);
   }
 }
 
@@ -275,7 +276,11 @@ async function handleDivergenceRebase() {
     if (!result.success) {
       pushing.value = false;
       if (await maybePromptCredential(result.message, handleDivergenceRebase)) return;
-      pushError.value = isCancelled(result.message) ? "" : result.message || "拉取失败";
+      pushError.value = isCancelled(result.message)
+        ? ""
+        : result.message
+          ? translateGitError(result.message)
+          : "拉取失败";
       return;
     }
     pushing.value = false;
@@ -308,7 +313,11 @@ async function handleDivergenceMerge() {
     if (!result.success) {
       pushing.value = false;
       if (await maybePromptCredential(result.message, handleDivergenceMerge)) return;
-      pushError.value = isCancelled(result.message) ? "" : result.message || "拉取失败";
+      pushError.value = isCancelled(result.message)
+        ? ""
+        : result.message
+          ? translateGitError(result.message)
+          : "拉取失败";
       return;
     }
     pushing.value = false;
@@ -359,9 +368,9 @@ async function onConflictResolved() {
         } else {
           // 停在 edit 步骤或其它未完成：放弃自动推送，交回底部 Rebase 状态栏处理。
           pendingPushAfterResolve.value = false;
-          pushError.value =
-            result.message ||
-            "变基尚未完成（可能停在 edit 步骤），请在底部 Rebase 状态栏 Continue/Abort 后再推送";
+          pushError.value = result.message
+            ? translateGitError(result.message)
+            : "变基尚未完成（可能停在 edit 步骤），请在底部 Rebase 状态栏 Continue/Abort 后再推送";
         }
         return;
       }
@@ -601,7 +610,20 @@ watch(
             :disabled="pushing || (commits.length === 0 && !optForce && !optForceWithLease)"
             @click="handlePush"
           >
-            <span v-if="pushing">推送中...</span>
+            <span v-if="pushing" class="push-btn-loading">
+              <svg
+                class="push-spinner"
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+              >
+                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+              </svg>
+              推送中...
+            </span>
             <span v-else-if="optForce">⚠ 强制推送(P)</span>
             <span v-else-if="optForceWithLease">推送（lease）(P)</span>
             <span v-else>推送(P)</span>
@@ -958,6 +980,28 @@ watch(
 .push-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* 推送中 loading：与分支条目（BranchesPane .branch-spinner）一致的旋转动画 */
+.push-btn-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.push-spinner {
+  flex-shrink: 0;
+  transform-origin: center;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Error display */

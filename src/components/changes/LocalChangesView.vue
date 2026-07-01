@@ -14,7 +14,7 @@ import ContextMenu from "@/components/common/ContextMenu.vue";
 import type { MenuItem } from "@/components/common/ContextMenu.vue";
 import PushDialog from "@/components/common/PushDialog.vue";
 import AiSettingsDialog from "@/components/commit/AiSettingsDialog.vue";
-import { errMsg } from "@/utils/error";
+import { errText } from "@/utils/error";
 import { revealOrCopyPath } from "@/utils/reveal";
 import { refreshGit } from "@/composables/useGitRefresh";
 import { useBulkActions } from "@/composables/useBulkActions";
@@ -524,7 +524,7 @@ async function doQuickCommit(): Promise<void> {
     quickCommitMessage.value = "";
     quickCommitPaths.value = null;
   } catch (e: unknown) {
-    showToast(`提交失败: ${errMsg(e)}`);
+    showToast(`提交失败: ${errText(e)}`);
   } finally {
     quickCommitLoading.value = false;
   }
@@ -548,7 +548,7 @@ function handleDiscardUntracked(): void {
         }
         showToast("已删除 untracked 文件");
       } catch (e: unknown) {
-        showToast(`删除失败: ${errMsg(e)}`);
+        showToast(`删除失败: ${errText(e)}`);
       }
     },
   });
@@ -572,7 +572,7 @@ function handleDiscardChanges(): void {
         }
         showToast("已回滚更改");
       } catch (e: unknown) {
-        showToast(`回滚失败: ${errMsg(e)}`);
+        showToast(`回滚失败: ${errText(e)}`);
       }
     },
   });
@@ -590,7 +590,7 @@ async function handleStashFile(): Promise<void> {
     }
     showToast("已搁置更改");
   } catch (e: unknown) {
-    showToast(`搁置失败: ${errMsg(e)}`);
+    showToast(`搁置失败: ${errText(e)}`);
   }
 }
 
@@ -609,7 +609,7 @@ async function handleCopyAsPatch(): Promise<void> {
     await navigator.clipboard.writeText(raw);
     showToast("补丁已复制到剪贴板");
   } catch (e: unknown) {
-    showToast(`复制失败: ${errMsg(e)}`);
+    showToast(`复制失败: ${errText(e)}`);
   }
 }
 
@@ -636,7 +636,7 @@ async function handleCreatePatch(): Promise<void> {
     URL.revokeObjectURL(url);
     showToast(`补丁文件已下载: ${fileName}`);
   } catch (e: unknown) {
-    showToast(`创建补丁失败: ${errMsg(e)}`);
+    showToast(`创建补丁失败: ${errText(e)}`);
   }
 }
 
@@ -658,7 +658,7 @@ function handleDeleteFile(): void {
         }
         showToast("文件已删除");
       } catch (e: unknown) {
-        showToast(`删除失败: ${errMsg(e)}`);
+        showToast(`删除失败: ${errText(e)}`);
       }
     },
   });
@@ -866,7 +866,7 @@ onMounted(async () => {
     await commitStore.loadStatus();
     await refreshMergeState();
   } catch (error: unknown) {
-    errorMessage.value = `加载状态失败: ${errMsg(error)}`;
+    errorMessage.value = `加载状态失败: ${errText(error)}`;
     console.error("Failed to load status:", error);
   } finally {
     loading.value = false;
@@ -901,7 +901,7 @@ watch(
       await commitStore.loadStatus();
       await refreshMergeState();
     } catch (error: unknown) {
-      errorMessage.value = `加载状态失败: ${errMsg(error)}`;
+      errorMessage.value = `加载状态失败: ${errText(error)}`;
       console.error("Failed to load status:", error);
     } finally {
       loading.value = false;

@@ -11,7 +11,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { commands } from "@/utils/commands";
 import type { CommitInfo, DiffResult, LogFilter } from "@/utils/commands";
-import { errMsg } from "@/utils/error";
+import { errText } from "@/utils/error";
 
 const props = defineProps<{
   visible: boolean;
@@ -65,7 +65,7 @@ async function loadHistory(skip: number, append: boolean) {
       selectedCommitId.value = result.commits[0]!.id;
     }
   } catch (e) {
-    error.value = errMsg(e);
+    error.value = errText(e);
   } finally {
     loading.value = false;
     loadingMore.value = false;
@@ -79,7 +79,7 @@ async function loadDiff(commitId: string) {
   try {
     diff.value = await commands.getCommitDiff(props.repoPath, commitId, props.filePath);
   } catch (e) {
-    diffError.value = errMsg(e);
+    diffError.value = errText(e);
   } finally {
     diffLoading.value = false;
   }

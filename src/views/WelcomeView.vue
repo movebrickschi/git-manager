@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import OpeningRepositoryOverlay from "@/components/common/OpeningRepositoryOverlay.vue";
 import { useRepoStore } from "@/stores/repoStore";
 import { commands, platform } from "@/utils/commands";
+import { errText } from "@/utils/error";
 
 const router = useRouter();
 const repoStore = useRepoStore();
@@ -31,7 +32,7 @@ async function openRepoWithFeedback(path: string) {
     await repoStore.openRepo(path);
     router.push("/repo");
   } catch (e: any) {
-    errorMsg.value = e.message || "打开仓库失败";
+    errorMsg.value = errText(e) || "打开仓库失败";
   } finally {
     loading.value = false;
     openingRepoPath.value = "";
@@ -82,7 +83,7 @@ async function cloneRepo() {
       clonePath.value = "";
     }
   } catch (e: any) {
-    cloneError.value = e.message || "克隆失败";
+    cloneError.value = errText(e) || "克隆失败";
   } finally {
     cloneLoading.value = false;
   }
