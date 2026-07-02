@@ -38,7 +38,7 @@ export const patchService = {
       return {
         success: false,
         conflicts,
-        message: errStr(e) || "Patch apply failed (possibly conflicting context)",
+        message: errStr(e) || "补丁应用失败（可能存在冲突上下文）",
       };
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});

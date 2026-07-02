@@ -143,7 +143,7 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
     <div v-if="props.visible" class="hk-mask" @click.self="close">
       <div class="hk-dialog" role="dialog" aria-label="Git Hooks 管理">
         <header class="hk-header">
-          <span class="hk-title">Git Hooks</span>
+          <span class="hk-title">Git 钩子</span>
           <div class="hk-actions">
             <button class="hk-btn" @click="reload">刷新</button>
             <button class="hk-close" @click="close" title="关闭 (Esc)">✕</button>
@@ -157,7 +157,7 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
           <table v-else class="hk-table">
             <thead>
               <tr>
-                <th>Hook</th>
+                <th>钩子</th>
                 <th>状态</th>
                 <th>大小</th>
                 <th class="hk-col-actions">操作</th>

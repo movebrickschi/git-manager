@@ -134,7 +134,7 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
     <div v-if="props.visible" class="wt-mask" @click.self="close">
       <div class="wt-dialog" role="dialog" aria-label="Git Worktree 管理">
         <header class="wt-header">
-          <span class="wt-title">Git Worktree</span>
+          <span class="wt-title">工作树</span>
           <div class="wt-actions">
             <button class="wt-btn" @click="showAddForm = !showAddForm">
               {{ showAddForm ? "取消新建" : "+ 新建 Worktree" }}

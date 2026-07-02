@@ -142,7 +142,7 @@ export const rebaseService = {
         GIT_SEQUENCE_EDITOR: editor.command,
         GIT_EDITOR: "true",
       }).raw(["rebase", "-i", "--no-autosquash", baseRef]);
-      return { success: true, conflicts: [], message: "Interactive rebase 完成" };
+      return { success: true, conflicts: [], message: "交互式变基完成" };
     } catch (e: unknown) {
       // 区分"停在 edit"与"真冲突"——前者 hasConflicts=false 但 rebase 进行中
       const conflicts = await getConflictFiles(repoPath);
@@ -160,7 +160,7 @@ export const rebaseService = {
       return {
         success: false,
         conflicts,
-        message: errStr(e) || "Interactive rebase 失败",
+        message: errStr(e) || "交互式变基失败",
       };
     } finally {
       await editor.cleanup();

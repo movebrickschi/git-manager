@@ -76,7 +76,7 @@ function effectiveCount(): number {
     <div v-if="dialog.visible" class="rb-overlay" @click.self="close">
       <div class="rb-panel">
         <div class="rb-header">
-          <span class="rb-title">Interactive Rebase</span>
+          <span class="rb-title">交互式变基</span>
           <span class="rb-base">base：<code>{{ dialog.baseLabel || dialog.baseRef.slice(0, 7) }}</code></span>
           <button class="rb-close" :disabled="dialog.pending" @click="close">✕</button>
         </div>
@@ -100,8 +100,8 @@ function effectiveCount(): number {
               <div class="rb-row rb-row--head">
                 <div class="rb-col-order">序</div>
                 <div class="rb-col-move">移</div>
-                <div class="rb-col-action">Action</div>
-                <div class="rb-col-hash">Hash</div>
+                <div class="rb-col-action">操作</div>
+                <div class="rb-col-hash">哈希</div>
                 <div class="rb-col-subject">Subject / 新消息</div>
               </div>
 

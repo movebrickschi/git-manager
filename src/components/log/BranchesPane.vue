@@ -354,7 +354,7 @@ async function handleFetch() {
       await commands.fetchAll(path);
     }
     await refreshAfterGitOp();
-    ui.showToast("Fetch 完成");
+    ui.showToast("抓取（fetch）完成");
   } catch (e: unknown) {
     actionError.value = friendlyErr(e);
   } finally {
@@ -1320,7 +1320,7 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
     <div class="git-actions" v-if="props.activeTab === 'log'">
       <div class="git-actions-row">
         <ToolbarButton
-          title="Fetch：远程分支选中时仅 fetch 该 remote，否则 fetch --all"
+          title="抓取：远程分支选中时仅抓取该远程，否则 fetch --all"
           :disabled="!repoReady || actionLoading"
           @click="handleFetch"
         >
@@ -1335,10 +1335,10 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
             <polyline points="1 4 1 10 7 10" />
             <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
           </svg>
-          Fetch
+          抓取
         </ToolbarButton>
         <ToolbarButton
-          title="Pull：更新当前检出分支（HEAD）"
+          title="拉取：更新当前检出分支（HEAD）"
           :disabled="!repoReady || actionLoading"
           @click="handlePull"
         >
@@ -1353,10 +1353,10 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
             <polyline points="7 13 12 18 17 13" />
             <line x1="12" y1="6" x2="12" y2="18" />
           </svg>
-          Pull
+          拉取
         </ToolbarButton>
         <ToolbarButton
-          title="Push：选中本地分支时推送该分支，否则推送当前分支"
+          title="推送：选中本地分支时推送该分支，否则推送当前分支"
           :disabled="!repoReady || actionLoading"
           @click="handlePush"
         >
@@ -1371,7 +1371,7 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
             <polyline points="17 11 12 6 7 11" />
             <line x1="12" y1="18" x2="12" y2="6" />
           </svg>
-          Push
+          推送
         </ToolbarButton>
         <ToolbarButton
           title="迷路：查看 Git Reflog，恢复误 reset / rebase 丢失的提交"
@@ -1419,7 +1419,7 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
       <!-- Local branches -->
       <div class="branch-group">
         <div class="group-header">
-          <span>LOCAL</span>
+          <span>本地</span>
           <span class="count">{{ filteredLocal.length }}</span>
         </div>
         <template v-for="node in localFlatNodes" :key="node.key">
@@ -1554,7 +1554,7 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
             >
               <polyline points="9 18 15 12 9 6" />
             </svg>
-            <span>REMOTE</span>
+            <span>远程</span>
             <span class="count">{{ filteredRemote.length }}</span>
           </span>
         </div>
@@ -1680,7 +1680,7 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
             >
               <polyline points="9 18 15 12 9 6" />
             </svg>
-            <span>TAGS</span>
+            <span>标签</span>
             <span class="count">{{ filteredTags.length }}</span>
           </span>
           <button
@@ -1735,7 +1735,7 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
             >
               <polyline points="9 18 15 12 9 6" />
             </svg>
-            <span>SUBMODULES</span>
+            <span>子模块</span>
             <span class="count">{{ branchStore.submodules.length }}</span>
           </span>
           <button

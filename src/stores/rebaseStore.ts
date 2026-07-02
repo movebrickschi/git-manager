@@ -158,7 +158,7 @@ export const useRebaseStore = defineStore("rebase", () => {
       if (result.success) {
         close();
         branchStore.showToast(
-          result.message ? translateGitError(result.message) : "Interactive rebase 完成",
+          result.message ? translateGitError(result.message) : "交互式变基完成",
           "ok"
         );
         // rebase 改写历史/分支位置/工作区，必须刷新 log + 分支 + 文件状态，
@@ -271,7 +271,7 @@ export const useRebaseStore = defineStore("rebase", () => {
         );
       }
     } catch (e: unknown) {
-      branchStore.showToast(`Continue 失败：${errText(e)}`, "err");
+      branchStore.showToast(`继续（continue）失败：${errText(e)}`, "err");
     } finally {
       actionPending.value = false;
     }
@@ -286,7 +286,7 @@ export const useRebaseStore = defineStore("rebase", () => {
       await Promise.all([refreshStatus(), refreshGit()]);
       branchStore.showToast("已 Abort，仓库回到 rebase 前状态", "info");
     } catch (e: unknown) {
-      branchStore.showToast(`Abort 失败：${errText(e)}`, "err");
+      branchStore.showToast(`中止（abort）失败：${errText(e)}`, "err");
     } finally {
       actionPending.value = false;
     }

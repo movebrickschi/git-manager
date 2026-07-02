@@ -187,14 +187,14 @@ function statusBadge(s: string): string {
         <header class="cb-header">
           <div class="cb-selectors">
             <label>
-              <span>Base</span>
+              <span>基准</span>
               <select v-model="baseBranch">
                 <option v-for="b in branchOptions" :key="`base-${b}`" :value="b">{{ b }}</option>
               </select>
             </label>
             <span class="cb-arrow">→</span>
             <label>
-              <span>Target</span>
+              <span>目标</span>
               <select v-model="targetBranch">
                 <option v-for="b in branchOptions" :key="`tgt-${b}`" :value="b">{{ b }}</option>
               </select>

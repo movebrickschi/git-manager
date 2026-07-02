@@ -59,15 +59,15 @@ function applyInterval() {
 
 const fetchTitle = computed(() => {
   const parts: string[] = [];
-  parts.push(settings.autoFetchEnabled ? "Auto-fetch 已开启" : "Auto-fetch 已关闭");
+  parts.push(settings.autoFetchEnabled ? "自动抓取 已开启" : "自动抓取 已关闭");
   parts.push(`间隔：${settings.autoFetchIntervalMinutes} 分钟（右键修改）`);
   if (lastFetchAt.value) {
-    parts.push(`上次 fetch：${new Date(lastFetchAt.value).toLocaleTimeString()}`);
+    parts.push(`上次抓取：${new Date(lastFetchAt.value).toLocaleTimeString()}`);
   }
   if (lastErrors.value.size > 0) {
     parts.push(`${lastErrors.value.size} 个仓库上次失败`);
   }
-  parts.push("点击：切换 · 中键：立即 fetch");
+  parts.push("点击：切换 · 中键：立即抓取");
   return parts.join("\n");
 });
 </script>
@@ -145,7 +145,7 @@ const fetchTitle = computed(() => {
           }}m</span>
         </button>
         <div v-if="showIntervalEditor" class="interval-popover" @click.stop>
-          <label>Fetch 间隔（分钟）</label>
+          <label>抓取间隔（分钟）</label>
           <div class="interval-row">
             <input
               ref="intervalInputRef"

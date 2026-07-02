@@ -159,10 +159,10 @@ function onPushCancelled() {
     <!-- Staged files -->
     <div class="file-section">
       <Toolbar compact>
-        <span class="section-title">Staged</span>
+        <span class="section-title">已暂存</span>
         <span class="file-count">{{ commitStore.stagedFiles.length }}</span>
         <div style="flex: 1" />
-        <ToolbarButton title="Unstage All" @click="commitStore.unstageAll">
+        <ToolbarButton title="全部取消暂存" @click="commitStore.unstageAll">
           <svg
             width="14"
             height="14"
@@ -209,12 +209,12 @@ function onPushCancelled() {
     <!-- Unstaged files -->
     <div class="file-section">
       <Toolbar compact>
-        <span class="section-title">Changes</span>
+        <span class="section-title">变更</span>
         <span class="file-count">{{
           commitStore.unstagedFiles.length + commitStore.untrackedFiles.length
         }}</span>
         <div style="flex: 1" />
-        <ToolbarButton title="Stage All" @click="commitStore.stageAll">
+        <ToolbarButton title="全部暂存" @click="commitStore.stageAll">
           <svg
             width="14"
             height="14"

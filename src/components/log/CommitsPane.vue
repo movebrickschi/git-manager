@@ -168,7 +168,7 @@ function handleCheckoutRevision() {
       await refreshGit();
       showToast(`已切换到 ${commit.shortId}`);
     } catch (e: unknown) {
-      showToast(`Checkout 失败：${errText(e)}`);
+      showToast(`签出（checkout）失败：${errText(e)}`);
     }
   };
   showConfirmDialog.value = true;
@@ -188,10 +188,10 @@ function handleRevertCommit() {
         await refreshGit();
         showToast(`已成功 Revert ${commit.shortId}`);
       } else {
-        showToast(`Revert 产生冲突，请手动解决：${result.conflicts.join(", ")}`);
+        showToast(`回滚（revert）产生冲突，请手动解决：${result.conflicts.join(", ")}`);
       }
     } catch (e: unknown) {
-      showToast(`Revert 失败：${errText(e)}`);
+      showToast(`回滚（revert）失败：${errText(e)}`);
     }
   };
   showConfirmDialog.value = true;
@@ -213,7 +213,7 @@ async function doReset() {
     await refreshGit();
     showToast(`已 Reset（${resetMode.value}）到 ${commit.shortId}`);
   } catch (e: unknown) {
-    showToast(`Reset 失败：${errText(e)}`);
+    showToast(`重置（reset）失败：${errText(e)}`);
   }
 }
 
@@ -255,7 +255,7 @@ async function handleSquashCommits() {
     await refreshGit();
     showToast(`已合并 ${count} 个 commit`);
   } catch (e: unknown) {
-    showToast(`Squash 失败：${errText(e)}`);
+    showToast(`压缩（squash）失败：${errText(e)}`);
   }
 }
 
@@ -287,7 +287,7 @@ async function handleFixupInto() {
     await refreshGit();
     showToast(`已创建 fixup! ${commit.shortId}`);
   } catch (e) {
-    showToast(`Fixup 失败：${errText(e)}（请确认已暂存改动）`);
+    showToast(`修补（fixup）失败：${errText(e)}（请确认已暂存改动）`);
   }
 }
 
@@ -307,11 +307,11 @@ async function handleAutosquash() {
     const result = await commands.rebaseAutosquash(repoStore.activeRepo.path, commit.id);
     if (result.success) {
       await refreshGit();
-      showToast("Autosquash 变基完成");
+      showToast("自动压缩（autosquash）变基完成");
     } else if (result.conflicts.length > 0) {
-      showToast(`Autosquash 产生冲突，请手动解决：${result.conflicts.join(", ")}`);
+      showToast(`自动压缩（autosquash）产生冲突，请手动解决：${result.conflicts.join(", ")}`);
     } else {
-      showToast(`Autosquash 失败：${translateGitError(result.message)}`);
+      showToast(`自动压缩（autosquash）失败：${translateGitError(result.message)}`);
     }
   } catch (e) {
     showToast(`Autosquash 失败：${errText(e)}`);
@@ -689,9 +689,9 @@ function getRefClass(refType: string): string {
 
     <!-- Commit list header -->
     <div class="list-header">
-      <div class="col-author">Author</div>
-      <div class="col-message">Commit</div>
-      <div class="col-date">Date</div>
+      <div class="col-author">作者</div>
+      <div class="col-message">提交信息</div>
+      <div class="col-date">日期</div>
     </div>
 
     <!-- Commit list (virtual scrolling) -->
@@ -745,7 +745,7 @@ function getRefClass(refType: string): string {
       <div v-if="showResetDialog" class="modal-overlay" @click.self="showResetDialog = false">
         <div class="modal-dialog reset-modal">
           <div class="modal-header">
-            <span class="modal-title">Reset Current Branch to Here</span>
+            <span class="modal-title">重置当前分支到此处</span>
             <button class="modal-close" @click="showResetDialog = false">✕</button>
           </div>
           <div class="modal-body">
@@ -757,21 +757,21 @@ function getRefClass(refType: string): string {
               <label class="reset-mode-option" :class="{ active: resetMode === 'soft' }">
                 <input v-model="resetMode" type="radio" value="soft" />
                 <div class="mode-info">
-                  <span class="mode-name">Soft</span>
+                  <span class="mode-name">软 (Soft)</span>
                   <span class="mode-desc">保留所有更改到暂存区（可直接重新提交）</span>
                 </div>
               </label>
               <label class="reset-mode-option" :class="{ active: resetMode === 'mixed' }">
                 <input v-model="resetMode" type="radio" value="mixed" />
                 <div class="mode-info">
-                  <span class="mode-name">Mixed <span class="mode-default">（默认）</span></span>
+                  <span class="mode-name">混合 (Mixed) <span class="mode-default">（默认）</span></span>
                   <span class="mode-desc">保留更改到工作区，取消暂存</span>
                 </div>
               </label>
               <label class="reset-mode-option" :class="{ active: resetMode === 'hard' }">
                 <input v-model="resetMode" type="radio" value="hard" />
                 <div class="mode-info">
-                  <span class="mode-name mode-danger">Hard</span>
+                  <span class="mode-name mode-danger">硬 (Hard)</span>
                   <span class="mode-desc mode-danger">丢弃所有本地更改，不可恢复</span>
                 </div>
               </label>

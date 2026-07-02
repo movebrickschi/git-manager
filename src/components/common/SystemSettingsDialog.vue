@@ -315,7 +315,7 @@ const appVersion = computed(() => __APP_VERSION__);
             </div>
             <div class="field" :class="{ disabled: !settings.autoFetchEnabled }">
               <label class="field-label">
-                <span>Fetch 间隔（分钟）</span>
+                <span>抓取间隔（分钟）</span>
                 <input
                   type="number"
                   min="1"
@@ -342,7 +342,7 @@ const appVersion = computed(() => __APP_VERSION__);
 
           <!-- Worktree -->
           <div v-if="activeSection === 'worktree'" class="section">
-            <h3>Git Worktree</h3>
+            <h3>工作树</h3>
             <p>
               管理多工作树（IDEA "Checkout in New Worktree" 同款）。
               一个仓库可以有多个工作树同时检出不同分支，互不影响 staging / 编辑。
@@ -362,7 +362,7 @@ const appVersion = computed(() => __APP_VERSION__);
 
           <!-- Compare Branches -->
           <div v-if="activeSection === 'compare'" class="section">
-            <h3>Compare Branches</h3>
+            <h3>分支对比</h3>
             <p>
               对比任意两个分支之间的 commit 范围与文件变更（IDEA "Compare with Branch" 同款）。
               支持 base..target 视角：target 上有但 base 没有的 commit。
@@ -379,7 +379,7 @@ const appVersion = computed(() => __APP_VERSION__);
 
           <!-- Git Hooks -->
           <div v-if="activeSection === 'hooks'" class="section">
-            <h3>Git Hooks</h3>
+            <h3>Git 钩子</h3>
             <p>
               管理当前仓库 <code>.git/hooks</code> 下的钩子脚本：查看状态、启用 / 禁用、
               新建与编辑内容（pre-commit / commit-msg / pre-push 等）。

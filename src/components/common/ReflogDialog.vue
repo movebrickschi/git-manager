@@ -206,7 +206,7 @@ watch(
           <div class="reflog-detail">
             <template v-if="selectedEntry">
               <div class="detail-row">
-                <span class="detail-label">Ref</span>
+                <span class="detail-label">引用</span>
                 <span class="detail-value mono">{{ selectedEntry.ref }}</span>
               </div>
               <div class="detail-row">
@@ -214,7 +214,7 @@ watch(
                 <span class="detail-value">{{ selectedEntry.action }}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Commit</span>
+                <span class="detail-label">提交</span>
                 <span class="detail-value mono">{{ selectedEntry.commitId }}</span>
               </div>
               <div class="detail-row">

@@ -347,7 +347,7 @@ export const branchService = {
       return {
         success: false,
         conflicts,
-        message: errStr(e) || "Merge failed with conflicts",
+        message: errStr(e) || "合并失败并产生冲突",
       };
     }
   },
@@ -362,7 +362,7 @@ export const branchService = {
       return {
         success: false,
         conflicts,
-        message: errStr(e) || "Rebase failed with conflicts",
+        message: errStr(e) || "变基失败并产生冲突",
       };
     }
   },
@@ -398,7 +398,7 @@ export const branchService = {
       return {
         success: false,
         conflicts,
-        message: errStr(e) || "Autosquash rebase failed",
+        message: errStr(e) || "自动压缩（autosquash）变基失败",
       };
     }
   },
@@ -413,7 +413,7 @@ export const branchService = {
       return {
         success: false,
         conflicts,
-        message: errStr(e) || "Cherry-pick failed with conflicts",
+        message: errStr(e) || "拣选（cherry-pick）失败并产生冲突",
       };
     }
   },
@@ -443,7 +443,7 @@ export const branchService = {
       return {
         success: false,
         conflicts,
-        message: errStr(e) || `Cherry-pick failed at ${commitIds[0]}`,
+        message: errStr(e) || `拣选（cherry-pick）失败于 ${commitIds[0]}`,
       };
     }
   },
@@ -458,7 +458,7 @@ export const branchService = {
       return {
         success: false,
         conflicts,
-        message: errStr(e) || "Revert failed with conflicts",
+        message: errStr(e) || "回滚（revert）失败并产生冲突",
       };
     }
   },

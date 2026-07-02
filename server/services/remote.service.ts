@@ -93,7 +93,7 @@ export const remoteService = {
       return {
         success: false,
         conflicts: [],
-        message: errStr(e) || "Failed to read working tree status",
+        message: errStr(e) || "读取工作区状态失败",
       };
     }
 

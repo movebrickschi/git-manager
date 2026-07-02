@@ -48,7 +48,7 @@ function copyHash() {
 <template>
   <div class="commit-details-pane">
     <div class="pane-header">
-      <span class="pane-title">Commit Details</span>
+      <span class="pane-title">提交详情</span>
     </div>
 
     <div v-if="loading" class="empty">加载中...</div>
@@ -60,14 +60,14 @@ function copyHash() {
 
       <div class="detail-rows">
         <div class="detail-row">
-          <span class="detail-label">Hash</span>
+          <span class="detail-label">哈希</span>
           <span class="detail-value mono hash-value" @click="copyHash" title="点击复制">
             {{ selectedCommit.id }}
           </span>
         </div>
 
         <div class="detail-row">
-          <span class="detail-label">Author</span>
+          <span class="detail-label">作者</span>
           <span class="detail-value">
             {{ selectedCommit.author }}
             <span class="email">&lt;{{ selectedCommit.authorEmail }}&gt;</span>
@@ -75,12 +75,12 @@ function copyHash() {
         </div>
 
         <div class="detail-row">
-          <span class="detail-label">Date</span>
+          <span class="detail-label">日期</span>
           <span class="detail-value">{{ formatFullDate(selectedCommit.authorTime) }}</span>
         </div>
 
         <div v-if="selectedCommit.author !== selectedCommit.committer" class="detail-row">
-          <span class="detail-label">Committer</span>
+          <span class="detail-label">提交者</span>
           <span class="detail-value">
             {{ selectedCommit.committer }}
             <span class="email">&lt;{{ selectedCommit.committerEmail }}&gt;</span>
@@ -88,7 +88,7 @@ function copyHash() {
         </div>
 
         <div v-if="selectedCommit.parents.length > 0" class="detail-row">
-          <span class="detail-label">Parents</span>
+          <span class="detail-label">父提交</span>
           <span class="detail-value">
             <span
               v-for="parent in selectedCommit.parents"
@@ -101,7 +101,7 @@ function copyHash() {
         </div>
 
         <div v-if="selectedCommit.refs.length > 0" class="detail-row">
-          <span class="detail-label">Refs</span>
+          <span class="detail-label">引用</span>
           <span class="detail-value refs-value">
             <span
               v-for="ref in selectedCommit.refs"
