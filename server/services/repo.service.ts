@@ -126,7 +126,9 @@ export const repoService = {
       git.env({ ...process.env, ...extraEnv } as Record<string, string>);
     }
     try {
-      await withRetry(() => git.clone(url.trim(), target), {
+      // --progress：非 TTY 下 git 默认关进度输出，大仓库 clone 会长时间零输出而被
+      // simple-git 的 block 超时误杀；强制输出进度让「有传输就不算卡死」成立。
+      await withRetry(() => git.clone(url.trim(), target, ["--progress"]), {
         tries: 3,
         baseMs: 1000,
         label: `clone ${redactUrl(url)}`,

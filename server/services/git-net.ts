@@ -53,6 +53,28 @@ interface RunOpts {
 }
 
 /**
+ * 联网命令统一带 --progress 后，失败时 stderr 里会混入大量传输进度/统计行
+ * （`Receiving objects: 42% ...\r` 等）。这里只剔除标准进度行，**保留**其余所有行——
+ * 尤其是 `remote:` 开头的服务端 hook 拒绝消息（如 GitLab pre-receive 错误），
+ * 那是用户排错的关键信息。按 \r 与 \n 同时拆行：进度行靠回车原位刷新，管道里
+ * 会连成一长串。
+ */
+const PROGRESS_LINE_RE =
+  /^(remote: )?((Enumerating|Counting|Compressing|Receiving|Writing|Unpacking) objects|Resolving deltas|Updating files|Checking out files|Filtering content):/;
+const PROGRESS_TOTAL_RE = /^remote: Total \d+ /;
+
+export function stripProgressLines(text: string): string {
+  return text
+    .split(/[\r\n]+/)
+    .filter((line) => {
+      const t = line.trim();
+      if (!t) return false;
+      return !PROGRESS_LINE_RE.test(t) && !PROGRESS_TOTAL_RE.test(t);
+    })
+    .join("\n");
+}
+
+/**
  * 低层：spawn 一个受跟踪、可杀的子进程，按 repoPath 登记，便于 cancelNetworkGit 终止。
  *
  * 抽出 binary/args 是为了可测试性——单测用 `process.execPath`（node）跑一个 sleep
@@ -189,7 +211,13 @@ export function runTracked(
         resolve(stdout);
         return;
       }
-      reject(new Error(stderr.trim() || stdout.trim() || `git exited with code ${code}`));
+      reject(
+        new Error(
+          stripProgressLines(stderr).trim() ||
+            stripProgressLines(stdout).trim() ||
+            `git exited with code ${code}`
+        )
+      );
     });
   });
 }

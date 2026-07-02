@@ -69,7 +69,7 @@ describe("remoteService.pull · Smart Pull", () => {
     const r = await remoteService.pull("/repo");
 
     expect(r).toEqual({ success: true, conflicts: [], message: "拉取完成" });
-    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull"], { extraEnv: {} });
+    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "--progress"], { extraEnv: {} });
     expect(mockGit.raw).not.toHaveBeenCalled();
   });
 
@@ -116,7 +116,7 @@ describe("remoteService.pull · Smart Pull", () => {
       expect.arrayContaining(["stash", "push", "--include-untracked"])
     );
     expect(mockGit.raw.mock.calls[1]?.[0]).toEqual(["stash", "pop", "--index"]);
-    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull"], { extraEnv: {} });
+    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "--progress"], { extraEnv: {} });
   });
 
   it("【5】dirty tree + stash 失败 → 早返回，不调 pull", async () => {
@@ -219,7 +219,9 @@ describe("remoteService.pull · Smart Pull", () => {
 
     await remoteService.pull("/repo", undefined, true);
 
-    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "--rebase"], { extraEnv: {} });
+    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "--progress", "--rebase"], {
+      extraEnv: {},
+    });
   });
 
   it("【12】remote=origin → pull 命令带 origin", async () => {
@@ -227,7 +229,9 @@ describe("remoteService.pull · Smart Pull", () => {
 
     await remoteService.pull("/repo", "origin");
 
-    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "origin"], { extraEnv: {} });
+    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "--progress", "origin"], {
+      extraEnv: {},
+    });
   });
 
   it("【13】rebase=true + remote=origin → ['pull', '--rebase', 'origin']", async () => {
@@ -235,7 +239,7 @@ describe("remoteService.pull · Smart Pull", () => {
 
     await remoteService.pull("/repo", "origin", true);
 
-    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "--rebase", "origin"], {
+    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "--progress", "--rebase", "origin"], {
       extraEnv: {},
     });
   });
@@ -258,7 +262,9 @@ describe("remoteService.pull · Smart Pull", () => {
     const r = await remoteService.pull("/repo", "origin");
 
     expect(r.success).toBe(true);
-    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "origin", "dev"], { extraEnv: {} });
+    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "--progress", "origin", "dev"], {
+      extraEnv: {},
+    });
     expect(mockGit.raw).toHaveBeenCalledWith(["branch", "--set-upstream-to=origin/dev"]);
   });
 
@@ -274,7 +280,9 @@ describe("remoteService.pull · Smart Pull", () => {
 
     await remoteService.pull("/repo", "origin");
 
-    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "origin"], { extraEnv: {} });
+    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "--progress", "origin"], {
+      extraEnv: {},
+    });
     expect(mockGit.raw).not.toHaveBeenCalledWith(
       expect.arrayContaining(["branch", "--set-upstream-to=origin/dev"])
     );
@@ -291,7 +299,9 @@ describe("remoteService.pull · Smart Pull", () => {
 
     await remoteService.pull("/repo", "origin");
 
-    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "origin"], { extraEnv: {} });
+    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "--progress", "origin"], {
+      extraEnv: {},
+    });
     // 已有 upstream：不应查 show-ref，也不应建 upstream
     expect(mockGit.raw).not.toHaveBeenCalledWith(
       expect.arrayContaining(["show-ref"])
@@ -399,7 +409,9 @@ describe("remoteService.previewPullConflicts · IDEA-style preview", () => {
 
     await remoteService.previewPullConflicts("/repo", "origin");
 
-    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["fetch", "origin"], { extraEnv: {} });
+    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["fetch", "--progress", "origin"], {
+      extraEnv: {},
+    });
   });
 });
 
@@ -426,7 +438,7 @@ describe("remoteService.forcePull · 丢弃本地改动强制拉取", () => {
     expect(mockGit.raw).toHaveBeenCalledTimes(2);
     expect(mockGit.raw.mock.calls[0]?.[0]).toEqual(["reset", "--hard", "HEAD"]);
     expect(mockGit.raw.mock.calls[1]?.[0]).toEqual(["clean", "-fd"]);
-    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull"], { extraEnv: {} });
+    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "--progress"], { extraEnv: {} });
   });
 
   it("【force-2】reset 失败 → 不继续 clean / pull", async () => {
@@ -458,7 +470,7 @@ describe("remoteService.forcePull · 丢弃本地改动强制拉取", () => {
 
     await remoteService.forcePull("/repo", "origin", true);
 
-    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "--rebase", "origin"], {
+    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["pull", "--progress", "--rebase", "origin"], {
       extraEnv: {},
     });
   });
@@ -482,7 +494,7 @@ describe("remoteService.push · 自动建立上游跟踪", () => {
 
     expect(runNetworkGit).toHaveBeenCalledWith(
       "/repo",
-      ["push", "--set-upstream", "origin", "dev"],
+      ["push", "--progress", "--set-upstream", "origin", "dev"],
       { extraEnv: {} }
     );
   });
@@ -492,7 +504,7 @@ describe("remoteService.push · 自动建立上游跟踪", () => {
 
     await remoteService.push("/repo", "origin", "dev");
 
-    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["push", "origin", "dev"], {
+    expect(runNetworkGit).toHaveBeenCalledWith("/repo", ["push", "--progress", "origin", "dev"], {
       extraEnv: {},
     });
   });
@@ -503,7 +515,7 @@ describe("remoteService.push · 自动建立上游跟踪", () => {
     expect(mockGit.raw).not.toHaveBeenCalled();
     expect(runNetworkGit).toHaveBeenCalledWith(
       "/repo",
-      ["push", "--set-upstream", "origin", "dev"],
+      ["push", "--progress", "--set-upstream", "origin", "dev"],
       { extraEnv: {} }
     );
   });

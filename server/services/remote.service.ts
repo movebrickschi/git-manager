@@ -18,7 +18,9 @@ export const remoteService = {
     branch?: string,
     options?: PushOptions
   ): Promise<void> {
-    const args: string[] = ["push"];
+    // --progress：GUI 下 stderr 非 TTY，git 默认关闭进度输出，大仓库传输阶段会
+    // 长时间零输出而被 block 超时误杀（见 git-net.ts）。强制输出进度持续喂活计时器。
+    const args: string[] = ["push", "--progress"];
     // forceWithLease 优先于 force（与 shared/types.ts 的契约一致）
     if (options?.forceWithLease) args.push("--force-with-lease");
     else if (options?.force) args.push("--force");
@@ -56,7 +58,7 @@ export const remoteService = {
   async deleteRemoteBranch(repoPath: string, remote: string, name: string): Promise<void> {
     const extraEnv = await buildAuthEnv(repoPath);
     await withRetry(
-      () => runNetworkGit(repoPath, ["push", remote, "--delete", name], { extraEnv }),
+      () => runNetworkGit(repoPath, ["push", "--progress", remote, "--delete", name], { extraEnv }),
       { label: `push ${remote} --delete ${name}` }
     );
   },
@@ -146,7 +148,7 @@ export const remoteService = {
 
     let pullErr: unknown = null;
     try {
-      const args: string[] = ["pull"];
+      const args: string[] = ["pull", "--progress"];
       if (rebase) args.push("--rebase");
       if (remote) args.push(remote);
       if (pullBranch) args.push(pullBranch);
@@ -252,7 +254,11 @@ export const remoteService = {
     let fetched: boolean;
     try {
       const extraEnv = await buildAuthEnv(repoPath);
-      await runNetworkGit(repoPath, remote ? ["fetch", remote] : ["fetch"], { extraEnv });
+      await runNetworkGit(
+        repoPath,
+        remote ? ["fetch", "--progress", remote] : ["fetch", "--progress"],
+        { extraEnv }
+      );
       fetched = true;
     } catch {
       fetched = false;
@@ -353,7 +359,7 @@ export const remoteService = {
     }
 
     try {
-      const args: string[] = ["pull"];
+      const args: string[] = ["pull", "--progress"];
       if (rebase) args.push("--rebase");
       if (remote) args.push(remote);
       const extraEnv = await buildAuthEnv(repoPath);
@@ -406,14 +412,19 @@ export const remoteService = {
   async fetch(repoPath: string, remote?: string): Promise<void> {
     const extraEnv = await buildAuthEnv(repoPath);
     await withRetry(
-      () => runNetworkGit(repoPath, remote ? ["fetch", remote] : ["fetch"], { extraEnv }),
+      () =>
+        runNetworkGit(
+          repoPath,
+          remote ? ["fetch", "--progress", remote] : ["fetch", "--progress"],
+          { extraEnv }
+        ),
       { label: `fetch ${remote ?? "(default)"}` }
     );
   },
 
   async fetchAll(repoPath: string): Promise<void> {
     const extraEnv = await buildAuthEnv(repoPath);
-    await withRetry(() => runNetworkGit(repoPath, ["fetch", "--all"], { extraEnv }), {
+    await withRetry(() => runNetworkGit(repoPath, ["fetch", "--progress", "--all"], { extraEnv }), {
       label: "fetch --all",
     });
   },
@@ -421,7 +432,10 @@ export const remoteService = {
   async fetchBranch(repoPath: string, remote: string, branchName: string): Promise<void> {
     const extraEnv = await buildAuthEnv(repoPath);
     await withRetry(
-      () => runNetworkGit(repoPath, ["fetch", remote, `${branchName}:${branchName}`], { extraEnv }),
+      () =>
+        runNetworkGit(repoPath, ["fetch", "--progress", remote, `${branchName}:${branchName}`], {
+          extraEnv,
+        }),
       { label: `fetch ${remote} ${branchName}` }
     );
   },

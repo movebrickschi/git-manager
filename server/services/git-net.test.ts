@@ -17,6 +17,7 @@ import {
   hasActiveNetworkGit,
   runNetworkGit,
   runTracked,
+  stripProgressLines,
 } from "./git-net.js";
 
 const execFile = promisify(execFileCb);
@@ -70,6 +71,47 @@ describe("git-net runTracked / cancelNetworkGit", () => {
     );
     expect(out).toBe("injected-123");
     expect(hasActiveNetworkGit(repo)).toBe(false);
+  });
+});
+
+describe("git-net stripProgressLines · --progress 进度行不污染错误消息", () => {
+  it("剔除标准传输进度/统计行，保留真实错误行与 remote: hook 消息", () => {
+    // \r 是 --progress 原位刷新的分隔符，管道里进度会连成一长串
+    const stderr = [
+      "remote: Enumerating objects: 1234, done.",
+      "remote: Counting objects: 100% (1234/1234), done.",
+      "remote: Compressing objects: 100% (567/567), done.",
+      "remote: Total 1234 (delta 890), reused 1100 (delta 800), pack-reused 0",
+      "Receiving objects:  42% (520/1234), 2.1 MiB | 1.0 MiB/s\rReceiving objects: 100% (1234/1234), done.",
+      "Resolving deltas: 100% (890/890), done.",
+      "remote: GitLab: You are not allowed to push code to this project.",
+      "fatal: unable to access 'https://example.com/repo.git/': Could not resolve host",
+    ].join("\n");
+
+    const out = stripProgressLines(stderr);
+
+    expect(out).not.toMatch(/Enumerating objects|Counting objects|Compressing objects/);
+    expect(out).not.toMatch(/Receiving objects|Resolving deltas|remote: Total/);
+    expect(out).toContain("remote: GitLab: You are not allowed to push code to this project.");
+    expect(out).toContain("fatal: unable to access");
+  });
+
+  it("全是进度行时返回空串（runTracked 将回退到 exit code 兜底消息）", () => {
+    const out = stripProgressLines(
+      "Receiving objects:  10% (1/10)\rReceiving objects: 100% (10/10), done.\nResolving deltas: 100% (5/5), done."
+    );
+    expect(out).toBe("");
+  });
+
+  it("runTracked 失败时 reject 消息已剔除进度行", async () => {
+    const repo = path.join(os.tmpdir(), "gm-net-progress");
+    const script =
+      "process.stderr.write('Receiving objects:  50% (5/10)\\rReceiving objects: 100% (10/10), done.\\n');" +
+      "process.stderr.write('fatal: early EOF\\n');" +
+      "process.exit(128)";
+    const p = runTracked(repo, process.execPath, ["-e", script]);
+    await expect(p).rejects.toThrow(/fatal: early EOF/);
+    await expect(p).rejects.not.toThrow(/Receiving objects/);
   });
 });
 
