@@ -4,7 +4,13 @@ import os from "node:os";
 import * as path from "path";
 import { promisify } from "node:util";
 import type { DiffResultModel, FileStatus, StashEntry } from "../git-service.js";
-import { getGit, parseDiffOutput, parseNameStatus } from "./_helpers.js";
+import {
+  getGit,
+  parseDiffOutput,
+  parseNameStatus,
+  runGitArgsChunked,
+  runGitPathspecFromFile,
+} from "./_helpers.js";
 
 const execFile = promisify(execFileCb);
 
@@ -179,22 +185,43 @@ export const stashService = {
   },
 
   /**
-   * 批量搁置 N 个指定文件（pathspec 限定）：
-   *   `git stash push --include-untracked -m <msg> -- <p1> <p2> ...`
+   * 批量搁置 N 个指定文件，且**只产生一个 stash entry**。
    *
-   * 与全量 `stashSave` 的差别：本方法只搁置 `filePaths` 列表里的文件，
-   * 其余 dirty 文件不动；与单文件 `stashFile` 的差别：一次产生一个 stash entry，
-   * 而不是 N 个，方便后续 pop / drop 整批。
+   * 为什么不用 `git stash push -- <pathspec>`：数百文件时，
+   *   - 直接摊进 argv → spawn 超出 Windows 命令行上限；
+   *   - 即便用 `--pathspec-from-file` 绕过我们这一层，`git stash` 内部仍会再 spawn
+   *     `git clean`（清理已搁置的 untracked）并把 pathspec 展开成 argv，报
+   *     `cannot spawn git: Filename too long`，且此时 stash commit 已建、工作区却没清，
+   *     留下「有 entry 但文件还在」的半残状态。
    *
-   * 空数组直接返回 noop。
+   * 故改用「先暂存、再 `git stash push --staged`」：
+   *   1. `git add`（pathspec-from-file，任意数量不溢出）把选中文件全部入索引；
+   *   2. `git stash push --staged` 只搁置暂存区，无需 pathspec → 不触发内部 argv 展开；
+   *      一条命令产出单个 entry，工作区随之清理干净。
+   * 为不影响用户**本次未选中、但已暂存**的文件：stash 前先把这些「外部暂存文件」
+   * 取消暂存，stash 后再还原其暂存态（数量通常很少，分块 reset/add 兜底）。
+   *
+   * 注意：`git stash push --staged` 需要 git ≥ 2.35。空数组直接 noop。
    */
   async stashFiles(repoPath: string, filePaths: string[], message?: string): Promise<void> {
     if (!Array.isArray(filePaths) || filePaths.length === 0) return;
     const git = getGit(repoPath);
-    const args = ["stash", "push", "--include-untracked"];
-    if (message) args.push("-m", message);
-    args.push("--", ...filePaths);
-    await git.raw(args);
+
+    const selected = new Set(filePaths);
+    const stagedBefore = (await git.raw(["diff", "--cached", "--name-only"]))
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const foreign = stagedBefore.filter((p) => !selected.has(p));
+
+    await runGitPathspecFromFile(repoPath, ["add"], filePaths);
+    if (foreign.length > 0) await runGitArgsChunked(git, ["reset", "-q"], foreign);
+
+    const subArgs = ["stash", "push", "--staged"];
+    if (message) subArgs.push("-m", message);
+    await git.raw(subArgs);
+
+    if (foreign.length > 0) await runGitArgsChunked(git, ["add"], foreign);
   },
 
   /**

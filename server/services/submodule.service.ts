@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import { simpleGit } from "simple-git";
-import { getGit } from "./_helpers.js";
+import { getGit, runGitArgsChunked } from "./_helpers.js";
 import type { Submodule } from "../git-service.js";
 
 /** submodule update / sync 可能需要克隆大子模块，单独用 5 分钟超时，避免被 30s 默认值打断。 */
@@ -129,24 +129,36 @@ export const submoduleService = {
 
   async initSubmodules(repoPath: string, paths?: string[]): Promise<void> {
     const git = getLongTimeoutGit(repoPath);
-    const args = ["submodule", "init"];
-    if (paths && paths.length > 0) args.push("--", ...paths);
-    await git.raw(args);
+    // git submodule 不支持 --pathspec-from-file，路径多时按预算分块（init 幂等）。
+    if (paths && paths.length > 0) {
+      await runGitArgsChunked(git, ["submodule", "init"], paths);
+    } else {
+      await git.raw(["submodule", "init"]);
+    }
   },
 
-  /** update 需要克隆大子模块，统一走 5 分钟超时。 */
+  /**
+   * update 需要克隆大子模块，统一走 5 分钟超时。
+   * --progress（git ≥2.11）：非 TTY 下强制输出克隆进度，避免大子模块传输阶段
+   * 长时间零输出被 block 超时误杀（同 remote.service 联网命令的处理）。
+   */
   async updateSubmodules(repoPath: string, paths?: string[]): Promise<void> {
     const git = getLongTimeoutGit(repoPath);
-    const args = ["submodule", "update", "--init", "--recursive"];
-    if (paths && paths.length > 0) args.push("--", ...paths);
-    await git.raw(args);
+    const base = ["submodule", "update", "--progress", "--init", "--recursive"];
+    if (paths && paths.length > 0) {
+      await runGitArgsChunked(git, base, paths);
+    } else {
+      await git.raw(base);
+    }
   },
 
   /** sync 也走 5 分钟超时，子模块 url 改动同步可能涉及多 remote 校验。 */
   async syncSubmodules(repoPath: string, paths?: string[]): Promise<void> {
     const git = getLongTimeoutGit(repoPath);
-    const args = ["submodule", "sync", "--recursive"];
-    if (paths && paths.length > 0) args.push("--", ...paths);
-    await git.raw(args);
+    if (paths && paths.length > 0) {
+      await runGitArgsChunked(git, ["submodule", "sync", "--recursive"], paths);
+    } else {
+      await git.raw(["submodule", "sync", "--recursive"]);
+    }
   },
 };

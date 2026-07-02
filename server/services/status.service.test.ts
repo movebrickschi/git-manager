@@ -113,6 +113,34 @@ describe("statusService.stageFilesBatch / unstageFilesBatch", () => {
     expect(s.staged).toHaveLength(0);
     expect(s.untracked.map((f) => f.path).sort()).toEqual(["a.txt", "b.txt"]);
   });
+
+  it(
+    "大批量 stage + unstage：700 个长路径文件（回归 argv 长度溢出）",
+    async () => {
+      // 旧实现把全部路径摊进单条 `git add -- <...>`，700 个长路径命令行 > 60KB，
+      // 远超 Windows CreateProcess 的 32767 上限必然失败；新实现走 --pathspec-from-file
+      // 应一次成功完成 stage 与 unstage。
+      const sub = "deep/nested/directory/path";
+      await fs.mkdir(path.join(repo, sub), { recursive: true });
+      const names = Array.from(
+        { length: 700 },
+        (_, i) =>
+          `${sub}/segment-${String(i).padStart(4, "0")}-extra-long-file-name-to-exceed-argv-limit.txt`
+      );
+      await Promise.all(names.map((name, i) => fs.writeFile(path.join(repo, name), `content-${i}`)));
+
+      await statusService.stageFilesBatch(repo, names);
+      let s = await statusService.getStatus(repo);
+      expect(s.staged).toHaveLength(700);
+      expect(s.untracked).toHaveLength(0);
+
+      await statusService.unstageFilesBatch(repo, names);
+      s = await statusService.getStatus(repo);
+      expect(s.staged).toHaveLength(0);
+      expect(s.untracked).toHaveLength(700);
+    },
+    30000
+  );
 });
 
 describe("statusService.getWorkingFileContent / deleteFile", () => {

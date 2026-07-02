@@ -150,3 +150,62 @@ describe("stashService.stashRemoveFile", () => {
     expect(await read(repo, "a.txt")).toBe("a-base\n");
   });
 });
+
+describe("stashService.stashFiles · 大批量（回归 argv 长度溢出）", () => {
+  let repo: string;
+  beforeEach(async () => {
+    repo = await makeRepo();
+  });
+  afterEach(async () => {
+    await fs.rm(repo, { recursive: true, force: true });
+  });
+
+  it(
+    "700 个长路径文件一次搁置 → 仅 1 个 stash entry、工作区清理、文件全部入 stash",
+    async () => {
+      // 旧实现 `git stash push -- <...>` 把全部路径摊进 argv，700 个长路径必然超出
+      // Windows 32767 上限；改走「add(pathspec-from-file) + stash push --staged」后
+      // 单命令完成、只产生 1 个 entry、工作区清理干净。
+      const sub = "deep/nested/directory/path";
+      await fs.mkdir(path.join(repo, sub), { recursive: true });
+      const names = Array.from(
+        { length: 700 },
+        (_, i) =>
+          `${sub}/segment-${String(i).padStart(4, "0")}-extra-long-file-name-to-exceed-argv-limit.txt`
+      );
+      await Promise.all(names.map((name, i) => fs.writeFile(path.join(repo, name), `content-${i}`)));
+
+      await stashService.stashFiles(repo, names, "bulk wip");
+
+      expect((await stashService.getStashList(repo)).length).toBe(1);
+      expect((await stashService.getStashFiles(repo, 0)).length).toBe(700);
+      // 这些文件已被搁置移出工作区 → status 干净
+      expect((await git(repo, "status", "--porcelain", "-uall")).trim()).toBe("");
+    },
+    30000
+  );
+
+  it("保留未选中的已暂存文件：只搁置选中项，外部暂存文件暂存态不变", async () => {
+    // a.txt 已暂存（外部、不在本次搁置选择里）
+    await fs.writeFile(path.join(repo, "a.txt"), "a-staged\n", "utf8");
+    await git(repo, "add", "a.txt");
+    // u1/u2 未跟踪，是本次要搁置的目标
+    await fs.writeFile(path.join(repo, "u1.txt"), "u1\n", "utf8");
+    await fs.writeFile(path.join(repo, "u2.txt"), "u2\n", "utf8");
+
+    await stashService.stashFiles(repo, ["u1.txt", "u2.txt"], "shelve untracked");
+
+    // 只产生 1 个 entry，且只含 u1/u2
+    expect((await stashService.getStashList(repo)).length).toBe(1);
+    expect((await stashService.getStashFiles(repo, 0)).map((f) => f.path).sort()).toEqual([
+      "u1.txt",
+      "u2.txt",
+    ]);
+    // a.txt 仍处于已暂存状态（外部暂存文件被保留）
+    expect((await git(repo, "diff", "--cached", "--name-only")).trim()).toBe("a.txt");
+    // u1/u2 已移出工作区
+    expect((await git(repo, "status", "--porcelain", "-uall")).split("\n").map((l) => l.trim())).not.toContain(
+      "?? u1.txt"
+    );
+  });
+});

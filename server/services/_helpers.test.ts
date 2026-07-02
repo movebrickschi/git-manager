@@ -5,12 +5,14 @@ import { promisify } from "node:util";
 const execFile = promisify(execFileCb);
 import os from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
   buildUntrackedDiff,
+  getGit,
   parseDiffOutput,
   recoverMisdetectedBinaryDiff,
+  runGitArgsChunked,
   UNTRACKED_DIFF_MAX_BYTES,
 } from "./_helpers.js";
 
@@ -236,5 +238,47 @@ describe("parseDiffOutput · 二进制识别不误伤代码字面量", () => {
     expect(diff.binary).toBe(true);
     expect(diff.hunks).toHaveLength(0);
     expect(diff.newPath).toBe("img.png");
+  });
+});
+
+describe("runGitArgsChunked · 分块执行（用于不支持 pathspec-from-file 的子命令）", () => {
+  let repo: string;
+
+  beforeEach(async () => {
+    repo = await fs.mkdtemp(path.join(os.tmpdir(), "gm-chunked-"));
+    await execFile("git", ["-C", repo, "init", "-q"], { encoding: "utf8" });
+    await execFile("git", ["-C", repo, "config", "user.email", "t@test"], { encoding: "utf8" });
+    await execFile("git", ["-C", repo, "config", "user.name", "t"], { encoding: "utf8" });
+  });
+
+  afterEach(async () => {
+    await fs.rm(repo, { recursive: true, force: true });
+  });
+
+  it("budget 极小时分多块执行：10 个文件全部经 git add 入索引", async () => {
+    const names: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      const name = `file-${i}.txt`;
+      await fs.writeFile(path.join(repo, name), `x${i}`, "utf8");
+      names.push(name);
+    }
+
+    const git = getGit(repo);
+    // budget=20 强制每块仅 1 个文件，验证分块循环正确推进、无遗漏
+    await runGitArgsChunked(git, ["add"], names, 20);
+
+    const { stdout } = await execFile("git", ["-C", repo, "status", "--porcelain"], {
+      encoding: "utf8",
+    });
+    const staged = stdout
+      .trim()
+      .split("\n")
+      .filter((l) => l.startsWith("A"));
+    expect(staged).toHaveLength(10);
+  });
+
+  it("空数组 → no-op，不抛错", async () => {
+    const git = getGit(repo);
+    await expect(runGitArgsChunked(git, ["add"], [])).resolves.toBeUndefined();
   });
 });

@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import type { BatchFileResult, FileStatus, StatusResult } from "../git-service.js";
 import { safeJoin } from "../utils/path-safe.js";
-import { getGit, parseStatusCode } from "./_helpers.js";
+import { getGit, parseStatusCode, runGitPathspecFromFile } from "./_helpers.js";
 
 const fsp = fs.promises;
 
@@ -66,24 +66,24 @@ export const statusService = {
   },
 
   /**
-   * 一次性 stage 多个文件。原前端实现是串行 N 次 git add（50 个文件 ~10s）；
-   * 这里 1 次 `git add -- <p1> <p2> ...` 完成，与 git commit pathspec 行为一致。
+   * 一次性 stage 多个文件。经由 runGitPathspecFromFile 用 `--pathspec-from-file`
+   * 传路径：一条 git 进程吃下任意数量文件，且不会因数百路径摊进 argv 而超出
+   * Windows 命令行长度上限（这正是「数百文件添加到 VCS 无反应/报错」的根因）。
    * 空数组直接 no-op。
    */
   async stageFilesBatch(repoPath: string, filePaths: string[]): Promise<void> {
     if (!Array.isArray(filePaths) || filePaths.length === 0) return;
-    const git = getGit(repoPath);
-    await git.raw(["add", "--", ...filePaths]);
+    await runGitPathspecFromFile(repoPath, ["add"], filePaths);
   },
 
   /**
-   * 一次性 unstage 多个文件。等价于 `git reset HEAD -- p1 p2 ... pN`。
+   * 一次性 unstage 多个文件。等价于 `git reset HEAD -- p1 p2 ... pN`，但用
+   * `--pathspec-from-file` 传路径以支持任意数量文件、规避 argv 长度上限。
    * unborn 仓库（无 HEAD）下 git 会报错，这里透传给调用方而非静默吞。
    */
   async unstageFilesBatch(repoPath: string, filePaths: string[]): Promise<void> {
     if (!Array.isArray(filePaths) || filePaths.length === 0) return;
-    const git = getGit(repoPath);
-    await git.raw(["reset", "HEAD", "--", ...filePaths]);
+    await runGitPathspecFromFile(repoPath, ["reset", "HEAD"], filePaths);
   },
 
   async commit(repoPath: string, message: string, amend: boolean): Promise<string> {
@@ -114,9 +114,10 @@ export const statusService = {
   /**
    * 只提交指定 N 个文件（pathspec 限定），不影响其他 staged 文件。
    *
-   * 实现两步：
-   *   1. `git add -- <p1> <p2> ...`  把入参文件全部加入索引（已 staged 的无副作用）
-   *   2. `git commit -m <msg> -- <p1> <p2> ...`  pathspec 限定只把这些文件做成 commit
+   * 实现两步（均经 runGitPathspecFromFile 用 `--pathspec-from-file` 传路径，
+   * 支持任意数量文件、规避 argv 长度上限）：
+   *   1. `git add` 把入参文件全部加入索引（已 staged 的无副作用）
+   *   2. `git commit -m <msg>` pathspec 限定只把这些文件做成 commit
    *
    * 注意：步骤 2 的 pathspec 仅限制本次 commit 范围，对仓库其它 staged 内容不动；
    * 已 staged 但**不在**入参列表里的文件会保留在索引中等待下一次 commit。
@@ -128,9 +129,8 @@ export const statusService = {
     if (typeof message !== "string" || message.trim().length === 0) {
       throw new Error("commitFiles: message 不能为空");
     }
-    const git = getGit(repoPath);
-    await git.raw(["add", "--", ...filePaths]);
-    const result = await git.raw(["commit", "-m", message, "--", ...filePaths]);
+    await runGitPathspecFromFile(repoPath, ["add"], filePaths);
+    const result = await runGitPathspecFromFile(repoPath, ["commit", "-m", message], filePaths);
     const match = result.match(/\[[\w/.-]+ ([a-f0-9]+)\]/);
     return match?.[1] ?? "";
   },
@@ -154,17 +154,18 @@ export const statusService = {
   },
 
   /**
-   * 一次性回滚 N 个文件到 HEAD：快路径用 `git reset HEAD -- p..` + `git checkout -- p..`
-   * （1~2 次 git 进程处理全部，替代前端逐个 IPC）；快路径整体失败时在后端逐个重试，
-   * 精确定位失败文件。返回逐文件 ok/failed，避免一个坏文件拖垮整批。
+   * 一次性回滚 N 个文件到 HEAD：快路径用 `git reset HEAD` + `git checkout`，路径经
+   * `--pathspec-from-file` 传入（1~2 次 git 进程处理全部、支持任意数量文件、规避
+   * argv 长度上限）；快路径整体失败时在后端逐个重试，精确定位失败文件。
+   * 返回逐文件 ok/failed，避免一个坏文件拖垮整批。
    */
   async discardFilesBatch(repoPath: string, filePaths: string[]): Promise<BatchFileResult> {
     if (!Array.isArray(filePaths) || filePaths.length === 0) return { ok: [], failed: [] };
     const git = getGit(repoPath);
     try {
-      await git.raw(["reset", "HEAD", "--", ...filePaths]).catch(() => {});
-      await git.raw(["checkout", "--", ...filePaths]).catch(async () => {
-        await git.raw(["restore", "--", ...filePaths]);
+      await runGitPathspecFromFile(repoPath, ["reset", "HEAD"], filePaths).catch(() => {});
+      await runGitPathspecFromFile(repoPath, ["checkout"], filePaths).catch(async () => {
+        await runGitPathspecFromFile(repoPath, ["restore"], filePaths);
       });
       return { ok: [...filePaths], failed: [] };
     } catch {

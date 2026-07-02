@@ -278,6 +278,66 @@ export function disposeGitInstances(repoPath?: string): void {
   }
 }
 
+/**
+ * 为「任意数量文件」执行一条 git pathspec 命令，绕开操作系统命令行长度上限。
+ *
+ * 背景：把数百个路径摊进单条 argv（`git add -- p1 p2 … pN`）在 Windows 上会超过
+ * CreateProcess 的 ~32767 字符上限，子进程在 OS 边界 spawn 失败——表现为批量
+ * stage / commit / discard「点击无反应或报错」。
+ *
+ * 解法：把全部路径以 NUL 分隔写入临时文件，再用
+ * `--pathspec-from-file=<tmp> --pathspec-file-nul`（git ≥ 2.26）交给 git，
+ * 一条进程吃下全部路径，彻底无 argv 限制；NUL 分隔对含空格 / Unicode 的路径也安全。
+ *
+ * `subArgs` 为 pathspec 之前的子命令片段，例如：
+ *   ["add"] / ["reset","HEAD"] / ["checkout"] / ["restore"] / ["commit","-m",msg]
+ * 调用方需保证 `filePaths` 非空（空数组应在上层 no-op）。
+ */
+export async function runGitPathspecFromFile(
+  repoPath: string,
+  subArgs: string[],
+  filePaths: string[]
+): Promise<string> {
+  const git = getGit(repoPath);
+  const tmpBase = await fs.mkdtemp(path.join(os.tmpdir(), "gm-pathspec-"));
+  const listFile = path.join(tmpBase, "paths");
+  try {
+    await fs.writeFile(listFile, filePaths.join("\0"), "utf8");
+    return await git.raw([...subArgs, `--pathspec-from-file=${listFile}`, "--pathspec-file-nul"]);
+  } finally {
+    await fs.rm(tmpBase, { recursive: true, force: true });
+  }
+}
+
+/**
+ * 为「不支持 --pathspec-from-file」的子命令（如 `git submodule`）按命令行长度预算
+ * 分块执行 `git <baseArgs> -- <chunk>`，避免数百路径摊进单条 argv 超出 Windows
+ * CreateProcess 上限。每块独立成命令；调用方需保证该子命令对「分多次、每次处理
+ * 一部分路径」幂等（submodule init/update/sync 满足）。
+ *
+ * budgetChars 取保守的 6000：远低于 32767 上限，给二进制路径 / git 自身参数留足余量。
+ * 单个路径即便超过预算也至少独立成一块（保证推进，不会死循环）。空数组直接 no-op。
+ */
+export async function runGitArgsChunked(
+  git: SimpleGit,
+  baseArgs: string[],
+  paths: string[],
+  budgetChars = 6000
+): Promise<void> {
+  if (!Array.isArray(paths) || paths.length === 0) return;
+  let i = 0;
+  while (i < paths.length) {
+    const chunk: string[] = [];
+    let len = 0;
+    while (i < paths.length && (chunk.length === 0 || len + paths[i]!.length + 1 <= budgetChars)) {
+      chunk.push(paths[i]!);
+      len += paths[i]!.length + 1;
+      i++;
+    }
+    await git.raw([...baseArgs, "--", ...chunk]);
+  }
+}
+
 export function parseStatusCode(
   x: string,
   y: string
