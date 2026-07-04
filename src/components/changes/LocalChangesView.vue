@@ -28,6 +28,7 @@ import type { AiErrorCode } from "../../../shared/ai/types";
 import ChangesToolbar from "./ChangesToolbar.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import FileSection, { type SectionData, type SectionKey } from "./FileSection.vue";
+import StatusIcon from "./StatusIcon.vue";
 import FilterRulesDialog from "./FilterRulesDialog.vue";
 import MergeStateBar from "./MergeStateBar.vue";
 
@@ -970,7 +971,7 @@ watch(
                     })
                   "
                 >
-                  <span class="conflict-file-marker">!</span>
+                  <StatusIcon status="conflicted" />
                   <span class="conflict-file-path">{{ file.path }}</span>
                   <span class="conflict-file-action">解决</span>
                 </div>
@@ -1388,15 +1389,6 @@ watch(
 
 .conflict-file-item:hover {
   background: rgba(220, 50, 50, 0.12);
-}
-
-.conflict-file-marker {
-  width: 14px;
-  text-align: center;
-  font-size: 10px;
-  font-weight: 700;
-  color: #c04040;
-  flex-shrink: 0;
 }
 
 .conflict-file-path {

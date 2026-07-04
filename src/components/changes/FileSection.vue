@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { FileStatus } from "@/utils/commands";
+import StatusIcon from "./StatusIcon.vue";
 
 export type SectionKey = "staged" | "unstaged" | "untracked";
 
@@ -49,51 +50,6 @@ watch(
 function onHeaderCheckboxClick(e: MouseEvent) {
   e.stopPropagation();
   emit("section-toggle-all", props.section.key);
-}
-
-function statusLetter(status: FileStatus["status"]): string {
-  switch (status) {
-    case "added":
-      return "A";
-    case "modified":
-      return "M";
-    case "deleted":
-      return "D";
-    case "renamed":
-      return "R";
-    case "copied":
-      return "C";
-    case "untracked":
-      return "?";
-    case "conflicted":
-      return "!";
-    case "ignored":
-      return "I";
-    default:
-      return "?";
-  }
-}
-
-function statusClass(status: FileStatus["status"]): string {
-  switch (status) {
-    case "added":
-      return "status-added";
-    case "modified":
-      return "status-modified";
-    case "deleted":
-      return "status-deleted";
-    case "renamed":
-    case "copied":
-      return "status-renamed";
-    case "untracked":
-      return "status-untracked";
-    case "conflicted":
-      return "status-conflicted";
-    case "ignored":
-      return "status-ignored";
-    default:
-      return "";
-  }
 }
 
 function isFileSelected(path: string): boolean {
@@ -158,9 +114,7 @@ function onCheckboxClick(path: string): void {
         :checked="isRowChecked(section.key, file.path)"
         @click.stop="onCheckboxClick(file.path)"
       />
-      <span class="status-letter" :class="statusClass(file.status)">
-        {{ statusLetter(file.status) }}
-      </span>
+      <StatusIcon :status="file.status" />
       <span class="file-path">{{ file.path }}</span>
     </div>
   </div>
@@ -253,36 +207,6 @@ function onCheckboxClick(path: string): void {
 .section-checkbox:disabled {
   cursor: not-allowed;
   opacity: 0.4;
-}
-
-.status-letter {
-  font-size: 10px;
-  font-weight: 700;
-  width: 14px;
-  text-align: center;
-  flex-shrink: 0;
-}
-
-.status-added {
-  color: var(--color-git-added);
-}
-.status-modified {
-  color: var(--color-git-modified);
-}
-.status-deleted {
-  color: var(--color-git-deleted);
-}
-.status-renamed {
-  color: var(--color-git-renamed);
-}
-.status-untracked {
-  color: var(--color-git-untracked);
-}
-.status-conflicted {
-  color: var(--color-error);
-}
-.status-ignored {
-  color: var(--color-foreground-muted);
 }
 
 .file-path {
