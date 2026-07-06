@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { errMsg } from "./error";
+import { errMsg, errText } from "./error";
 
 describe("errMsg", () => {
   it("Error 实例返回 message", () => {
@@ -25,5 +25,13 @@ describe("errMsg", () => {
   });
   it("数字", () => {
     expect(errMsg(42)).toBe("42");
+  });
+
+  it("Electron IPC 英文包装错误转中文", () => {
+    expect(
+      errText(
+        "Error invoking remote method 'open_repo': TypeError: infoDebugger.extend is not a function"
+      )
+    ).toBe("调用本地功能失败（打开仓库）：类型错误：infoDebugger.extend 不是函数");
   });
 });

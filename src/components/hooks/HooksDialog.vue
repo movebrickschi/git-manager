@@ -141,7 +141,7 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
 <template>
   <Teleport to="body">
     <div v-if="props.visible" class="hk-mask" @click.self="close">
-      <div class="hk-dialog" role="dialog" aria-label="Git Hooks 管理">
+      <div class="hk-dialog" role="dialog" aria-label="Git 钩子管理">
         <header class="hk-header">
           <span class="hk-title">Git 钩子</span>
           <div class="hk-actions">
@@ -153,7 +153,7 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
         <div class="hk-body">
           <div v-if="loading" class="hk-empty">加载中…</div>
           <div v-else-if="error" class="hk-error">{{ error }}</div>
-          <div v-else-if="empty" class="hk-empty">没有可显示的 hook。</div>
+          <div v-else-if="empty" class="hk-empty">没有可显示的钩子。</div>
           <table v-else class="hk-table">
             <thead>
               <tr>

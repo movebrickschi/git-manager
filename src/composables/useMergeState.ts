@@ -5,6 +5,19 @@ import { translateGitError } from "@/utils/git-error";
 
 export type MergeOp = "merge" | "rebase" | "cherry-pick" | "revert";
 
+function mergeOpLabel(op: MergeOp): string {
+  switch (op) {
+    case "merge":
+      return "合并";
+    case "rebase":
+      return "变基";
+    case "cherry-pick":
+      return "拣选";
+    case "revert":
+      return "反做";
+  }
+}
+
 export interface MergeStateSnapshot {
   state: "none" | MergeOp;
   hasConflicts: boolean;
@@ -45,7 +58,7 @@ export function useMergeState(opts: {
     try {
       const result = await commands.continueOperation(repoPath, mergeState.value.state);
       if (!result.success) notify(`继续失败：${translateGitError(result.message)}`);
-      else notify(`${mergeState.value.state} 已继续完成`);
+      else notify(`${mergeOpLabel(mergeState.value.state)} 已继续完成`);
       await refresh();
       await opts.onAfterAction?.();
     } catch (e: unknown) {
@@ -61,7 +74,7 @@ export function useMergeState(opts: {
     mergeBusy.value = true;
     try {
       await commands.abortOperation(repoPath, mergeState.value.state);
-      notify(`${mergeState.value.state} 已中止`);
+      notify(`${mergeOpLabel(mergeState.value.state)} 已中止`);
       await refresh();
       await opts.onAfterAction?.();
     } catch (e: unknown) {

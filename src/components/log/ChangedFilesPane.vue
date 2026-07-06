@@ -153,8 +153,8 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   }
 
   items.push(
-    { label: "查看 Diff", action: () => emit("dblclick", file) },
-    { label: "Blame / Annotate", action: () => emit("blame", file.path) },
+    { label: "查看差异", action: () => emit("dblclick", file) },
+    { label: "查看逐行作者", action: () => emit("blame", file.path) },
     { separator: true, label: "" },
     { label: "复制路径", action: () => void copyPath(file) },
     {
@@ -164,8 +164,8 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   );
   if (listMode.value === "commit") {
     items.push(
-      { label: "Cherry-Pick 此文件变更", action: () => {} },
-      { label: "Revert 此文件变更", action: () => {} }
+      { label: "拣选此文件变更", action: () => {} },
+      { label: "反做此文件变更", action: () => {} }
     );
   }
   return items;

@@ -111,7 +111,7 @@ export const useRebaseStore = defineStore("rebase", () => {
       );
       if (commits.length === 0) {
         dialog.value.loadingPreview = false;
-        dialog.value.errorMessage = "选中的 commit 与 HEAD 相同，没有需要编排的 commit";
+        dialog.value.errorMessage = "选中的提交与 HEAD 相同，没有需要编排的提交";
         return;
       }
       dialog.value.todos = commits.map((c) => ({
@@ -172,13 +172,13 @@ export const useRebaseStore = defineStore("rebase", () => {
       if (result.conflicts.length > 0) {
         branchStore.requestTabSwitch("commit");
         branchStore.showToast(
-          `Rebase 暂停：${result.conflicts.length} 个文件冲突，请解决后 Continue`,
+          `变基暂停：${result.conflicts.length} 个文件冲突，请解决后点击继续`,
           "err"
         );
       } else {
         branchStore.requestTabSwitch("commit");
         branchStore.showToast(
-          result.message ? translateGitError(result.message) : "Rebase 在 edit 步骤暂停，请继续",
+          result.message ? translateGitError(result.message) : "变基在编辑步骤暂停，请继续",
           "info"
         );
       }
@@ -255,7 +255,7 @@ export const useRebaseStore = defineStore("rebase", () => {
       await Promise.all([refreshStatus(), refreshGit()]);
       if (result.success) {
         branchStore.showToast(
-          result.message ? translateGitError(result.message) : "Rebase continue 成功",
+          result.message ? translateGitError(result.message) : "变基继续成功",
           "ok"
         );
       } else if (result.conflicts.length > 0) {
@@ -266,12 +266,12 @@ export const useRebaseStore = defineStore("rebase", () => {
         );
       } else {
         branchStore.showToast(
-          result.message ? translateGitError(result.message) : "Continue 仍未完成",
+          result.message ? translateGitError(result.message) : "继续操作仍未完成",
           "err"
         );
       }
     } catch (e: unknown) {
-      branchStore.showToast(`继续（continue）失败：${errText(e)}`, "err");
+      branchStore.showToast(`继续失败：${errText(e)}`, "err");
     } finally {
       actionPending.value = false;
     }
@@ -284,9 +284,9 @@ export const useRebaseStore = defineStore("rebase", () => {
     try {
       await commands.abortOperation(repoStore.activeRepo.path, "rebase");
       await Promise.all([refreshStatus(), refreshGit()]);
-      branchStore.showToast("已 Abort，仓库回到 rebase 前状态", "info");
+      branchStore.showToast("已中止，仓库回到变基前状态", "info");
     } catch (e: unknown) {
-      branchStore.showToast(`中止（abort）失败：${errText(e)}`, "err");
+      branchStore.showToast(`中止失败：${errText(e)}`, "err");
     } finally {
       actionPending.value = false;
     }

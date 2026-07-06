@@ -7,7 +7,7 @@ describe("translateGitError", () => {
       expect(translateGitError({ code: "PATH_DENIED" })).toMatch(/路径越界/);
     });
     it("NON_FAST_FORWARD", () => {
-      expect(translateGitError({ code: "NON_FAST_FORWARD" })).toMatch(/pull/);
+      expect(translateGitError({ code: "NON_FAST_FORWARD" })).toMatch(/拉取|抓取/);
     });
     it("AUTH_FAILED", () => {
       expect(translateGitError({ code: "AUTH_FAILED" })).toMatch(/认证/);
@@ -17,7 +17,7 @@ describe("translateGitError", () => {
     it("non-fast-forward", () => {
       expect(
         translateGitError("Updates were rejected because the tip is behind: non-fast-forward")
-      ).toMatch(/pull/);
+      ).toMatch(/拉取/);
     });
     it("could not resolve host", () => {
       expect(
@@ -42,10 +42,10 @@ describe("translateGitError", () => {
       expect(translateGitError({ code: "LOCAL_CHANGES_OVERWRITTEN" })).toMatch(/未提交/);
     });
     it("STASH_POP_CONFLICT code", () => {
-      expect(translateGitError({ code: "STASH_POP_CONFLICT" })).toMatch(/暂存/);
+      expect(translateGitError({ code: "STASH_POP_CONFLICT" })).toMatch(/搁置/);
     });
     it("auto stash failed 原文", () => {
-      expect(translateGitError("Auto stash failed: lock issue")).toMatch(/自动暂存失败/);
+      expect(translateGitError("Auto stash failed: lock issue")).toMatch(/自动搁置失败/);
     });
     it("pull completed + stash pop conflict 原文", () => {
       expect(

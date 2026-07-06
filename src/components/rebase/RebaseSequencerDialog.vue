@@ -25,12 +25,12 @@ interface ActionOption {
 }
 
 const actions: ActionOption[] = [
-  { value: "pick", label: "Pick", desc: "保留" },
-  { value: "reword", label: "Reword", desc: "改 message" },
-  { value: "squash", label: "Squash", desc: "合并到上一个（保留 message）" },
-  { value: "fixup", label: "Fixup", desc: "合并到上一个（丢弃 message）" },
-  { value: "edit", label: "Edit", desc: "停下来手动改" },
-  { value: "drop", label: "Drop", desc: "丢弃" },
+  { value: "pick", label: "保留", desc: "保留此提交" },
+  { value: "reword", label: "改信息", desc: "修改提交信息" },
+  { value: "squash", label: "压缩", desc: "合并到上一个（保留提交信息）" },
+  { value: "fixup", label: "修补", desc: "合并到上一个（丢弃提交信息）" },
+  { value: "edit", label: "编辑", desc: "停下来手动修改" },
+  { value: "drop", label: "丢弃", desc: "丢弃此提交" },
 ];
 
 function actionClass(a: RebaseAction): string {
@@ -77,12 +77,12 @@ function effectiveCount(): number {
       <div class="rb-panel">
         <div class="rb-header">
           <span class="rb-title">交互式变基</span>
-          <span class="rb-base">base：<code>{{ dialog.baseLabel || dialog.baseRef.slice(0, 7) }}</code></span>
+          <span class="rb-base">基准：<code>{{ dialog.baseLabel || dialog.baseRef.slice(0, 7) }}</code></span>
           <button class="rb-close" :disabled="dialog.pending" @click="close">✕</button>
         </div>
 
         <div class="rb-body">
-          <div v-if="dialog.loadingPreview" class="rb-loading">加载 commit 列表…</div>
+          <div v-if="dialog.loadingPreview" class="rb-loading">加载提交列表…</div>
 
           <div
             v-else-if="dialog.errorMessage && dialog.todos.length === 0"
@@ -93,7 +93,7 @@ function effectiveCount(): number {
 
           <template v-else>
             <div class="rb-hint">
-              共 {{ dialog.todos.length }} 个 commit，将产生 {{ effectiveCount() }} 个（drop {{ dropCount() }} 个）。从上到下按时间正序，可上下调整顺序。
+              共 {{ dialog.todos.length }} 个提交，将产生 {{ effectiveCount() }} 个（丢弃 {{ dropCount() }} 个）。从上到下按时间正序，可上下调整顺序。
             </div>
 
             <div class="rb-table">
@@ -102,7 +102,7 @@ function effectiveCount(): number {
                 <div class="rb-col-move">移</div>
                 <div class="rb-col-action">操作</div>
                 <div class="rb-col-hash">哈希</div>
-                <div class="rb-col-subject">Subject / 新消息</div>
+                <div class="rb-col-subject">提交标题 / 新消息</div>
               </div>
 
               <div
@@ -157,7 +157,7 @@ function effectiveCount(): number {
                     class="rb-reword-input"
                     :value="t.newMessage ?? t.subject"
                     :disabled="dialog.pending"
-                    :placeholder="`新 message（默认沿用：${t.subject}）`"
+                    :placeholder="`新提交信息（默认沿用：${t.subject}）`"
                     rows="2"
                     @input="rebaseStore.updateTodo(i, { newMessage: ($event.target as HTMLTextAreaElement).value })"
                   ></textarea>
@@ -174,7 +174,7 @@ function effectiveCount(): number {
 
         <div class="rb-footer">
           <div class="rb-footer-info">
-            提示：reword/squash/fixup 不会打开外部编辑器；新消息已在表格内编辑。
+            提示：改信息/压缩/修补不会打开外部编辑器；新消息已在表格内编辑。
           </div>
           <button class="rb-btn" :disabled="dialog.pending" @click="close">取消</button>
           <button
@@ -182,7 +182,7 @@ function effectiveCount(): number {
             :disabled="dialog.pending || dialog.loadingPreview || dialog.todos.length === 0"
             @click="startRebase"
           >
-            {{ dialog.pending ? "执行中…" : "开始 Rebase" }}
+            {{ dialog.pending ? "执行中…" : "开始变基" }}
           </button>
         </div>
       </div>

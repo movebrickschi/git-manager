@@ -81,7 +81,7 @@ async function onGlobalConflictResolved() {
     try {
       await commands.stashDrop(path, 0);
     } catch {
-      branchStore.showToast("自动清理 stash 失败，请手动 drop stash@{0}", "err");
+      branchStore.showToast("自动清理搁置失败，请手动删除 stash@{0}", "err");
     }
   }
   await refreshGit();
@@ -133,7 +133,7 @@ watch(showAddMenu, (open) => {
   }
 });
 
-// Apply Patch
+// 应用补丁
 const patchFileInput = ref<HTMLInputElement | null>(null);
 const applyPatchBusy = ref(false);
 const applyPatchMessage = ref<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -150,7 +150,7 @@ async function onPatchFilePicked(e: Event) {
   input.value = ""; // 允许重复选同一文件
   if (!file) return;
   if (!repoStore.activeRepo) {
-    applyPatchMessage.value = { kind: "err", text: "请先打开一个仓库再 Apply Patch" };
+    applyPatchMessage.value = { kind: "err", text: "请先打开一个仓库再应用补丁" };
     return;
   }
   applyPatchBusy.value = true;
@@ -160,7 +160,7 @@ async function onPatchFilePicked(e: Event) {
     if (result.success) {
       applyPatchMessage.value = {
         kind: "ok",
-        text: `已应用 patch：${file.name}（请在「本地变更」中审阅后再 commit）`,
+        text: `已应用补丁：${file.name}（请在「本地变更」中审阅后再提交）`,
       };
     } else {
       const tail = result.conflicts.length > 0 ? `\n冲突：${result.conflicts.join(", ")}` : "";
@@ -196,8 +196,8 @@ async function openRepoWithFeedback(path: string, errorTarget: "dialog" | "toast
   try {
     await repoStore.openRepo(path);
     router.push("/repo");
-  } catch (e: any) {
-    const message = e?.message || `打开仓库失败：${path}`;
+  } catch (e: unknown) {
+    const message = errText(e) || `打开仓库失败：${path}`;
     if (errorTarget === "dialog") {
       errorMsg.value = message;
     } else {
@@ -358,7 +358,7 @@ onUnmounted(() => {
           <button
             class="add-menu-item"
             :disabled="!repoStore.activeRepo || applyPatchBusy"
-            :title="repoStore.activeRepo ? 'Apply Patch (.patch / .diff)' : '请先打开仓库'"
+            :title="repoStore.activeRepo ? '应用补丁（.patch / .diff）' : '请先打开仓库'"
             @click="openApplyPatchPicker"
           >
             <svg
@@ -373,7 +373,7 @@ onUnmounted(() => {
               <polyline points="17 8 12 3 7 8" />
               <line x1="12" y1="3" x2="12" y2="15" />
             </svg>
-            {{ applyPatchBusy ? "Apply Patch 中..." : "Apply Patch..." }}
+            {{ applyPatchBusy ? "正在应用补丁..." : "应用补丁..." }}
           </button>
 
           <div class="add-menu-divider" />

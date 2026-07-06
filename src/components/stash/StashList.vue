@@ -120,7 +120,7 @@ async function saveStash() {
     await loadStashes();
     showToast("已创建搁置");
   } catch (e: any) {
-    showToast(`搁置失败: ${errText(e)}`);
+    showToast(`搁置失败：${errText(e)}`);
   }
 }
 
@@ -130,9 +130,9 @@ async function applyStash(stash: StashEntry) {
     await commands.stashApply(repoStore.activeRepo.path, stash.index);
     // stash 内容回到工作区，刷新本地变更文件状态（旧实现只刷新 stash 列表）
     await Promise.all([loadStashes(), refreshGit({ status: true, branches: false, log: false })]);
-    showToast(`已应用: ${stashDisplayName(stash.message)}`);
+    showToast(`已应用：${stashDisplayName(stash.message)}`);
   } catch (e: any) {
-    showToast(`应用失败: ${errText(e)}`);
+    showToast(`应用失败：${errText(e)}`);
   }
 }
 
@@ -142,9 +142,9 @@ async function popStash(stash: StashEntry) {
     await commands.stashPop(repoStore.activeRepo.path, stash.index);
     // stash 内容回到工作区，刷新本地变更文件状态（旧实现只刷新 stash 列表）
     await Promise.all([loadStashes(), refreshGit({ status: true, branches: false, log: false })]);
-    showToast(`已弹出: ${stashDisplayName(stash.message)}`);
+    showToast(`已弹出：${stashDisplayName(stash.message)}`);
   } catch (e: any) {
-    showToast(`弹出失败: ${errText(e)}`);
+    showToast(`弹出失败：${errText(e)}`);
   }
 }
 
@@ -153,9 +153,9 @@ async function dropStash(stash: StashEntry) {
   try {
     await commands.stashDrop(repoStore.activeRepo.path, stash.index);
     await loadStashes();
-    showToast(`已删除: ${stashDisplayName(stash.message)}`);
+    showToast(`已删除：${stashDisplayName(stash.message)}`);
   } catch (e: any) {
-    showToast(`删除失败: ${errText(e)}`);
+    showToast(`删除失败：${errText(e)}`);
   }
 }
 
@@ -175,7 +175,7 @@ async function confirmRename() {
     await loadStashes();
     showToast("已重命名");
   } catch (e: any) {
-    showToast(`重命名失败: ${errText(e)}`);
+    showToast(`重命名失败：${errText(e)}`);
   }
 }
 
@@ -233,7 +233,7 @@ async function confirmRemoveFile() {
     }
     await loadStashes();
   } catch (e: any) {
-    showToast(`移除失败: ${errText(e)}`);
+    showToast(`移除失败：${errText(e)}`);
   }
 }
 
@@ -396,7 +396,7 @@ function getStatusClass(status: FileStatus["status"]): string {
       <Pane :size="47">
         <div class="diff-panel">
           <div class="panel-header">
-            <span class="panel-title">{{ selectedFile ? selectedFile.path : "Diff" }}</span>
+            <span class="panel-title">{{ selectedFile ? selectedFile.path : "差异" }}</span>
           </div>
           <div class="diff-content">
             <div v-if="!selectedFile" class="state-hint">选择一个文件查看变更</div>

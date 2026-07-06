@@ -201,7 +201,7 @@ function onPushCancelled() {
           </span>
         </div>
         <div v-if="commitStore.stagedFiles.length === 0" class="empty-hint">
-          双击文件或使用 Stage All 暂存变更
+          双击文件或使用「全部暂存」暂存变更
         </div>
       </div>
     </div>
@@ -357,14 +357,14 @@ function onPushCancelled() {
           :disabled="!commitStore.commitMessage.trim() || commitStore.stagedFiles.length === 0"
           @click="handleCommit"
         >
-          Commit
+          提交
         </button>
         <button
           class="commit-btn push"
           :disabled="!commitStore.commitMessage.trim() || commitStore.stagedFiles.length === 0"
           @click="handleCommitAndPush"
         >
-          Commit and Push
+          提交并推送
         </button>
       </div>
       <div v-if="toastVisible" class="ai-toast" role="status">{{ toastMessage }}</div>

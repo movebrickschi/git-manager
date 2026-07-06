@@ -109,14 +109,14 @@ const submoduleContextMenuItems = computed<MenuItem[]>(() => {
   if (!sm) return [];
   const items: MenuItem[] = [];
   if (sm.state === "uninitialized") {
-    items.push({ label: `Init '${sm.path}'`, action: () => handleInitSubmodule(sm.path) });
+    items.push({ label: `初始化 '${sm.path}'`, action: () => handleInitSubmodule(sm.path) });
   }
   items.push({
-    label: `Update '${sm.path}'（git submodule update --init）`,
+    label: `更新 '${sm.path}'（git submodule update --init）`,
     action: () => handleUpdateSubmodule(sm.path),
   });
   items.push({
-    label: `Sync '${sm.path}'（重读 .gitmodules URL）`,
+    label: `同步 '${sm.path}'（重读 .gitmodules URL）`,
     action: () => handleSyncSubmodule(sm.path),
   });
   items.push({ separator: true, label: "" });
@@ -172,9 +172,9 @@ async function handleSyncSubmodule(path?: string): Promise<void> {
 function submoduleStateIcon(state: Submodule["state"]): { color: string; title: string } {
   switch (state) {
     case "uninitialized":
-      return { color: "#9aa0a6", title: "未初始化（右键 Init 拉取）" };
+      return { color: "#9aa0a6", title: "未初始化（右键初始化拉取）" };
     case "modified":
-      return { color: "#f0a500", title: "已修改（与主仓库记录的 commit 不一致）" };
+      return { color: "#f0a500", title: "已修改（与主仓库记录的提交不一致）" };
     case "merge-conflict":
       return { color: "#e06c75", title: "合并冲突" };
     default:
@@ -201,12 +201,12 @@ async function onConflictResolved() {
       try {
         await commands.stashDrop(path, 0);
       } catch (e: unknown) {
-        ui.showToast(`自动清理 stash 失败，请手动 drop stash@{0}：${friendlyErr(e)}`);
+        ui.showToast(`自动清理搁置失败，请手动删除 stash@{0}：${friendlyErr(e)}`);
       }
     } else {
       // merge 冲突：stash 里是你未提交的本地改动（未 pop）。自动 pop 的安全时机依赖合并是否已提交，
       // 风险较高，这里只提醒，避免误操作丢改动。
-      ui.showToast("本地改动已暂存在 stash@{0}，合并完成后请到 Stash 列表手动 pop 恢复");
+      ui.showToast("本地改动已暂存在 stash@{0}，合并完成后请到「搁置」列表手动恢复");
     }
   }
   void refreshAfterGitOp();
@@ -390,7 +390,7 @@ async function handleFetch() {
   actionLoading.value = true;
   const fetchTarget = selectedSidebarBranch.value?.name;
   setBranchBusy(fetchTarget, true);
-  ui.startProgress("Fetch 中…");
+  ui.startProgress("抓取中…");
   try {
     if (selectedSidebarBranch.value?.kind === "remote") {
       const parsed = parseRemoteRef(selectedSidebarBranch.value.name);
@@ -403,7 +403,7 @@ async function handleFetch() {
       await commands.fetchAll(path);
     }
     await refreshAfterGitOp();
-    ui.showToast("抓取（fetch）完成");
+    ui.showToast("抓取完成");
   } catch (e: unknown) {
     actionError.value = friendlyErr(e);
   } finally {
@@ -840,7 +840,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
     return [
       { label: "签出（新建本地分支）", action: () => checkoutRemoteAsLocal(branch.name) },
       { separator: true, label: "" },
-      { label: `Fetch（此 remote）`, action: () => fetchForRemoteBranch(branch.name) },
+      { label: `抓取（此远端）`, action: () => fetchForRemoteBranch(branch.name) },
       { separator: true, label: "" },
       {
         label: branchStore.favorites.includes(branch.name) ? "取消收藏" : "收藏",
@@ -940,7 +940,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
     action: () => handleRenameBranch(branch.name),
   });
   items.push({
-    label: "删除(D)",
+    label: "删除",
     action: () => handleDeleteBranch(branch),
     disabled: isHead,
   });
@@ -1244,7 +1244,7 @@ const tagContextMenuItems = computed<MenuItem[]>(() => {
   if (!tag) return [];
   return [
     {
-      label: `Checkout '${tag}'（进入分离 HEAD）`,
+      label: `签出 '${tag}'（进入分离 HEAD）`,
       action: () => handleCheckoutTag(tag),
     },
     {
@@ -1273,7 +1273,7 @@ const tagContextMenuItems = computed<MenuItem[]>(() => {
 async function handleCheckoutTag(tag: string): Promise<void> {
   if (
     !window.confirm(
-      `Checkout 标签 '${tag}' 会进入分离 HEAD（detached HEAD）状态。\n继续吗？\n（之后可用 checkout <branch> 返回正常分支）`
+      `签出标签 '${tag}' 会进入分离 HEAD 状态。\n继续吗？\n（之后可签出某个分支返回正常分支）`
     )
   )
     return;
@@ -1373,7 +1373,7 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
     <div class="git-actions" v-if="props.activeTab === 'log'">
       <div class="git-actions-row">
         <ToolbarButton
-          title="抓取：远程分支选中时仅抓取该远程，否则 fetch --all"
+          title="抓取：选中远程分支时仅抓取该远端，否则抓取全部远端（fetch --all）"
           :disabled="!repoReady || actionLoading"
           @click="handleFetch"
         >
@@ -1427,7 +1427,7 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
           推送
         </ToolbarButton>
         <ToolbarButton
-          title="迷路：查看 Git Reflog，恢复误 reset / rebase 丢失的提交"
+          title="迷路：查看 Git 引用日志，恢复误重置 / 误变基丢失的提交"
           :disabled="!repoReady"
           @click="showReflogDialog = true"
         >
@@ -1793,7 +1793,7 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
           </span>
           <button
             class="tag-create-btn"
-            title="Update 全部子模块（git submodule update --init --recursive）"
+            title="更新全部子模块（git submodule update --init --recursive）"
             :disabled="actionLoading"
             @click.stop="handleUpdateSubmodule(undefined)"
           >
@@ -1845,7 +1845,7 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
 
     <CreateTagDialog
       :visible="showCreateTagDialog"
-      target-label="HEAD（当前所在 commit）"
+      target-label="HEAD（当前所在提交）"
       @confirm="onCreateTagConfirmed"
       @cancel="showCreateTagDialog = false"
     />

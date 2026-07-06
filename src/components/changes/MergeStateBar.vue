@@ -1,6 +1,21 @@
 <script setup lang="ts">
 import type { MergeStateSnapshot } from "@/composables/useMergeState";
 
+function stateLabel(state: MergeStateSnapshot["state"]): string {
+  switch (state) {
+    case "merge":
+      return "合并";
+    case "rebase":
+      return "变基";
+    case "cherry-pick":
+      return "拣选";
+    case "revert":
+      return "反做";
+    default:
+      return state;
+  }
+}
+
 defineProps<{
   state: MergeStateSnapshot | null;
   busy: boolean;
@@ -20,7 +35,7 @@ defineEmits<{
   >
     <span class="merge-banner__icon">⚠</span>
     <span class="merge-banner__text">
-      当前处于 <strong>{{ state.state }}</strong> 进行中
+      当前处于 <strong>{{ stateLabel(state.state) }}</strong> 进行中
       <template v-if="state.hasConflicts">，存在未解决的冲突</template>
     </span>
     <button
@@ -63,9 +78,6 @@ defineEmits<{
 .merge-banner__text {
   flex: 1;
   min-width: 0;
-}
-.merge-banner__text strong {
-  text-transform: capitalize;
 }
 .merge-banner__btn {
   padding: 4px 10px;

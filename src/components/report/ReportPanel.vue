@@ -29,7 +29,7 @@ const polishStyles: { value: ReportPolishStyle; label: string }[] = [
 const langOptions: { value: ReportLang; label: string }[] = [
   { value: "auto", label: "自动" },
   { value: "zh", label: "中文" },
-  { value: "en", label: "English" },
+  { value: "en", label: "英文" },
 ];
 
 // 关键字字段（store 内是字符串数组）以单个 textarea 形式编辑，逗号分隔
@@ -77,7 +77,7 @@ const renderedPreviewHtml = computed(() => renderMarkdown(reportStore.previewMar
 async function handleSavePolishConfig() {
   await reportStore.savePolishConfig();
   if (!reportStore.errorMsg) {
-    promptSaveHint.value = "已保存（commit 与日报共用同一份配置文件）";
+    promptSaveHint.value = "已保存（提交信息生成与日报共用同一份配置文件）";
     setTimeout(() => (promptSaveHint.value = null), 2400);
   }
 }
@@ -356,11 +356,11 @@ function currentBranchFor(repoPath: string): string {
       <div class="filter-row">
         <label class="check-inline">
           <input v-model="reportStore.filter.excludeMerge" type="checkbox" />
-          排除 merge
+          排除合并
         </label>
         <label class="check-inline">
           <input v-model="reportStore.filter.excludeRevert" type="checkbox" />
-          排除 revert
+          排除反做
         </label>
         <label class="check-inline">
           <input v-model="reportStore.filter.dedupMessage" type="checkbox" />
@@ -401,7 +401,7 @@ function currentBranchFor(repoPath: string): string {
             title="渲染 Markdown"
             @click="setViewMode('preview')"
           >
-            Preview
+            预览
           </button>
           <button
             class="view-mode-btn"
@@ -458,7 +458,7 @@ function currentBranchFor(repoPath: string): string {
         <div class="prompt-header">
           <span class="prompt-title">自定义润色提示词</span>
           <span class="prompt-hint">
-            非空时追加到 system prompt 末尾（优先级高于固定模板的 1-8 条规则）
+            非空时追加到系统提示词末尾（优先级高于固定模板的 1-8 条规则）
           </span>
         </div>
         <textarea
@@ -503,7 +503,7 @@ function currentBranchFor(repoPath: string): string {
         <div class="empty-icon">📅</div>
         <div>选择时间范围、作者、仓库后点「生成报告」</div>
         <div class="empty-sub">
-          AI 润色与 commit message 共用同一份 API Key（设置面板配置）
+          AI 润色与提交信息生成共用同一份 API 密钥（设置面板配置）
         </div>
       </div>
     </section>

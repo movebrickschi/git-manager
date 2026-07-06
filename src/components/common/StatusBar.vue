@@ -109,7 +109,7 @@ const fetchTitle = computed(() => {
           <span class="progress-capsule-label">联网中…</span>
           <button
             class="net-cancel-btn"
-            title="中止当前仓库进行中的联网 Git 操作（push / pull / fetch）"
+            title="中止当前仓库进行中的联网 Git 操作（推送 / 拉取 / 抓取）"
             @click="cancelNetwork"
           >
             中止
@@ -164,8 +164,8 @@ const fetchTitle = computed(() => {
         class="status-item auto-refresh-toggle"
         :class="{ active: settings.autoRefreshOnFsChange }"
         :title="settings.autoRefreshOnFsChange
-          ? '文件系统 watcher 已开启：外部 IDE 改文件后自动刷新（点击关闭，更多设置见⚙️）'
-          : '文件系统 watcher 已关闭：超大仓库可禁用以节省资源（点击开启，更多设置见⚙️）'"
+          ? '文件系统监听器已开启：外部 IDE 改文件后自动刷新（点击关闭，更多设置见⚙️）'
+          : '文件系统监听器已关闭：超大仓库可禁用以节省资源（点击开启，更多设置见⚙️）'"
         @click="settings.setAutoRefreshOnFsChange(!settings.autoRefreshOnFsChange)"
       >
         <svg
@@ -182,7 +182,7 @@ const fetchTitle = computed(() => {
       </button>
       <button
         class="status-item settings-gear-btn"
-        title="系统设置（外观/编辑器/watcher/Fetch/AI/关于）"
+        title="系统设置（外观/编辑器/自动刷新/抓取/AI/关于）"
         @click="showSystemSettings = true"
       >
         <svg

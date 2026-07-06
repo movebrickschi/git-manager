@@ -83,7 +83,7 @@ async function handleCheckoutInNewBranch(entry: ReflogEntry): Promise<void> {
   const suggested = `recovery/${entry.shortId}`;
   const name = window.prompt(
     `在 ${entry.shortId}（${entry.subject}）上创建新分支：\n` +
-      `（这会在该 commit 上新建分支并切换过去，安全无损）`,
+      `（这会在该提交上新建分支并切换过去，安全无损）`,
     suggested
   );
   if (!name || !name.trim()) return;
@@ -127,6 +127,20 @@ function actionShort(action: string): string {
   return colon > 0 ? action.slice(0, colon) : action;
 }
 
+function actionDisplay(action: string): string {
+  const raw = actionShort(action);
+  const lower = raw.toLowerCase();
+  if (lower.startsWith("reset")) return "重置";
+  if (lower.startsWith("commit")) return "提交";
+  if (lower.startsWith("merge")) return "合并";
+  if (lower.startsWith("rebase")) return "变基";
+  if (lower.startsWith("checkout")) return "签出";
+  if (lower.startsWith("pull")) return "拉取";
+  if (lower.startsWith("cherry-pick")) return "拣选";
+  if (lower.startsWith("revert")) return "反做";
+  return raw;
+}
+
 watch(
   () => props.visible,
   (v) => {
@@ -153,7 +167,7 @@ watch(
               <polyline points="1 4 1 10 7 10" />
               <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
             </svg>
-            迷路 · Git Reflog
+            迷路 · Git 引用日志
           </span>
           <button class="reflog-close" :title="'关闭'" @click="handleClose">✕</button>
         </div>
@@ -162,7 +176,7 @@ watch(
           <input
             v-model="filterText"
             class="reflog-filter"
-            placeholder="过滤：动作 / commit 摘要 / hash"
+            placeholder="过滤：动作 / 提交摘要 / 哈希"
             spellcheck="false"
           />
           <span class="reflog-stats">{{ filteredEntries.length }} / {{ entries.length }}</span>
@@ -177,7 +191,7 @@ watch(
           <div class="reflog-list">
             <div v-if="loading" class="reflog-empty">加载中…</div>
             <div v-else-if="entries.length === 0" class="reflog-empty">
-              当前仓库尚无 reflog 记录
+              当前仓库尚无引用日志记录
             </div>
             <div
               v-for="(entry, idx) in filteredEntries"
@@ -189,7 +203,7 @@ watch(
             >
               <span class="reflog-ref">{{ entry.ref }}</span>
               <span class="reflog-action" :class="actionBadgeClass(entry.action)">
-                {{ actionShort(entry.action) }}
+                {{ actionDisplay(entry.action) }}
               </span>
               <span class="reflog-hash">{{ entry.shortId }}</span>
               <span class="reflog-subject">{{ entry.subject }}</span>
@@ -211,7 +225,7 @@ watch(
               </div>
               <div class="detail-row">
                 <span class="detail-label">动作</span>
-                <span class="detail-value">{{ selectedEntry.action }}</span>
+                <span class="detail-value">{{ actionDisplay(selectedEntry.action) }}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">提交</span>
@@ -229,35 +243,35 @@ watch(
                 <button
                   class="detail-btn detail-btn--safe"
                   :disabled="busy"
-                  title="在该 commit 上新建分支并切换过去（推荐 · 无损恢复）"
+                  title="在该提交上新建分支并切换过去（推荐 · 无损恢复）"
                   @click="handleCheckoutInNewBranch(selectedEntry)"
                 >
-                  ✚ 在新分支签出此 commit
+                  ✚ 在新分支签出此提交
                 </button>
                 <button
                   class="detail-btn detail-btn--danger"
                   :disabled="busy"
-                  title="git reset --hard 跳回此 commit（会丢弃当前工作区改动）"
+                  title="git reset --hard 跳回此提交（会丢弃当前工作区改动）"
                   @click="handleResetHard(selectedEntry)"
                 >
-                  ⚠ Reset --hard 跳回这里
+                  ⚠ 硬重置到这里
                 </button>
                 <button
                   class="detail-btn"
                   :disabled="busy"
-                  title="复制完整 commit hash"
+                  title="复制完整提交哈希"
                   @click="handleCopyHash(selectedEntry)"
                 >
-                  复制 hash
+                  复制哈希
                 </button>
               </div>
               <p class="detail-tip">
                 提示：上面的 <strong>「在新分支签出」</strong> 是无损恢复方式，
-                推荐用它把误丢的提交拉回到独立分支上做 review；
-                <strong>Reset --hard</strong> 会改变 HEAD 且丢弃当前未提交的工作区改动。
+                推荐用它把误丢的提交拉回到独立分支上检查；
+                <strong>硬重置</strong> 会改变 HEAD 且丢弃当前未提交的工作区改动。
               </p>
             </template>
-            <p v-else class="detail-empty">左侧选一条 reflog 记录查看可执行操作</p>
+            <p v-else class="detail-empty">左侧选一条引用日志记录查看可执行操作</p>
           </div>
         </div>
       </div>

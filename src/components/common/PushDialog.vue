@@ -211,7 +211,7 @@ async function handlePush() {
   if (optForce.value) {
     const ok = window.confirm(
       `⚠ 你勾选了 --force（强制推送）。\n\n` +
-        `这会**强行覆盖远端 history**，如果其他协作者已经基于旧 ref 提交，\n` +
+        `这会**强行覆盖远端历史**，如果其他协作者已经基于旧引用提交，\n` +
         `他们的工作可能会被你覆盖、不可撤销。\n\n` +
         `推荐改用 --force-with-lease（远端被他人改动时会安全失败）。\n\n` +
         `仍要使用 --force 推送 ${branchName.value || "(当前分支)"} 到 ${remoteName.value} ？`
@@ -370,7 +370,7 @@ async function onConflictResolved() {
           pendingPushAfterResolve.value = false;
           pushError.value = result.message
             ? translateGitError(result.message)
-            : "变基尚未完成（可能停在 edit 步骤），请在底部 Rebase 状态栏 Continue/Abort 后再推送";
+            : "变基尚未完成（可能停在编辑步骤），请在底部变基状态栏继续或中止后再推送";
         }
         return;
       }
@@ -586,13 +586,13 @@ watch(
             <input v-model="optForceWithLease" type="checkbox" :disabled="optForce" />
             <span>强制推送（--force-with-lease 安全）</span>
           </label>
-          <label class="opt-row opt-danger" title="无视远端 history，可能覆盖他人提交">
+          <label class="opt-row opt-danger" title="无视远端历史，可能覆盖他人提交">
             <input v-model="optForce" type="checkbox" :disabled="optForceWithLease" />
             <span>强制推送（--force 危险）</span>
           </label>
-          <label class="opt-row" title="同时推送本地所有 tag">
+          <label class="opt-row" title="同时推送本地所有标签">
             <input v-model="optPushTags" type="checkbox" />
-            <span>推送 tags（--tags）</span>
+            <span>推送标签（--tags）</span>
           </label>
           <label class="opt-row" title="同时建立上游跟踪（首次推送新分支时需要）">
             <input v-model="optSetUpstream" type="checkbox" />
@@ -622,11 +622,11 @@ watch(
               >
                 <path d="M21 12a9 9 0 1 1-6.219-8.56" />
               </svg>
-              推送中...
+              推送中…
             </span>
-            <span v-else-if="optForce">⚠ 强制推送(P)</span>
-            <span v-else-if="optForceWithLease">推送（lease）(P)</span>
-            <span v-else>推送(P)</span>
+            <span v-else-if="optForce">⚠ 强制推送</span>
+            <span v-else-if="optForceWithLease">安全强推</span>
+            <span v-else>推送</span>
           </button>
         </div>
       </div>

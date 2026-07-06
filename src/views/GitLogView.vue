@@ -136,7 +136,7 @@ async function onFileSelect(file: FileStatus) {
       diffResult.value = null;
       showDiffViewer.value = false; // 加载失败不残留半开弹框
       lastDiffKey = ""; // 失败后允许重试同一文件
-      branchStore.showToast(`加载 diff 失败: ${errText(e)}`, "err");
+      branchStore.showToast(`加载差异失败：${errText(e)}`, "err");
     }
   }
 }
@@ -282,7 +282,7 @@ onUnmounted(() => document.removeEventListener("keydown", onGlobalKeydown));
       <div v-if="showBlame" class="fullscreen-overlay" @click.self="closeBlame">
         <div class="fullscreen-panel">
           <div class="fullscreen-header">
-            <span>Blame: {{ blameFilePath }}</span>
+            <span>逐行作者：{{ blameFilePath }}</span>
             <button class="close-btn" @click="closeBlame">
               <svg
                 width="16"
@@ -310,7 +310,7 @@ onUnmounted(() => document.removeEventListener("keydown", onGlobalKeydown));
       <div v-if="showMerge" class="fullscreen-overlay">
         <div class="fullscreen-panel">
           <div class="fullscreen-header">
-            <span>合并冲突: {{ mergeFilePath }}</span>
+            <span>合并冲突：{{ mergeFilePath }}</span>
             <button class="close-btn" @click="closeMerge">
               <svg
                 width="16"

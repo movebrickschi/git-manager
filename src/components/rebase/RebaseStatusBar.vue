@@ -24,6 +24,24 @@ const stepLabel = computed(() => {
   }
   return "进行中";
 });
+const actionLabel = computed(() => {
+  switch (status.value.currentAction) {
+    case "pick":
+      return "保留";
+    case "reword":
+      return "改信息";
+    case "squash":
+      return "压缩";
+    case "fixup":
+      return "修补";
+    case "edit":
+      return "编辑";
+    case "drop":
+      return "丢弃";
+    default:
+      return status.value.currentAction;
+  }
+});
 
 onMounted(() => {
   void rebaseStore.refreshStatus();
@@ -57,20 +75,20 @@ async function onAbort(): Promise<void> {
     <div class="rb-status-icon">⟳</div>
     <div class="rb-status-text">
       <div class="rb-status-title">
-        Rebasing…
-        <span class="rb-status-step">step {{ stepLabel }}</span>
+        正在变基…
+        <span class="rb-status-step">步骤 {{ stepLabel }}</span>
         <span v-if="status.currentAction" class="rb-status-action">
-          · 当前 action：<code>{{ status.currentAction }}</code>
+          · 当前操作：<code>{{ actionLabel }}</code>
         </span>
       </div>
       <div v-if="actionPending" class="rb-status-hint">
         ⏳ 正在执行，请稍候…（若上一步联网操作卡住，会在其超时/失败后继续）
       </div>
       <div v-else-if="conflictCount > 0" class="rb-status-conflict">
-        ⚠ {{ conflictCount }} 个文件冲突，请先解决再 Continue
+        ⚠ {{ conflictCount }} 个文件冲突，请先解决再继续
       </div>
       <div v-else-if="status.currentAction === 'edit'" class="rb-status-hint">
-        💡 已停在 edit 步骤，修改完文件后点 Continue
+        💡 已停在编辑步骤，修改完文件后点击继续
       </div>
     </div>
     <div class="rb-status-actions">
@@ -79,14 +97,14 @@ async function onAbort(): Promise<void> {
         :disabled="actionPending"
         @click="onContinue"
       >
-        {{ actionPending ? "处理中…" : "Continue" }}
+        {{ actionPending ? "处理中…" : "继续" }}
       </button>
       <button
         class="rb-status-btn rb-status-btn--danger"
         :disabled="actionPending"
         @click="onAbort"
       >
-        Abort
+        中止
       </button>
     </div>
   </div>

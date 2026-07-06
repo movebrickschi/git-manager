@@ -85,7 +85,7 @@ type MergeScenario =
 
 interface MergeContext {
   scenario: MergeScenario;
-  scenarioLabel: string; // user-facing description like "git stash pop / rebase"
+  scenarioLabel: string; // user-facing description
   oursLabel: string;
   theirsLabel: string;
   oursTooltip: string;
@@ -129,12 +129,24 @@ type MergeSegment = ContextSegment | HunkSegment;
 
 const editorContainer = ref<HTMLElement | null>(null);
 let monacoEditor: MonacoNS.editor.IStandaloneCodeEditor | null = null;
+let monacoDisposables: MonacoNS.IDisposable[] = [];
 let decorations: string[] = [];
 
 // Panel refs used by prev/next navigation to keep left/center/right panes
 // scrolled to the same hunk (IDEA-style).
 const leftPanel = ref<HTMLElement | null>(null);
 const rightPanel = ref<HTMLElement | null>(null);
+const mergePanelsFrame = ref<HTMLElement | null>(null);
+const connectorOverlay = ref({
+  width: 0,
+  height: 0,
+  leftPath: "",
+  rightPath: "",
+});
+let scrollSyncRaf = 0;
+let connectorRaf = 0;
+
+const MERGE_LINE_HEIGHT = 20;
 
 // ---------------------------------------------------------------------------
 // Computed
@@ -243,13 +255,13 @@ function detectMergeContext(raw: string): MergeContext {
   if (/^Updated upstream$/i.test(headerTag) && /^Stashed changes$/i.test(footerTag)) {
     return {
       scenario: "stash-pop",
-      scenarioLabel: "git stash pop / apply",
-      oursLabel: "Ours · 当前 worktree（pull 后的远端）",
-      theirsLabel: "Theirs · 你 stash 起来的本地修改",
+      scenarioLabel: "Git 搁置弹出 / 应用",
+      oursLabel: "左侧 · 当前工作树（拉取后的远端）",
+      theirsLabel: "右侧 · 你搁置起来的本地修改",
       oursTooltip:
-        "stash pop 场景：左侧 = 你 worktree 现有的内容（通常是 git pull 拉下的远端最新版）",
+        "搁置弹出场景：左侧 = 你工作树现有的内容（通常是拉取后的远端最新版）",
       theirsTooltip:
-        "stash pop 场景：右侧 = 你之前 git stash 起来的本地未提交修改（这就是你写的代码）",
+        "搁置弹出场景：右侧 = 你之前搁置起来的本地未提交修改（这就是你写的代码）",
       yoursOn: "theirs",
       headerTag,
       footerTag,
@@ -261,11 +273,11 @@ function detectMergeContext(raw: string): MergeContext {
     const otherSide = footerTag || "incoming";
     return {
       scenario: "merge",
-      scenarioLabel: "git merge / git pull (non-rebase)",
-      oursLabel: `Ours · HEAD（你当前的分支）`,
-      theirsLabel: `Theirs · ${otherSide}（要合入的分支）`,
-      oursTooltip: "merge / pull 场景：左侧 = 你当前分支已有的提交（这就是你写的代码）",
-      theirsTooltip: `merge / pull 场景：右侧 = 要被合并进来的对方分支（${otherSide}）`,
+      scenarioLabel: "Git 合并 / 拉取（非变基）",
+      oursLabel: `左侧 · HEAD（你当前的分支）`,
+      theirsLabel: `右侧 · ${otherSide}（要合入的分支）`,
+      oursTooltip: "合并 / 拉取场景：左侧 = 你当前分支已有的提交（这就是你写的代码）",
+      theirsTooltip: `合并 / 拉取场景：右侧 = 要被合并进来的对方分支（${otherSide}）`,
       yoursOn: "ours",
       headerTag,
       footerTag,
@@ -277,13 +289,13 @@ function detectMergeContext(raw: string): MergeContext {
   if (isSha(headerTag)) {
     return {
       scenario: "rebase",
-      scenarioLabel: "git rebase / pull --rebase",
-      oursLabel: `Ours · ${headerTag}（被 rebase 到的目标分支）`,
-      theirsLabel: `Theirs · ${footerTag || "你的本地提交"}（你的提交被 replay 到此处）`,
+      scenarioLabel: "Git 变基 / 变基拉取",
+      oursLabel: `左侧 · ${headerTag}（被变基到的目标分支）`,
+      theirsLabel: `右侧 · ${footerTag || "你的本地提交"}（你的提交被重放到此处）`,
       oursTooltip:
-        "rebase 场景：左侧 = 你被 rebase 到的目标（远端 upstream）— 注意这不是你写的代码",
+        "变基场景：左侧 = 你被变基到的目标（远端上游）— 注意这不是你写的代码",
       theirsTooltip:
-        "rebase 场景：右侧 = 你的本地提交（git 把它 replay 到 upstream 之上）— 这才是你写的代码",
+        "变基场景：右侧 = 你的本地提交（Git 把它重放到上游之上）— 这才是你写的代码",
       yoursOn: "theirs",
       headerTag,
       footerTag,
@@ -296,11 +308,11 @@ function detectMergeContext(raw: string): MergeContext {
   if (/^ours$/i.test(headerTag) && /^theirs$/i.test(footerTag)) {
     return {
       scenario: "cherry-pick",
-      scenarioLabel: "git cherry-pick (或自定义 merge driver)",
-      oursLabel: "Ours · 当前分支",
-      theirsLabel: "Theirs · 被引入的 commit",
-      oursTooltip: "cherry-pick 场景：左侧 = 你当前分支（你写的代码）",
-      theirsTooltip: "cherry-pick 场景：右侧 = 被 cherry-pick 进来的 commit",
+      scenarioLabel: "Git 拣选（或自定义合并驱动）",
+      oursLabel: "左侧 · 当前分支",
+      theirsLabel: "右侧 · 被引入的提交",
+      oursTooltip: "拣选场景：左侧 = 你当前分支（你写的代码）",
+      theirsTooltip: "拣选场景：右侧 = 被拣选进来的提交",
       yoursOn: "ours",
       headerTag,
       footerTag,
@@ -311,10 +323,10 @@ function detectMergeContext(raw: string): MergeContext {
   return {
     scenario: "unknown",
     scenarioLabel: "未知操作（无法识别冲突标记）",
-    oursLabel: headerTag ? `Ours · ${headerTag}` : "Ours · 左侧",
-    theirsLabel: footerTag ? `Theirs · ${footerTag}` : "Theirs · 右侧",
-    oursTooltip: "无法识别 git 操作类型，请根据冲突标记后缀自行判断",
-    theirsTooltip: "无法识别 git 操作类型，请根据冲突标记后缀自行判断",
+    oursLabel: headerTag ? `左侧 · ${headerTag}` : "左侧",
+    theirsLabel: footerTag ? `右侧 · ${footerTag}` : "右侧",
+    oursTooltip: "无法识别 Git 操作类型，请根据冲突标记后缀自行判断",
+    theirsTooltip: "无法识别 Git 操作类型，请根据冲突标记后缀自行判断",
     yoursOn: "unknown",
     headerTag,
     footerTag,
@@ -512,11 +524,25 @@ async function initMonaco() {
   // Manual edits in the center pane should NOT clobber hunkStates — but they DO
   // count for the "unresolved badge" via the regex fallback in totalUnresolved.
   // The left/right panels still read from originalRaw, so they remain stable.
-  monacoEditor.onDidChangeModelContent(() => {
+  monacoDisposables.push(monacoEditor.onDidChangeModelContent(() => {
     resultContent.value = monacoEditor!.getValue();
-  });
+    scheduleConnectorUpdate();
+  }));
+
+  monacoDisposables.push(monacoEditor.onDidScrollChange((e) => {
+    if (e.scrollTopChanged || e.scrollHeightChanged) {
+      scheduleEditorScrollSync();
+    } else if (e.scrollLeftChanged) {
+      scheduleConnectorUpdate();
+    }
+  }));
 
   updateDecorations();
+  if (hunks.value.length > 0) {
+    scrollEditorToHunk(currentHunkIndex.value);
+  } else {
+    scheduleEditorScrollSync();
+  }
 }
 
 function updateDecorations() {
@@ -626,6 +652,182 @@ function scrollSidePanelToHunk(panel: HTMLElement | null, index: number): boolea
   return true;
 }
 
+function clampScrollTop(panel: HTMLElement, value: number): number {
+  const max = Math.max(0, panel.scrollHeight - panel.clientHeight);
+  return Math.min(max, Math.max(0, value));
+}
+
+function sideHunkTop(panel: HTMLElement, index: number): number | null {
+  const node = panel.querySelector<HTMLElement>(`[data-hunk-index="${index}"]`);
+  if (!node) return null;
+  const panelRect = panel.getBoundingClientRect();
+  const nodeRect = node.getBoundingClientRect();
+  return panel.scrollTop + (nodeRect.top - panelRect.top);
+}
+
+function resultHunkLineStarts(): number[] {
+  return hunks.value.map((h) => findHunkLineInResult(h.index) ?? h.resultStartLine);
+}
+
+function hunkIndexForResultLine(line: number): number | null {
+  const starts = resultHunkLineStarts();
+  if (starts.length === 0) return null;
+  let best = 0;
+  for (let i = 0; i < starts.length; i++) {
+    if (starts[i]! <= line) best = i;
+    else break;
+  }
+  return best;
+}
+
+function nearestHunkIndexForResultLine(line: number): number | null {
+  const starts = resultHunkLineStarts();
+  if (starts.length === 0) return null;
+  let best = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < starts.length; i++) {
+    const distance = Math.abs(starts[i]! - line);
+    if (distance < bestDistance) {
+      best = i;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+function syncSidePanelToResultLine(panel: HTMLElement | null, resultLine: number): void {
+  if (!panel || hunks.value.length === 0) return;
+  const starts = resultHunkLineStarts();
+  const firstLine = starts[0] ?? 1;
+
+  if (resultLine < firstLine) {
+    panel.scrollTop = clampScrollTop(panel, (resultLine - 1) * MERGE_LINE_HEIGHT);
+    return;
+  }
+
+  const beforeIdx = hunkIndexForResultLine(resultLine);
+  if (beforeIdx == null) return;
+
+  const beforeLine = starts[beforeIdx]!;
+  const beforeTop = sideHunkTop(panel, beforeIdx);
+  if (beforeTop == null) return;
+
+  const afterIdx = beforeIdx + 1;
+  const afterLine = starts[afterIdx];
+  const afterTop = afterLine == null ? null : sideHunkTop(panel, afterIdx);
+
+  let targetTop: number;
+  if (afterLine != null && afterTop != null && afterLine > beforeLine) {
+    const ratio = (resultLine - beforeLine) / (afterLine - beforeLine);
+    targetTop = beforeTop + (afterTop - beforeTop) * ratio;
+  } else {
+    targetTop = beforeTop + (resultLine - beforeLine) * MERGE_LINE_HEIGHT;
+  }
+
+  panel.scrollTop = clampScrollTop(panel, targetTop - 12);
+}
+
+function syncSidePanelsToEditorScroll(): void {
+  if (!monacoEditor) return;
+  const topLine = Math.max(
+    1,
+    Math.floor(monacoEditor.getScrollTop() / MERGE_LINE_HEIGHT) + 1
+  );
+  syncSidePanelToResultLine(leftPanel.value, topLine);
+  syncSidePanelToResultLine(rightPanel.value, topLine);
+
+  const visibleLines = Math.max(1, Math.floor(monacoEditor.getLayoutInfo().height / MERGE_LINE_HEIGHT));
+  const activeIndex = nearestHunkIndexForResultLine(topLine + Math.floor(visibleLines * 0.35));
+  if (activeIndex != null && activeIndex !== currentHunkIndex.value) {
+    currentHunkIndex.value = activeIndex;
+  }
+}
+
+function curvePath(x1: number, y1: number, x2: number, y2: number): string {
+  const direction = x2 >= x1 ? 1 : -1;
+  const dx = Math.max(28, Math.abs(x2 - x1) * 0.45);
+  const c1x = x1 + direction * dx;
+  const c2x = x2 - direction * dx;
+  return `M ${x1.toFixed(1)} ${y1.toFixed(1)} C ${c1x.toFixed(1)} ${y1.toFixed(
+    1
+  )}, ${c2x.toFixed(1)} ${y2.toFixed(1)}, ${x2.toFixed(1)} ${y2.toFixed(1)}`;
+}
+
+function updateConnectorOverlay(): void {
+  const frame = mergePanelsFrame.value;
+  const editor = editorContainer.value;
+  if (!frame || !editor || !monacoEditor || !hunks.value[currentHunkIndex.value]) {
+    connectorOverlay.value = { width: 0, height: 0, leftPath: "", rightPath: "" };
+    return;
+  }
+
+  const line = findHunkLineInResult(currentHunkIndex.value);
+  if (line == null) {
+    connectorOverlay.value = { width: 0, height: 0, leftPath: "", rightPath: "" };
+    return;
+  }
+
+  const frameRect = frame.getBoundingClientRect();
+  const editorRect = editor.getBoundingClientRect();
+  const editorLineTop = monacoEditor.getTopForLineNumber(line) - monacoEditor.getScrollTop();
+  const centerY = editorRect.top - frameRect.top + editorLineTop + MERGE_LINE_HEIGHT / 2;
+  const centerLeftX = editorRect.left - frameRect.left + 8;
+  const centerRightX = editorRect.right - frameRect.left - 8;
+
+  const leftNode = leftPanel.value?.querySelector<HTMLElement>(
+    `[data-hunk-index="${currentHunkIndex.value}"]`
+  );
+  const rightNode = rightPanel.value?.querySelector<HTMLElement>(
+    `[data-hunk-index="${currentHunkIndex.value}"]`
+  );
+  const visiblePad = 80;
+  const inVerticalRange = (y: number) => y > -visiblePad && y < frameRect.height + visiblePad;
+  let leftPath = "";
+  let rightPath = "";
+
+  if (leftNode) {
+    const rect = leftNode.getBoundingClientRect();
+    const sideY = rect.top - frameRect.top + rect.height / 2;
+    const sideX = rect.right - frameRect.left;
+    if (inVerticalRange(sideY) && inVerticalRange(centerY)) {
+      leftPath = curvePath(sideX, sideY, centerLeftX, centerY);
+    }
+  }
+
+  if (rightNode) {
+    const rect = rightNode.getBoundingClientRect();
+    const sideY = rect.top - frameRect.top + rect.height / 2;
+    const sideX = rect.left - frameRect.left;
+    if (inVerticalRange(sideY) && inVerticalRange(centerY)) {
+      rightPath = curvePath(sideX, sideY, centerRightX, centerY);
+    }
+  }
+
+  connectorOverlay.value = {
+    width: frameRect.width,
+    height: frameRect.height,
+    leftPath,
+    rightPath,
+  };
+}
+
+function scheduleConnectorUpdate(): void {
+  if (connectorRaf) return;
+  connectorRaf = requestAnimationFrame(() => {
+    connectorRaf = 0;
+    updateConnectorOverlay();
+  });
+}
+
+function scheduleEditorScrollSync(): void {
+  if (scrollSyncRaf) return;
+  scrollSyncRaf = requestAnimationFrame(() => {
+    scrollSyncRaf = 0;
+    syncSidePanelsToEditorScroll();
+    updateConnectorOverlay();
+  });
+}
+
 // IDEA-style synchronized navigation: clicking prev/next moves left, center,
 // and right panes to the same hunk so the user never has to hunt for it.
 // The center pane follows even for already-accepted hunks (no '<<<' markers
@@ -644,14 +846,19 @@ function scrollEditorToHunk(index: number) {
   // v-for has already laid out by the time the user clicks prev/next.
   const leftOk = scrollSidePanelToHunk(leftPanel.value, index);
   const rightOk = scrollSidePanelToHunk(rightPanel.value, index);
-  if (leftOk && rightOk) return;
+  if (leftOk && rightOk) {
+    scheduleConnectorUpdate();
+    return;
+  }
   // Fallback for files where the hunk node hasn't been rendered yet (e.g. the
   // very first call right after loadFile completes on a 10k-line file).
   if (typeof requestAnimationFrame !== "function") return;
   requestAnimationFrame(() => {
     scrollSidePanelToHunk(leftPanel.value, index);
     scrollSidePanelToHunk(rightPanel.value, index);
+    updateConnectorOverlay();
   });
+  scheduleConnectorUpdate();
 }
 
 // ---------------------------------------------------------------------------
@@ -702,6 +909,7 @@ function toggleSide(index: number, side: "ours" | "theirs") {
   currentHunkIndex.value = index;
   const current = stateOf(index)[side];
   setSideState(index, side, !current);
+  scrollEditorToHunk(index);
 }
 
 // Explicit "discard this side" — clears that side's acceptance but never affects
@@ -710,6 +918,7 @@ function discardSide(index: number, side: "ours" | "theirs") {
   if (!hunks.value[index]) return;
   currentHunkIndex.value = index;
   setSideState(index, side, false);
+  scrollEditorToHunk(index);
 }
 
 function acceptOurs() {
@@ -733,6 +942,7 @@ function acceptBoth() {
   );
   hunkStates.value = arr;
   syncResultToEditor();
+  scrollEditorToHunk(idx);
 }
 
 // Toolbar-level: bulk accept all hunks on one side (additive — does NOT clear
@@ -754,6 +964,7 @@ function resetAll() {
   if (hunks.value.length === 0) return;
   hunkStates.value = hunks.value.map(() => ({ ours: false, theirs: false }));
   syncResultToEditor();
+  scrollEditorToHunk(currentHunkIndex.value);
 }
 
 function sideBadgeText(index: number, side: "ours" | "theirs"): string {
@@ -804,13 +1015,19 @@ async function switchFile(filePath: string) {
 function onPanelResize() {
   requestAnimationFrame(() => {
     monacoEditor?.layout();
+    scheduleEditorScrollSync();
   });
+}
+
+function onWindowResize() {
+  scheduleEditorScrollSync();
 }
 
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
 onMounted(async () => {
+  window.addEventListener("resize", onWindowResize);
   await loadFile(props.filePath);
   await nextTick();
   await initMonaco();
@@ -832,6 +1049,11 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  window.removeEventListener("resize", onWindowResize);
+  if (scrollSyncRaf) cancelAnimationFrame(scrollSyncRaf);
+  if (connectorRaf) cancelAnimationFrame(connectorRaf);
+  monacoDisposables.forEach((d) => d.dispose());
+  monacoDisposables = [];
   monacoEditor?.dispose();
   monacoEditor = null;
 });
@@ -891,7 +1113,7 @@ onBeforeUnmount(() => {
               你写的代码在 <strong>左栏</strong>
             </template>
             <template v-else-if="mergeContext.yoursOn === 'theirs'">
-              你写的代码在 <strong>右栏</strong>（{{ mergeContext.scenarioLabel }} 时 git 会把 ours/theirs 反转）
+              你写的代码在 <strong>右栏</strong>（{{ mergeContext.scenarioLabel }} 时 Git 会调整左右语义）
             </template>
             <template v-else>
               无法自动判定哪一侧是你的代码 — 请按冲突标记后缀自行判断
@@ -908,14 +1130,14 @@ onBeforeUnmount(() => {
           <!-- Accept all shortcuts -->
           <button
             class="tbtn tbtn-green"
-            title="接受所有左侧（Ours / HEAD）— Pull/Merge 时是你当前分支的版本；Rebase 时是被 rebase 到的目标分支"
+            title="接受所有左侧（通常是 HEAD）— 拉取/合并时是你当前分支的版本；变基时是目标分支"
             @click="acceptAllOurs"
           >
             全部接受左侧
           </button>
           <button
             class="tbtn tbtn-blue"
-            title="接受所有右侧（Theirs / Incoming）— Pull/Merge 时是远端要合入的版本；Rebase 时是你被 rebase 的本地提交"
+            title="接受所有右侧（传入版本）— 拉取/合并时是远端要合入的版本；变基时是你的本地提交"
             @click="acceptAllTheirs"
           >
             全部接受右侧
@@ -997,6 +1219,7 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Three panels (resizable via Splitpanes) -->
+        <div ref="mergePanelsFrame" class="merge-panels-frame">
         <Splitpanes class="default-theme merge-panels" @resize="onPanelResize">
           <!-- Left: Yours (read-only, segment-based) -->
           <Pane :size="33" :min-size="15">
@@ -1013,7 +1236,7 @@ onBeforeUnmount(() => {
               >你的代码</span>
               <span class="head-lines">{{ hunks.length }} 处冲突</span>
             </div>
-            <div ref="leftPanel" class="side-panel">
+            <div ref="leftPanel" class="side-panel" @scroll="scheduleConnectorUpdate">
             <div class="side-panel-inner">
             <template
               v-for="seg in segments"
@@ -1110,7 +1333,7 @@ onBeforeUnmount(() => {
               >你的代码</span>
               <span class="head-lines">{{ hunks.length }} 处冲突</span>
             </div>
-            <div ref="rightPanel" class="side-panel">
+            <div ref="rightPanel" class="side-panel" @scroll="scheduleConnectorUpdate">
             <div class="side-panel-inner">
             <template
               v-for="seg in segments"
@@ -1183,6 +1406,50 @@ onBeforeUnmount(() => {
           </div>
           </Pane>
         </Splitpanes>
+        <svg
+          v-if="connectorOverlay.leftPath || connectorOverlay.rightPath"
+          class="merge-connectors"
+          :viewBox="`0 0 ${connectorOverlay.width} ${connectorOverlay.height}`"
+          preserveAspectRatio="none"
+        >
+          <defs>
+            <marker
+              id="merge-connector-arrow-ours"
+              markerWidth="8"
+              markerHeight="8"
+              refX="6"
+              refY="4"
+              orient="auto"
+              markerUnits="strokeWidth"
+            >
+              <path d="M 0 0 L 8 4 L 0 8 z" class="merge-connector-arrow ours" />
+            </marker>
+            <marker
+              id="merge-connector-arrow-theirs"
+              markerWidth="8"
+              markerHeight="8"
+              refX="6"
+              refY="4"
+              orient="auto"
+              markerUnits="strokeWidth"
+            >
+              <path d="M 0 0 L 8 4 L 0 8 z" class="merge-connector-arrow theirs" />
+            </marker>
+          </defs>
+          <path
+            v-if="connectorOverlay.leftPath"
+            class="merge-connector-path merge-connector-path--ours"
+            :d="connectorOverlay.leftPath"
+            marker-end="url(#merge-connector-arrow-ours)"
+          />
+          <path
+            v-if="connectorOverlay.rightPath"
+            class="merge-connector-path merge-connector-path--theirs"
+            :d="connectorOverlay.rightPath"
+            marker-end="url(#merge-connector-arrow-theirs)"
+          />
+        </svg>
+        </div>
       </template>
     </div>
   </div>
@@ -1512,10 +1779,52 @@ onBeforeUnmount(() => {
 }
 
 /* ---- Panels ---- */
-.merge-panels {
+.merge-panels-frame {
+  position: relative;
   flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.merge-panels {
+  height: 100%;
   overflow: hidden;
   min-height: 0;
+}
+
+.merge-connectors {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.merge-connector-path {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.9;
+  filter: drop-shadow(0 0 2px rgb(0 0 0 / 0.45));
+}
+
+.merge-connector-path--ours {
+  stroke: #58c971;
+}
+
+.merge-connector-path--theirs {
+  stroke: #6faefc;
+}
+
+.merge-connector-arrow.ours {
+  fill: #58c971;
+}
+
+.merge-connector-arrow.theirs {
+  fill: #6faefc;
 }
 
 .side-panel {

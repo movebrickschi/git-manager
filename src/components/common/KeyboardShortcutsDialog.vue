@@ -22,7 +22,7 @@ const groups: ShortcutGroup[] = [
   {
     title: "提交日志",
     items: [
-      { keys: "↑ / ↓", desc: "切换上一个 / 下一个 commit" },
+      { keys: "↑ / ↓", desc: "切换上一个 / 下一个提交" },
       { keys: "Ctrl + 点击", desc: "多选提交" },
       { keys: "Shift + 点击", desc: "范围选择" },
     ],
@@ -30,7 +30,7 @@ const groups: ShortcutGroup[] = [
   {
     title: "本地变更",
     items: [
-      { keys: "Ctrl + Enter", desc: "提交（在 message 框内）" },
+      { keys: "Ctrl + Enter", desc: "提交（在提交信息框内）" },
       { keys: "Ctrl + Shift + Enter", desc: "提交并推送" },
       { keys: "Ctrl + A", desc: "全选文件" },
     ],
@@ -38,8 +38,8 @@ const groups: ShortcutGroup[] = [
   {
     title: "差异视图",
     items: [
-      { keys: "← / →", desc: "上一个 / 下一个 hunk" },
-      { keys: "Space", desc: "暂存 / 取消暂存当前 hunk" },
+      { keys: "← / →", desc: "上一个 / 下一个差异块" },
+      { keys: "Space", desc: "暂存 / 取消暂存当前差异块" },
     ],
   },
 ];

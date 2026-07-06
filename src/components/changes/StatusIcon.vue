@@ -30,10 +30,33 @@ function statusClass(status: FileStatus["status"]): string {
       return "";
   }
 }
+
+function statusTitle(status: FileStatus["status"]): string {
+  switch (status) {
+    case "added":
+      return "新增";
+    case "modified":
+      return "已修改";
+    case "deleted":
+      return "已删除";
+    case "renamed":
+      return "已重命名";
+    case "copied":
+      return "已复制";
+    case "untracked":
+      return "未跟踪";
+    case "conflicted":
+      return "冲突";
+    case "ignored":
+      return "已忽略";
+    default:
+      return status;
+  }
+}
 </script>
 
 <template>
-  <span class="status-icon" :class="statusClass(props.status)" :title="props.status">
+  <span class="status-icon" :class="statusClass(props.status)" :title="statusTitle(props.status)">
     <!-- added: 加号（新增） -->
     <svg
       v-if="props.status === 'added'"

@@ -176,7 +176,7 @@ function copyCommitId(sha: string) {
             <div v-if="loading" class="fh-loading">加载中…</div>
             <div v-else-if="error" class="fh-error">加载失败：{{ error }}</div>
             <div v-else-if="commits.length === 0" class="fh-empty">
-              该文件没有 commit 历史（或仅在工作区，尚未跟踪）
+              该文件没有提交历史（或仅在工作区，尚未跟踪）
             </div>
             <ul v-else class="fh-list">
               <li
@@ -206,11 +206,11 @@ function copyCommitId(sha: string) {
           </aside>
 
           <section class="fh-diff">
-            <div v-if="!selectedCommitId" class="fh-diff-empty">选择左侧 commit 查看 diff</div>
-            <div v-else-if="diffLoading" class="fh-diff-loading">读取 diff…</div>
-            <div v-else-if="diffError" class="fh-diff-error">diff 加载失败：{{ diffError }}</div>
+            <div v-if="!selectedCommitId" class="fh-diff-empty">选择左侧提交查看差异</div>
+            <div v-else-if="diffLoading" class="fh-diff-loading">读取差异…</div>
+            <div v-else-if="diffError" class="fh-diff-error">差异加载失败：{{ diffError }}</div>
             <div v-else-if="diff && diff.binary" class="fh-diff-binary">
-              二进制文件 · 不显示文本 diff
+              二进制文件 · 不显示文本差异
             </div>
             <div v-else-if="diff && diff.hunks && diff.hunks.length > 0" class="fh-diff-content">
               <div v-for="(hunk, hi) in diff.hunks" :key="hi" class="fh-hunk">
@@ -233,7 +233,7 @@ function copyCommitId(sha: string) {
               </div>
             </div>
             <div v-else class="fh-diff-empty">
-              该 commit 中此文件无可显示的 diff（新增空文件或纯重命名）
+              该提交中此文件无可显示的差异（新增空文件或纯重命名）
             </div>
           </section>
         </div>

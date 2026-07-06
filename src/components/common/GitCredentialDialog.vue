@@ -7,7 +7,7 @@ import { commands } from "@/utils/commands";
  *
  * 触发：联网操作（push/pull/fetch/clone）鉴权失败时由调用方打开（反应式）；也可在
  * 设置「Git 凭据」里主动新增。保存即 safeStorage 加密落盘（Electron）/ 明文（Web）。
- * 安全：Token 输入框**绝不预填**已存值；保存成功后清空本地 token，不在内存久留。
+ * 安全：令牌输入框**绝不预填**已存值；保存成功后清空本地令牌，不在内存久留。
  */
 const props = defineProps<{
   visible: boolean;
@@ -15,7 +15,7 @@ const props = defineProps<{
   host?: string;
   /** 预填用户名（已有缓存时）。 */
   username?: string;
-  /** 顶部提示语，例如「鉴权失败，请输入账号 / Token 后重试」。 */
+  /** 顶部提示语，例如「鉴权失败，请输入账号 / 令牌后重试」。 */
   hint?: string;
 }>();
 
@@ -38,7 +38,7 @@ watch(
     if (v) {
       hostInput.value = props.host ?? "";
       usernameInput.value = props.username ?? "";
-      token.value = ""; // 绝不预填 Token
+      token.value = ""; // 绝不预填令牌
       showToken.value = false;
       error.value = "";
       saving.value = false;
@@ -51,11 +51,11 @@ async function handleSave() {
   error.value = "";
   const h = hostInput.value.trim();
   if (!h) {
-    error.value = "请填写主机（host），例如 github.com";
+    error.value = "请填写主机，例如 github.com";
     return;
   }
   if (!token.value) {
-    error.value = "请填写密码 / 访问令牌（Token）";
+    error.value = "请填写密码 / 访问令牌";
     return;
   }
   saving.value = true;
@@ -95,12 +95,12 @@ function onKeydown(e: KeyboardEvent) {
         <div class="cred-body">
           <p v-if="hint" class="cred-hint">{{ hint }}</p>
           <p class="cred-desc">
-            私有仓库的 push / pull / fetch / clone 需要 HTTPS 凭据。建议使用
-            <strong>个人访问令牌（PAT）</strong> 而非账户密码。Token 仅加密保存在本机，绝不回显。
+            私有仓库的推送、拉取、抓取和克隆需要 HTTPS 凭据。建议使用
+            <strong>个人访问令牌（PAT）</strong> 而非账户密码。令牌仅加密保存在本机，绝不回显。
           </p>
 
           <label class="cred-field">
-            <span class="cred-label">主机 Host</span>
+            <span class="cred-label">主机</span>
             <input
               v-model="hostInput"
               class="cred-input"
@@ -124,13 +124,13 @@ function onKeydown(e: KeyboardEvent) {
           </label>
 
           <label class="cred-field">
-            <span class="cred-label">密码 / Token</span>
+            <span class="cred-label">密码 / 令牌</span>
             <div class="cred-token-row">
               <input
                 v-model="token"
                 class="cred-input"
                 :type="showToken ? 'text' : 'password'"
-                placeholder="粘贴 Personal Access Token"
+                placeholder="粘贴个人访问令牌"
                 spellcheck="false"
                 autocomplete="off"
               />

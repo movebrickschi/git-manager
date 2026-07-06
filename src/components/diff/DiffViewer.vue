@@ -224,7 +224,7 @@ onUnmounted(() => {
 
 <template>
   <div class="diff-viewer" :class="{ inline: props.inline }">
-    <div v-if="diff.binary" class="binary-notice">Binary file - cannot display diff</div>
+    <div v-if="diff.binary" class="binary-notice">二进制文件，无法显示差异</div>
 
     <template v-else>
       <!-- Mode toggle + Hunk nav -->
@@ -234,31 +234,31 @@ onUnmounted(() => {
           :class="{ active: viewMode === 'side-by-side' }"
           @click="viewMode = 'side-by-side'"
         >
-          Side by Side
+          左右对比
         </button>
         <button
           class="mode-btn"
           :class="{ active: viewMode === 'unified' }"
           @click="viewMode = 'unified'"
         >
-          Unified
+          统一视图
         </button>
         <div v-if="hunkCount > 0" class="hunk-nav">
           <button
             class="hunk-nav-btn"
             :disabled="hunkCount <= 1"
-            title="上一个 hunk (Shift+F7 / Alt+↑)"
+            title="上一个差异块（Shift+F7 / Alt+↑）"
             @click="prevHunk"
           >
             ↑
           </button>
           <span class="hunk-nav-label">
-            hunk {{ currentHunkIdx + 1 }} / {{ hunkCount }}
+            差异块 {{ currentHunkIdx + 1 }} / {{ hunkCount }}
           </span>
           <button
             class="hunk-nav-btn"
             :disabled="hunkCount <= 1"
-            title="下一个 hunk (F7 / Alt+↓)"
+            title="下一个差异块（F7 / Alt+↓）"
             @click="nextHunk"
           >
             ↓
@@ -269,7 +269,7 @@ onUnmounted(() => {
       <!-- Side by side view -->
       <div v-if="viewMode === 'side-by-side' && !inline" class="side-by-side">
         <div class="side left-side">
-          <div class="side-header">{{ diff.oldPath || "(new file)" }}</div>
+          <div class="side-header">{{ diff.oldPath || "(新文件)" }}</div>
           <div ref="sideLeftContentRef" class="side-content">
             <div
               v-for="(pair, i) in sideBySideLines"
@@ -283,7 +283,7 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="side right-side">
-          <div class="side-header">{{ diff.newPath || "(deleted)" }}</div>
+          <div class="side-header">{{ diff.newPath || "(已删除)" }}</div>
           <div ref="sideRightContentRef" class="side-content">
             <div
               v-for="(pair, i) in sideBySideLines"
@@ -299,7 +299,7 @@ onUnmounted(() => {
         <div
           v-if="minimapSegments.length > 0"
           class="diff-minimap"
-          title="Diff minimap · 点击跳到对应位置"
+          title="差异缩略图 · 点击跳到对应位置"
           @click="onMinimapClick"
         >
           <div
@@ -332,7 +332,7 @@ onUnmounted(() => {
         <div
           v-if="!inline && minimapSegments.length > 0"
           class="diff-minimap"
-          title="Diff minimap · 点击跳到对应位置"
+          title="差异缩略图 · 点击跳到对应位置"
           @click="onMinimapClick"
         >
           <div

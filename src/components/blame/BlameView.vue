@@ -49,16 +49,16 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   if (!line) return [];
   return [
     {
-      label: `跳到 commit ${line.shortId}`,
+      label: `跳到提交 ${line.shortId}`,
       action: () => jumpToCommit(line.commitId),
     },
     { separator: true, label: "" },
     {
-      label: `复制 short hash (${line.shortId})`,
+      label: `复制短哈希 (${line.shortId})`,
       action: () => void navigator.clipboard?.writeText(line.shortId),
     },
     {
-      label: "复制完整 hash",
+      label: "复制完整哈希",
       action: () => void navigator.clipboard?.writeText(line.commitId),
     },
     {
@@ -71,7 +71,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
       action: () => void navigator.clipboard?.writeText(line.content),
     },
     {
-      label: "复制 commit 摘要",
+      label: "复制提交摘要",
       action: () => void navigator.clipboard?.writeText(line.summary),
     },
   ];
@@ -145,14 +145,14 @@ function isNewGroup(lines: BlameLine[], index: number): boolean {
         v-model="searchText"
         class="blame-search-input"
         type="search"
-        placeholder="过滤行内容 / commit / 作者 / 摘要..."
+        placeholder="过滤行内容 / 提交 / 作者 / 摘要..."
       />
       <span v-if="blameInfo" class="blame-search-count">
         {{ filteredLines.length }} / {{ blameInfo.lines.length }}
       </span>
     </div>
-    <div v-if="loading" class="loading">加载 Blame 数据...</div>
-    <div v-else-if="!blameInfo" class="empty">无法加载 Blame 数据</div>
+    <div v-if="loading" class="loading">加载逐行作者数据...</div>
+    <div v-else-if="!blameInfo" class="empty">无法加载逐行作者数据</div>
     <div v-else-if="filteredLines.length === 0" class="empty">无匹配行</div>
     <VirtualList
       v-else

@@ -30,6 +30,16 @@ const contextCommit = ref<CommitInfo | null>(null);
 // Reset 对话框
 const showResetDialog = ref(false);
 const resetMode = ref<"soft" | "mixed" | "hard">("mixed");
+function resetModeLabel(mode: typeof resetMode.value): string {
+  switch (mode) {
+    case "soft":
+      return "软重置";
+    case "mixed":
+      return "混合重置";
+    case "hard":
+      return "硬重置";
+  }
+}
 
 // 通用二次确认对话框
 const showConfirmDialog = ref(false);
@@ -116,12 +126,12 @@ async function handleCherryPick() {
     const result = await commands.cherryPick(repoStore.activeRepo.path, commit.id);
     if (result.success) {
       await refreshGit();
-      showToast(`Cherry-pick 成功：${commit.shortId}`);
+      showToast(`拣选成功：${commit.shortId}`);
     } else {
-      showToast(`Cherry-pick 产生冲突，请手动解决：${result.conflicts.join(", ")}`);
+      showToast(`拣选产生冲突，请手动解决：${result.conflicts.join(", ")}`);
     }
   } catch (e: unknown) {
-    showToast(`Cherry-pick 失败：${errText(e)}`);
+    showToast(`拣选失败：${errText(e)}`);
   }
 }
 
@@ -144,14 +154,14 @@ async function handleCherryPickMulti() {
     );
     if (result.success) {
       await refreshGit();
-      showToast(`已 cherry-pick ${ordered.length} 个 commit`);
+      showToast(`已拣选 ${ordered.length} 个提交`);
     } else {
       showToast(
-        `Cherry-pick 在 ${ordered[0]?.shortId} 附近产生冲突：${result.conflicts.join(", ")}`
+        `拣选在 ${ordered[0]?.shortId} 附近产生冲突：${result.conflicts.join(", ")}`
       );
     }
   } catch (e: unknown) {
-    showToast(`批量 Cherry-pick 失败：${errText(e)}`);
+    showToast(`批量拣选失败：${errText(e)}`);
   }
 }
 
@@ -159,7 +169,7 @@ async function handleCherryPickMulti() {
 function handleCheckoutRevision() {
   if (!contextCommit.value) return;
   const commit = contextCommit.value;
-  confirmTitle.value = "Checkout Revision";
+  confirmTitle.value = "签出此提交";
   confirmText.value = `将 HEAD 切换到提交 ${commit.shortId}（${commit.summary}）。\n\n这会进入"分离 HEAD"状态，新的提交不会属于任何分支。确定继续吗？`;
   pendingAction.value = async () => {
     if (!repoStore.activeRepo) return;
@@ -168,7 +178,7 @@ function handleCheckoutRevision() {
       await refreshGit();
       showToast(`已切换到 ${commit.shortId}`);
     } catch (e: unknown) {
-      showToast(`签出（checkout）失败：${errText(e)}`);
+      showToast(`签出失败：${errText(e)}`);
     }
   };
   showConfirmDialog.value = true;
@@ -178,7 +188,7 @@ function handleCheckoutRevision() {
 function handleRevertCommit() {
   if (!contextCommit.value) return;
   const commit = contextCommit.value;
-  confirmTitle.value = "Revert Commit";
+  confirmTitle.value = "反做此提交";
   confirmText.value = `创建一个新提交来撤销 ${commit.shortId}（${commit.summary}）的变更。确定继续吗？`;
   pendingAction.value = async () => {
     if (!repoStore.activeRepo) return;
@@ -186,12 +196,12 @@ function handleRevertCommit() {
       const result = await commands.revertCommit(repoStore.activeRepo.path, commit.id);
       if (result.success) {
         await refreshGit();
-        showToast(`已成功 Revert ${commit.shortId}`);
+      showToast(`已成功反做 ${commit.shortId}`);
       } else {
-        showToast(`回滚（revert）产生冲突，请手动解决：${result.conflicts.join(", ")}`);
+        showToast(`反做产生冲突，请手动解决：${result.conflicts.join(", ")}`);
       }
     } catch (e: unknown) {
-      showToast(`回滚（revert）失败：${errText(e)}`);
+      showToast(`反做失败：${errText(e)}`);
     }
   };
   showConfirmDialog.value = true;
@@ -211,9 +221,9 @@ async function doReset() {
   try {
     await commands.resetToCommit(repoStore.activeRepo.path, commit.id, resetMode.value);
     await refreshGit();
-    showToast(`已 Reset（${resetMode.value}）到 ${commit.shortId}`);
+    showToast(`已${resetModeLabel(resetMode.value)}到 ${commit.shortId}`);
   } catch (e: unknown) {
-    showToast(`重置（reset）失败：${errText(e)}`);
+    showToast(`重置失败：${errText(e)}`);
   }
 }
 
@@ -241,11 +251,11 @@ async function handleSquashCommits() {
   if (count < 2) return;
   if (!repoStore.activeRepo) return;
   const commits = logStore.commits.slice(0, count);
-  const defaultMessage = `${commits[0]!.summary}\n\nSquashed ${count} commits:\n${commits
+  const defaultMessage = `${commits[0]!.summary}\n\n合并了 ${count} 个提交：\n${commits
     .map((c) => `- ${c.shortId} ${c.summary}`)
     .join("\n")}`;
   const message = window.prompt(
-    `合并最近 ${count} 个 commit（包含 HEAD）为一个新 commit。\n输入合并后的 commit message：`,
+    `合并最近 ${count} 个提交（包含 HEAD）为一个新提交。\n输入合并后的提交信息：`,
     defaultMessage
   );
   if (!message || message.trim().length === 0) return;
@@ -253,9 +263,9 @@ async function handleSquashCommits() {
     await commands.squashCommits(repoStore.activeRepo.path, count, message);
     logStore.clearSelection();
     await refreshGit();
-    showToast(`已合并 ${count} 个 commit`);
+    showToast(`已合并 ${count} 个提交`);
   } catch (e: unknown) {
-    showToast(`压缩（squash）失败：${errText(e)}`);
+    showToast(`压缩失败：${errText(e)}`);
   }
 }
 
@@ -279,7 +289,7 @@ async function handleFixupInto() {
   if (!contextCommit.value || !repoStore.activeRepo) return;
   const commit = contextCommit.value;
   const ok = window.confirm(
-    `将当前已暂存(staged)的改动提交为 fixup! "${commit.summary}"。\n请先暂存要修补的改动；之后对其父提交执行 Autosquash 即可合并。继续？`
+    `将当前已暂存的改动提交为 fixup! "${commit.summary}"。\n请先暂存要修补的改动；之后对其父提交执行自动压缩即可合并。继续？`
   );
   if (!ok) return;
   try {
@@ -287,7 +297,7 @@ async function handleFixupInto() {
     await refreshGit();
     showToast(`已创建 fixup! ${commit.shortId}`);
   } catch (e) {
-    showToast(`修补（fixup）失败：${errText(e)}（请确认已暂存改动）`);
+    showToast(`修补失败：${errText(e)}（请确认已暂存改动）`);
   }
 }
 
@@ -300,21 +310,21 @@ async function handleAutosquash() {
   if (!contextCommit.value || !repoStore.activeRepo) return;
   const commit = contextCommit.value;
   const ok = window.confirm(
-    `将对 ${commit.shortId} 之后的提交执行 autosquash 变基，自动合并 fixup!/squash!（会改写提交历史）。\n请先确保工作区已提交干净。继续？`
+    `将对 ${commit.shortId} 之后的提交执行自动压缩变基，自动合并 fixup!/squash!（会改写提交历史）。\n请先确保工作区已提交干净。继续？`
   );
   if (!ok) return;
   try {
     const result = await commands.rebaseAutosquash(repoStore.activeRepo.path, commit.id);
     if (result.success) {
       await refreshGit();
-      showToast("自动压缩（autosquash）变基完成");
+      showToast("自动压缩变基完成");
     } else if (result.conflicts.length > 0) {
-      showToast(`自动压缩（autosquash）产生冲突，请手动解决：${result.conflicts.join(", ")}`);
+      showToast(`自动压缩产生冲突，请手动解决：${result.conflicts.join(", ")}`);
     } else {
-      showToast(`自动压缩（autosquash）失败：${translateGitError(result.message)}`);
+      showToast(`自动压缩失败：${translateGitError(result.message)}`);
     }
   } catch (e) {
-    showToast(`Autosquash 失败：${errText(e)}`);
+    showToast(`自动压缩失败：${errText(e)}`);
   }
 }
 
@@ -371,9 +381,9 @@ async function handleSaveAsPatch() {
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 5_000);
-    showToast(`已导出 patch：${filename}`);
+    showToast(`已导出补丁：${filename}`);
   } catch (e: unknown) {
-    showToast(`导出 patch 失败：${errText(e)}`);
+    showToast(`导出补丁失败：${errText(e)}`);
   }
 }
 
@@ -397,7 +407,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   const isMulti = multiCount >= 2 && logStore.selectedCommitIds.includes(contextCommit.value.id);
   return [
     {
-      label: "复制 Revision",
+      label: "复制版本号",
       action: () => navigator.clipboard.writeText(contextCommit.value!.id),
     },
     {
@@ -406,28 +416,28 @@ const contextMenuItems = computed<MenuItem[]>(() => {
     },
     { separator: true, label: "" },
     isMulti
-      ? { label: `Cherry-pick ${multiCount} 个 commit`, action: handleCherryPickMulti }
-      : { label: "Cherry-pick", action: handleCherryPick },
-    { label: "Checkout Revision", action: handleCheckoutRevision },
+      ? { label: `拣选 ${multiCount} 个提交`, action: handleCherryPickMulti }
+      : { label: "拣选此提交", action: handleCherryPick },
+    { label: "签出此提交", action: handleCheckoutRevision },
     { separator: true, label: "" },
     { label: "新建分支...", action: handleNewBranchFromCommit },
-    { label: "新建 Tag...", action: handleCreateTagFromCommit },
+    { label: "新建标签...", action: handleCreateTagFromCommit },
     { separator: true, label: "" },
-    { label: "Save as Patch...", action: handleSaveAsPatch },
+    { label: "另存为补丁...", action: handleSaveAsPatch },
     ...(squashableCount.value >= 2
       ? [
           {
-            label: `Squash ${squashableCount.value} commits 为一个...`,
+            label: `将 ${squashableCount.value} 个提交压缩为一个...`,
             action: handleSquashCommits,
           },
         ]
       : []),
-    { label: "Interactive Rebase from here...", action: handleInteractiveRebase },
-    { label: "Fixup into this commit...", action: handleFixupInto },
-    { label: "Autosquash from here...", action: handleAutosquash },
+    { label: "从这里开始交互式变基...", action: handleInteractiveRebase },
+    { label: "修补到此提交...", action: handleFixupInto },
+    { label: "从这里开始自动压缩...", action: handleAutosquash },
     { separator: true, label: "" },
-    { label: "Reset Current Branch to Here...", action: handleResetToHere },
-    { label: "Revert Commit", action: handleRevertCommit },
+    { label: "将当前分支重置到这里...", action: handleResetToHere },
+    { label: "反做此提交", action: handleRevertCommit },
   ];
 });
 
@@ -757,21 +767,21 @@ function getRefClass(refType: string): string {
               <label class="reset-mode-option" :class="{ active: resetMode === 'soft' }">
                 <input v-model="resetMode" type="radio" value="soft" />
                 <div class="mode-info">
-                  <span class="mode-name">软 (Soft)</span>
+                  <span class="mode-name">软重置</span>
                   <span class="mode-desc">保留所有更改到暂存区（可直接重新提交）</span>
                 </div>
               </label>
               <label class="reset-mode-option" :class="{ active: resetMode === 'mixed' }">
                 <input v-model="resetMode" type="radio" value="mixed" />
                 <div class="mode-info">
-                  <span class="mode-name">混合 (Mixed) <span class="mode-default">（默认）</span></span>
+                  <span class="mode-name">混合重置 <span class="mode-default">（默认）</span></span>
                   <span class="mode-desc">保留更改到工作区，取消暂存</span>
                 </div>
               </label>
               <label class="reset-mode-option" :class="{ active: resetMode === 'hard' }">
                 <input v-model="resetMode" type="radio" value="hard" />
                 <div class="mode-info">
-                  <span class="mode-name mode-danger">硬 (Hard)</span>
+                  <span class="mode-name mode-danger">硬重置</span>
                   <span class="mode-desc mode-danger">丢弃所有本地更改，不可恢复</span>
                 </div>
               </label>
@@ -784,7 +794,7 @@ function getRefClass(refType: string): string {
               :class="resetMode === 'hard' ? 'danger' : 'primary'"
               @click="doReset"
             >
-              Reset
+              重置
             </button>
           </div>
         </div>

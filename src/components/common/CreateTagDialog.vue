@@ -112,18 +112,18 @@ onMounted(() => {
           <div class="form-row form-row--inline">
             <label class="form-checkbox-label">
               <input v-model="annotated" type="checkbox" class="form-checkbox" />
-              <span>Annotated（包含描述、标签者、时间，推荐发版用）</span>
+              <span>附注标签（包含描述、标签者、时间，推荐发版用）</span>
             </label>
           </div>
 
           <div v-if="annotated" class="form-row">
-            <label class="form-label" for="tag-message">描述（annotated tag 的 commit 消息）</label>
+            <label class="form-label" for="tag-message">描述（附注标签的提交信息）</label>
             <textarea
               id="tag-message"
               v-model="message"
               class="form-textarea"
               rows="3"
-              placeholder="例如：Release 1.0.0 — Smart Pull + Tag CRUD + Force-push lease"
+              placeholder="例如：发布 1.0.0：智能拉取、标签管理、带租约强推"
             />
           </div>
 

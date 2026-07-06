@@ -200,7 +200,7 @@ function statusBadge(s: string): string {
               </select>
             </label>
             <span class="cb-summary" v-if="commits.length">
-              {{ commits.length }} commit · {{ files.length }} 文件
+              {{ commits.length }} 个提交 · {{ files.length }} 个文件
             </span>
           </div>
           <button class="cb-close" @click="close">✕</button>
@@ -210,13 +210,13 @@ function statusBadge(s: string): string {
 
         <div class="cb-body">
           <aside class="cb-commits">
-            <div class="cb-pane-title">Commits (base..target)</div>
+            <div class="cb-pane-title">提交（基准..目标）</div>
             <div v-if="loading" class="cb-empty">加载中…</div>
             <div v-else-if="!commits.length" class="cb-empty">
               {{
                 baseBranch === targetBranch
                   ? "两边相同分支，无可对比"
-                  : "无 commit 差异"
+                  : "无提交差异"
               }}
             </div>
             <ul v-else class="cb-list">
@@ -247,8 +247,8 @@ function statusBadge(s: string): string {
           </aside>
 
           <section class="cb-diff">
-            <div v-if="!selectedFile" class="cb-empty">选择左侧文件查看 diff</div>
-            <div v-else-if="diffLoading" class="cb-empty">读取 diff…</div>
+            <div v-if="!selectedFile" class="cb-empty">选择左侧文件查看差异</div>
+            <div v-else-if="diffLoading" class="cb-empty">读取差异…</div>
             <div v-else-if="diff?.binary" class="cb-empty">二进制文件</div>
             <div v-else-if="diff && diff.hunks && diff.hunks.length" class="cb-diff-content">
               <div v-for="(hunk, hi) in diff.hunks" :key="hi" class="cb-hunk">
@@ -268,7 +268,7 @@ function statusBadge(s: string): string {
                 </div>
               </div>
             </div>
-            <div v-else class="cb-empty">无可显示的 diff</div>
+            <div v-else class="cb-empty">无可显示的差异</div>
           </section>
         </div>
       </div>

@@ -71,7 +71,7 @@ async function handleAdd() {
 
 async function handleRemove(wt: WorktreeInfo, force = false) {
   if (wt.main) return; // 主工作树不能删
-  if (!confirm(`确认删除 worktree：${wt.path}${force ? "（强制）" : ""}？`)) return;
+  if (!confirm(`确认删除工作树：${wt.path}${force ? "（强制）" : ""}？`)) return;
   try {
     await commands.removeWorktree(props.repoPath, wt.path, force);
     await reload();
@@ -91,7 +91,7 @@ async function handleLockToggle(wt: WorktreeInfo) {
 }
 
 async function handlePrune() {
-  if (!confirm("将清理 worktree 元数据中失效的记录（git worktree prune）。继续？")) return;
+  if (!confirm("将清理工作树元数据中失效的记录（git worktree prune）。继续？")) return;
   try {
     await commands.pruneWorktrees(props.repoPath);
     await reload();
@@ -132,12 +132,12 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
 <template>
   <Teleport to="body">
     <div v-if="props.visible" class="wt-mask" @click.self="close">
-      <div class="wt-dialog" role="dialog" aria-label="Git Worktree 管理">
+      <div class="wt-dialog" role="dialog" aria-label="Git 工作树管理">
         <header class="wt-header">
           <span class="wt-title">工作树</span>
           <div class="wt-actions">
             <button class="wt-btn" @click="showAddForm = !showAddForm">
-              {{ showAddForm ? "取消新建" : "+ 新建 Worktree" }}
+              {{ showAddForm ? "取消新建" : "+ 新建工作树" }}
             </button>
             <button class="wt-btn" @click="handlePrune">清理失效</button>
             <button class="wt-btn" @click="reload">刷新</button>
@@ -150,15 +150,15 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
             <label>目标路径</label>
             <input
               v-model="addTarget"
-              placeholder="/abs/path/to/new/worktree（或相对路径）"
+              placeholder="新工作树路径（可填绝对路径或相对路径）"
               :disabled="addBusy"
             />
           </div>
           <div class="wt-form-row">
-            <label>使用现有分支或 sha</label>
+            <label>使用现有分支或提交哈希</label>
             <input
               v-model="addBranch"
-              placeholder="分支名 / commit sha（可空 = HEAD detached）"
+              placeholder="分支名 / 提交哈希（可空 = 分离 HEAD）"
               :disabled="addBusy"
             />
           </div>
@@ -181,7 +181,7 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
           <div v-if="loading" class="wt-empty">加载中…</div>
           <div v-else-if="error" class="wt-error">{{ error }}</div>
           <div v-else-if="empty" class="wt-empty">
-            没有任何 worktree 记录。点击右上角"+ 新建 Worktree"创建一个。
+            没有任何工作树记录。点击右上角「+ 新建工作树」创建一个。
           </div>
           <table v-else class="wt-table">
             <thead>
@@ -198,17 +198,17 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
                 <td class="wt-path" :title="wt.path">{{ wt.path }}</td>
                 <td>
                   <span v-if="wt.branch">{{ wt.branch }}</span>
-                  <span v-else-if="wt.detached" class="muted">(detached)</span>
-                  <span v-else-if="wt.bare" class="muted">(bare)</span>
+                  <span v-else-if="wt.detached" class="muted">（分离 HEAD）</span>
+                  <span v-else-if="wt.bare" class="muted">（裸仓库）</span>
                   <span v-else class="muted">-</span>
                 </td>
                 <td class="wt-sha">{{ wt.head?.substring(0, 7) || "" }}</td>
                 <td>
                   <span v-if="wt.main" class="badge badge-main">主</span>
                   <span v-if="wt.locked" class="badge badge-locked">
-                    locked{{ wt.lockReason ? `（${wt.lockReason}）` : "" }}
+                    已锁定{{ wt.lockReason ? `（${wt.lockReason}）` : "" }}
                   </span>
-                  <span v-if="wt.detached && !wt.main" class="badge badge-detached">detached</span>
+                  <span v-if="wt.detached && !wt.main" class="badge badge-detached">分离 HEAD</span>
                 </td>
                 <td class="wt-col-actions">
                   <button
@@ -229,7 +229,7 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
                   <button
                     v-if="!wt.main"
                     class="wt-btn small danger"
-                    title="忽略 dirty / locked 强制删（小心）"
+                    title="忽略未提交改动 / 锁定状态并强制删除（小心）"
                     @click="handleRemove(wt, true)"
                   >
                     强制

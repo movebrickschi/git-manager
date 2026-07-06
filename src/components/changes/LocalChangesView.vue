@@ -525,7 +525,7 @@ async function doQuickCommit(): Promise<void> {
     quickCommitMessage.value = "";
     quickCommitPaths.value = null;
   } catch (e: unknown) {
-    showToast(`提交失败: ${errText(e)}`);
+    showToast(`提交失败：${errText(e)}`);
   } finally {
     quickCommitLoading.value = false;
   }
@@ -536,8 +536,8 @@ function handleDiscardUntracked(): void {
   const filePath = contextFile.value.path;
   const ctxFile = contextFile.value;
   confirmDialog.open({
-    title: "回滚 untracked 文件",
-    text: `"${filePath}" 是未跟踪的新文件，git 没有历史可恢复。\n回滚 = 从磁盘永久删除该文件，确认继续？`,
+    title: "回滚未跟踪文件",
+    text: `"${filePath}" 是未跟踪的新文件，Git 没有历史可恢复。\n回滚 = 从磁盘永久删除该文件，确认继续？`,
     action: async () => {
       if (!repoStore.activeRepo) return;
       try {
@@ -547,9 +547,9 @@ function handleDiscardUntracked(): void {
           selectedFile.value = null;
           diffResult.value = null;
         }
-        showToast("已删除 untracked 文件");
+        showToast("已删除未跟踪文件");
       } catch (e: unknown) {
-        showToast(`删除失败: ${errText(e)}`);
+        showToast(`删除失败：${errText(e)}`);
       }
     },
   });
@@ -573,7 +573,7 @@ function handleDiscardChanges(): void {
         }
         showToast("已回滚更改");
       } catch (e: unknown) {
-        showToast(`回滚失败: ${errText(e)}`);
+        showToast(`回滚失败：${errText(e)}`);
       }
     },
   });
@@ -591,7 +591,7 @@ async function handleStashFile(): Promise<void> {
     }
     showToast("已搁置更改");
   } catch (e: unknown) {
-    showToast(`搁置失败: ${errText(e)}`);
+    showToast(`搁置失败：${errText(e)}`);
   }
 }
 
@@ -610,7 +610,7 @@ async function handleCopyAsPatch(): Promise<void> {
     await navigator.clipboard.writeText(raw);
     showToast("补丁已复制到剪贴板");
   } catch (e: unknown) {
-    showToast(`复制失败: ${errText(e)}`);
+    showToast(`复制失败：${errText(e)}`);
   }
 }
 
@@ -635,9 +635,9 @@ async function handleCreatePatch(): Promise<void> {
     a.download = fileName;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`补丁文件已下载: ${fileName}`);
+    showToast(`补丁文件已下载：${fileName}`);
   } catch (e: unknown) {
-    showToast(`创建补丁失败: ${errText(e)}`);
+    showToast(`创建补丁失败：${errText(e)}`);
   }
 }
 
@@ -659,7 +659,7 @@ function handleDeleteFile(): void {
         }
         showToast("文件已删除");
       } catch (e: unknown) {
-        showToast(`删除失败: ${errText(e)}`);
+        showToast(`删除失败：${errText(e)}`);
       }
     },
   });
@@ -756,7 +756,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
     action: handleShowFileHistory,
   });
   items.push({
-    label: "Annotate（逐行作者）…",
+    label: "查看逐行作者…",
     disabled: isMulti || file.status === "untracked",
     action: handleShowBlame,
   });
@@ -769,7 +769,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
 
   if (isMulti) {
     items.push({
-      label: `添加到 VCS（暂存）${countTag(stageablePaths.value.length)}`,
+      label: `添加到版本控制（暂存）${countTag(stageablePaths.value.length)}`,
       disabled: stageablePaths.value.length === 0,
       action: bulkStage,
     });
@@ -780,7 +780,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
     });
   } else {
     if (section === "unstaged" || section === "untracked") {
-      items.push({ label: "添加到 VCS（暂存）", action: handleStageFile });
+      items.push({ label: "添加到版本控制（暂存）", action: handleStageFile });
     }
     if (section === "staged") {
       items.push({ label: "取消暂存", action: handleUnstageFile });
@@ -867,7 +867,7 @@ onMounted(async () => {
     await commitStore.loadStatus();
     await refreshMergeState();
   } catch (error: unknown) {
-    errorMessage.value = `加载状态失败: ${errText(error)}`;
+    errorMessage.value = `加载状态失败：${errText(error)}`;
     console.error("Failed to load status:", error);
   } finally {
     loading.value = false;
@@ -902,7 +902,7 @@ watch(
       await commitStore.loadStatus();
       await refreshMergeState();
     } catch (error: unknown) {
-      errorMessage.value = `加载状态失败: ${errText(error)}`;
+      errorMessage.value = `加载状态失败：${errText(error)}`;
       console.error("Failed to load status:", error);
     } finally {
       loading.value = false;
@@ -1129,7 +1129,7 @@ watch(
             <div v-if="diffResult" class="diff-content">
               <DiffViewer :diff="diffResult" />
             </div>
-            <div v-else class="diff-loading">加载 Diff 中...</div>
+            <div v-else class="diff-loading">加载差异中...</div>
           </template>
           <div v-else class="diff-empty">选择一个文件查看变更</div>
         </div>
@@ -1172,7 +1172,7 @@ watch(
       >
         <div class="modal-dialog blame-modal">
           <div class="modal-header">
-            <span class="modal-title">Annotate · {{ blameFilePath }}</span>
+            <span class="modal-title">逐行作者 · {{ blameFilePath }}</span>
             <button class="modal-close" @click="showBlameDialog = false">✕</button>
           </div>
           <div class="modal-body blame-modal-body">

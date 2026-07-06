@@ -3,7 +3,7 @@
  * 系统设置弹窗 · 集中管理所有应用级配置项
  *
  * 设计要点：
- * - 左侧分类导航（外观 / 编辑器 / 自动刷新 / Fetch / AI / 关于）
+ * - 左侧分类导航（外观 / 编辑器 / 自动刷新 / 抓取 / AI / 关于）
  * - 右侧表单内容，每项设置带说明文字
  * - 所有改动即时生效，无需"保存"按钮（settingsStore 内部 localStorage 持久化）
  * - AI 设置独立弹窗，本弹窗内提供入口按钮
@@ -94,10 +94,10 @@ const sections: { id: Section; label: string; icon: string }[] = [
   { id: "appearance", label: "外观", icon: "🎨" },
   { id: "editor", label: "编辑器", icon: "📝" },
   { id: "watcher", label: "自动刷新", icon: "🔄" },
-  { id: "fetch", label: "Auto-fetch", icon: "📡" },
-  { id: "worktree", label: "Worktree", icon: "🌳" },
-  { id: "compare", label: "Compare Branches", icon: "🔍" },
-  { id: "hooks", label: "Git Hooks", icon: "🪝" },
+  { id: "fetch", label: "自动抓取", icon: "📡" },
+  { id: "worktree", label: "工作树", icon: "🌳" },
+  { id: "compare", label: "分支比较", icon: "🔍" },
+  { id: "hooks", label: "Git 钩子", icon: "🪝" },
   { id: "ai", label: "AI", icon: "✨" },
   { id: "integrations", label: "集成", icon: "🔗" },
   { id: "credentials", label: "Git 凭据", icon: "🔑" },
@@ -217,8 +217,8 @@ const appVersion = computed(() => __APP_VERSION__);
                   :value="settings.theme"
                   @change="(e: any) => settings.setTheme(e.target.value as 'dark' | 'light')"
                 >
-                  <option value="dark">深色（dark）</option>
-                  <option value="light">浅色（light）</option>
+                  <option value="dark">深色</option>
+                  <option value="light">浅色</option>
                 </select>
               </label>
               <p class="field-desc">应用启动时立即生效，下次启动保持。</p>
@@ -230,42 +230,42 @@ const appVersion = computed(() => __APP_VERSION__);
             <h3>编辑器</h3>
             <div class="field">
               <label class="field-label">
-                <span>Diff 显示模式</span>
+                <span>差异显示模式</span>
                 <select v-model="settings.diffMode">
-                  <option value="side-by-side">Side-by-Side（左右两屏）</option>
-                  <option value="unified">Unified（统一视图）</option>
+                  <option value="side-by-side">左右对比</option>
+                  <option value="unified">统一视图</option>
                 </select>
               </label>
-              <p class="field-desc">影响 DiffViewer 默认布局。</p>
+              <p class="field-desc">影响差异查看器的默认布局。</p>
             </div>
             <div class="field">
               <label class="field-toggle">
                 <input type="checkbox" v-model="settings.showCommitDetails" />
-                <span>显示 commit 详情面板</span>
+                <span>显示提交详情面板</span>
               </label>
             </div>
             <div class="field">
               <label class="field-toggle">
                 <input type="checkbox" v-model="settings.showDiffPreview" />
-                <span>commit 详情面板内显示 diff 预览</span>
+                <span>提交详情面板内显示差异预览</span>
               </label>
             </div>
             <div class="field">
               <label class="field-toggle">
                 <input type="checkbox" v-model="settings.compactReferences" />
-                <span>分支/Tag 标签紧凑模式</span>
+                <span>分支/标签紧凑模式</span>
               </label>
             </div>
             <div class="field">
               <label class="field-toggle">
                 <input type="checkbox" v-model="settings.showTagNames" />
-                <span>显示 Tag 名称</span>
+                <span>显示标签名称</span>
               </label>
             </div>
             <div class="field">
               <label class="field-toggle">
                 <input type="checkbox" v-model="settings.highlightMyCommits" />
-                <span>高亮我的 commit</span>
+                <span>高亮我的提交</span>
               </label>
               <p class="field-desc">按 git config user.email 匹配。</p>
             </div>
@@ -277,9 +277,9 @@ const appVersion = computed(() => __APP_VERSION__);
             </div>
           </div>
 
-          <!-- 自动刷新（watcher） -->
+          <!-- 自动刷新 -->
           <div v-if="activeSection === 'watcher'" class="section">
-            <h3>文件系统 watcher</h3>
+            <h3>文件系统监听器</h3>
             <div class="field">
               <label class="field-toggle">
                 <input
@@ -290,7 +290,7 @@ const appVersion = computed(() => __APP_VERSION__);
                 <span>启用文件系统监听 + 自动刷新</span>
               </label>
               <p class="field-desc">
-                外部 IDE / 资源管理器修改文件后，500ms 内自动更新 Changes / Branches / Log。
+                外部 IDE / 资源管理器修改文件后，500ms 内自动更新变更、分支和日志。
                 超大仓库（10万+ 文件）可关闭以节省 inotify 句柄和内存。
               </p>
             </div>
@@ -299,9 +299,9 @@ const appVersion = computed(() => __APP_VERSION__);
             </p>
           </div>
 
-          <!-- Auto-fetch -->
+          <!-- 自动抓取 -->
           <div v-if="activeSection === 'fetch'" class="section">
-            <h3>后台 Fetch</h3>
+            <h3>后台抓取</h3>
             <div class="field">
               <label class="field-toggle">
                 <input
@@ -309,9 +309,9 @@ const appVersion = computed(() => __APP_VERSION__);
                   :checked="settings.autoFetchEnabled"
                   @change="(e: any) => settings.setAutoFetchEnabled(e.target.checked)"
                 />
-                <span>启用 Auto-fetch</span>
+                <span>启用自动抓取</span>
               </label>
-              <p class="field-desc">按设定间隔后台拉取远端引用，不会自动 merge/pull。</p>
+              <p class="field-desc">按设定间隔后台抓取远端引用，不会自动合并或拉取。</p>
             </div>
             <div class="field" :class="{ disabled: !settings.autoFetchEnabled }">
               <label class="field-label">
@@ -326,7 +326,7 @@ const appVersion = computed(() => __APP_VERSION__);
                   :disabled="!settings.autoFetchEnabled"
                 />
               </label>
-              <p class="field-desc">1-120 分钟之间，按 Enter 或失焦保存。</p>
+              <p class="field-desc">1-120 分钟之间，按回车或失焦保存。</p>
             </div>
             <div class="field">
               <label class="field-toggle">
@@ -335,24 +335,24 @@ const appVersion = computed(() => __APP_VERSION__);
                   :checked="settings.fetchOnOpen"
                   @change="(e: any) => settings.setFetchOnOpen(e.target.checked)"
                 />
-                <span>打开仓库时立即 fetch 一次</span>
+                <span>打开仓库时立即抓取一次</span>
               </label>
             </div>
           </div>
 
-          <!-- Worktree -->
+          <!-- 工作树 -->
           <div v-if="activeSection === 'worktree'" class="section">
             <h3>工作树</h3>
             <p>
-              管理多工作树（IDEA "Checkout in New Worktree" 同款）。
-              一个仓库可以有多个工作树同时检出不同分支，互不影响 staging / 编辑。
+              管理多工作树（类似 IDEA 的「签出到新工作树」）。
+              一个仓库可以有多个工作树同时检出不同分支，互不影响暂存和编辑。
             </p>
             <button
               class="ai-open-btn"
               :disabled="!repoStore.activeRepo"
               @click="showWorktreeDialog = true"
             >
-              🌳 打开 Worktree 管理
+              🌳 打开工作树管理
             </button>
             <p class="field-desc" v-if="!repoStore.activeRepo">需要先打开一个仓库。</p>
             <p class="field-desc" v-else>
@@ -360,12 +360,12 @@ const appVersion = computed(() => __APP_VERSION__);
             </p>
           </div>
 
-          <!-- Compare Branches -->
+          <!-- 分支对比 -->
           <div v-if="activeSection === 'compare'" class="section">
             <h3>分支对比</h3>
             <p>
-              对比任意两个分支之间的 commit 范围与文件变更（IDEA "Compare with Branch" 同款）。
-              支持 base..target 视角：target 上有但 base 没有的 commit。
+              对比任意两个分支之间的提交范围与文件变更。
+              支持 base..target 视角：目标分支上有但基准分支没有的提交。
             </p>
             <button
               class="ai-open-btn"
@@ -377,7 +377,7 @@ const appVersion = computed(() => __APP_VERSION__);
             <p class="field-desc" v-if="!repoStore.activeRepo">需要先打开一个仓库。</p>
           </div>
 
-          <!-- Git Hooks -->
+          <!-- Git 钩子 -->
           <div v-if="activeSection === 'hooks'" class="section">
             <h3>Git 钩子</h3>
             <p>
@@ -389,7 +389,7 @@ const appVersion = computed(() => __APP_VERSION__);
               :disabled="!repoStore.activeRepo"
               @click="showHooksDialog = true"
             >
-              🪝 打开 Hooks 管理
+              🪝 打开钩子管理
             </button>
             <p class="field-desc" v-if="!repoStore.activeRepo">需要先打开一个仓库。</p>
           </div>
@@ -398,13 +398,13 @@ const appVersion = computed(() => __APP_VERSION__);
           <div v-if="activeSection === 'integrations'" class="section">
             <h3>外部集成</h3>
             <p>
-              根据当前仓库的 origin remote 自动识别平台（GitHub / GitLab / Bitbucket / Gitea），
+              根据当前仓库的 origin 远端自动识别平台（GitHub / GitLab / Bitbucket / Gitea），
               在系统浏览器打开对应页面。完整 PR / Issue 内嵌面板暂未实现（后续会补）。
             </p>
             <div v-if="!repoStore.activeRepo" class="field-desc">需要先打开一个仓库。</div>
-            <div v-else-if="remoteLoading" class="field-desc">读取 remote 中…</div>
+            <div v-else-if="remoteLoading" class="field-desc">读取远端中…</div>
             <div v-else-if="!remoteMeta" class="field-desc">
-              未检测到可识别的 origin remote（仓库无 remote，或 url 格式无法解析）。
+              未检测到可识别的 origin 远端（仓库无远端，或 URL 格式无法解析）。
             </div>
             <div v-else class="integrations-block">
               <div class="about-row">
@@ -433,9 +433,9 @@ const appVersion = computed(() => __APP_VERSION__);
           <div v-if="activeSection === 'credentials'" class="section">
             <h3>Git 凭据（HTTPS）</h3>
             <p>
-              按主机（host）缓存 HTTPS 用户名 + 密码 / 访问令牌，供 push / pull / fetch / clone
-              透明鉴权。Electron 下经 safeStorage 加密保存；列表只显示用户名，<strong>绝不回显
-              Token</strong>。也可在联网鉴权失败时由弹窗自动引导登录。
+              按主机缓存 HTTPS 用户名 + 密码 / 访问令牌，供推送、拉取、抓取和克隆透明鉴权。
+              Electron 下经 safeStorage 加密保存；列表只显示用户名，<strong>绝不回显令牌</strong>。
+              也可在联网鉴权失败时由弹窗自动引导登录。
             </p>
             <div class="cred-actions">
               <button class="ai-open-btn" @click="showCredDialog = true">➕ 添加凭据</button>
@@ -454,7 +454,7 @@ const appVersion = computed(() => __APP_VERSION__);
                   <span class="cred-item-host">{{ c.host }}</span>
                   <span class="cred-item-user">{{ c.username || "(无用户名)" }}</span>
                   <span class="cred-item-badge" :class="{ ok: c.hasToken }">
-                    {{ c.hasToken ? "已配置 Token" : "无 Token" }}
+                    {{ c.hasToken ? "已配置令牌" : "无令牌" }}
                   </span>
                 </div>
                 <button class="cred-del-btn" @click="deleteCredential(c.host)">清除</button>
@@ -466,7 +466,7 @@ const appVersion = computed(() => __APP_VERSION__);
           <div v-if="activeSection === 'ai'" class="section">
             <h3>AI 设置</h3>
             <p>
-              AI commit message 生成 / 日报润色 的连接配置（baseUrl / apiKey / model）
+              AI 提交信息生成 / 日报润色的连接配置（基础 URL / API 密钥 / 模型）
               在独立的 AI 设置弹窗里管理，避免敏感信息混在普通设置面板里。
             </p>
             <button class="ai-open-btn" @click="showAiDialog = true">
@@ -526,7 +526,7 @@ const appVersion = computed(() => __APP_VERSION__);
 
     <GitCredentialDialog
       :visible="showCredDialog"
-      hint="新增 / 更新某主机的 HTTPS 凭据；保存后用于联网 git 透明鉴权。"
+      hint="新增 / 更新某主机的 HTTPS 凭据；保存后用于联网 Git 透明鉴权。"
       @saved="onCredentialSaved"
       @close="showCredDialog = false"
     />

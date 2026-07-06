@@ -11,16 +11,17 @@ const CODE_MAP: Record<string, string> = {
   PATH_DENIED: "路径越界或非法文件名",
   REPO_NOT_FOUND: "仓库不存在或路径无效",
   GIT_CONFLICT: "存在 git 冲突，请手动解决",
-  NON_FAST_FORWARD: "远端有新提交，请先 pull / fetch 合并",
+  NON_FAST_FORWARD: "远端有新提交，请先拉取 / 抓取并合并",
   AUTH_FAILED: "认证失败，请检查账号 / 密钥",
   GIT_TIMEOUT: "git 操作超时",
   GIT_ERR: "git 内部错误",
-  LOCAL_CHANGES_OVERWRITTEN: "本地未提交的改动会被 pull 覆盖，请先 commit 或 stash",
-  STASH_POP_CONFLICT: "恢复本地暂存改动时产生冲突，请逐个解决后再丢弃 stash",
+  LOCAL_CHANGES_OVERWRITTEN: "本地未提交的改动会被拉取覆盖，请先提交或搁置",
+  STASH_POP_CONFLICT: "恢复本地搁置改动时产生冲突，请逐个解决后再丢弃搁置记录",
 };
 
 const PATTERN_MAP: Array<[RegExp, string]> = [
-  [/non-?fast-?forward/i, "远端有新提交，请先 pull"],
+  [/^Error invoking remote method/i, "调用本地功能失败"],
+  [/non-?fast-?forward/i, "远端有新提交，请先拉取"],
   [/permission denied/i, "权限被拒绝（公钥 / 文件锁）"],
   [/authentication failed/i, "认证失败"],
   [/could not resolve host/i, "无法解析主机，请检查网络 / DNS"],
@@ -31,16 +32,16 @@ const PATTERN_MAP: Array<[RegExp, string]> = [
     /refusing to merge unrelated histories/i,
     "拒绝合并不相关的历史（需 --allow-unrelated-histories）",
   ],
-  [/your local changes.*would be overwritten/i, "本地未提交的改动会被覆盖，请先 commit / stash"],
+  [/your local changes.*would be overwritten/i, "本地未提交的改动会被覆盖，请先提交或搁置"],
   [/please commit your changes or stash them/i, "请先提交或搁置本地改动"],
-  [/auto stash failed/i, "自动暂存失败，请手动 commit / stash 后再重试"],
+  [/auto stash failed/i, "自动搁置失败，请手动提交或搁置后再重试"],
   [
     /pull completed.*restoring stashed local changes caused conflicts/i,
-    "拉取成功，但恢复本地暂存改动时产生冲突，请逐个解决冲突后再 drop stash@{0}",
+    "拉取成功，但恢复本地搁置改动时产生冲突，请逐个解决冲突后再丢弃 stash@{0}",
   ],
   [
     /pull completed.*stash pop failed/i,
-    "拉取成功，但恢复 stash 失败；你的改动仍保存在 stash@{0}",
+    "拉取成功，但恢复搁置记录失败；你的改动仍保存在 stash@{0}",
   ],
   [
     /pull completed.*local changes auto-stashed and restored/i,
@@ -49,21 +50,21 @@ const PATTERN_MAP: Array<[RegExp, string]> = [
   // ── 分支上游 / tracking 缺失（Pull / Push 最常见）──────────────
   [
     /you asked to pull from the remote.*did not specify a branch/is,
-    "当前分支未设置上游分支，无法确定要拉取哪个远程分支。请先 Push 建立上游，或右键分支指定拉取来源。",
+    "当前分支未设置上游分支，无法确定要拉取哪个远程分支。请先推送建立上游，或右键分支指定拉取来源。",
   ],
   [
     /there is no tracking information for the current branch/i,
-    "当前分支没有跟踪信息（未设置上游）。请先 Push 建立上游后再 Pull。",
+    "当前分支没有跟踪信息（未设置上游）。请先推送建立上游后再拉取。",
   ],
   [
     /the current branch .* has no upstream branch/i,
-    "当前分支没有上游分支。请先用「Push」推送并建立上游。",
+    "当前分支没有上游分支。请先推送并建立上游。",
   ],
   [/no candidate for merging|no source branch/i, "找不到可合并的远程分支，请检查分支的上游设置。"],
   [/couldn'?t find remote ref/i, "远端找不到该引用（分支 / 标签可能已被删除）。"],
   // ── Push 相关 ────────────────────────────────────────────────
-  [/failed to push some refs/i, "推送失败：远端有新提交，请先 Pull 合并后再 Push。"],
-  [/updates were rejected/i, "推送被拒绝：远端有新提交，请先 Pull 合并。"],
+  [/failed to push some refs/i, "推送失败：远端有新提交，请先拉取合并后再推送。"],
+  [/updates were rejected/i, "推送被拒绝：远端有新提交，请先拉取合并。"],
   [/everything up-to-date/i, "已是最新，无需推送。"],
   [/src refspec .* does not match any/i, "本地没有可推送的该分支 / 引用。"],
   [/already up[- ]to[- ]date/i, "已是最新。"],

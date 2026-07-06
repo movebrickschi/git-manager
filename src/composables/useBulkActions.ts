@@ -82,7 +82,7 @@ export function useBulkActions(opts: BulkActionsOptions) {
       opts.onMessage(`已暂存 ${paths.length} 个文件`);
       opts.clearSelection();
     } catch (e: unknown) {
-      opts.onMessage(`暂存失败: ${errText(e)}`);
+      opts.onMessage(`暂存失败：${errText(e)}`);
     }
   }
 
@@ -94,7 +94,7 @@ export function useBulkActions(opts: BulkActionsOptions) {
       opts.onMessage(`已取消暂存 ${paths.length} 个文件`);
       opts.clearSelection();
     } catch (e: unknown) {
-      opts.onMessage(`取消暂存失败: ${errText(e)}`);
+      opts.onMessage(`取消暂存失败：${errText(e)}`);
     }
   }
 
@@ -109,7 +109,7 @@ export function useBulkActions(opts: BulkActionsOptions) {
 
     const parts: string[] = [];
     if (tracked.length > 0) {
-      parts.push(`${tracked.length} 个 staged/unstaged 文件将恢复到 HEAD`);
+      parts.push(`${tracked.length} 个已暂存/未暂存文件将恢复到 HEAD`);
     }
     if (untracked.length > 0) {
       parts.push(`${untracked.length} 个未跟踪文件将从磁盘永久删除`);
@@ -164,7 +164,7 @@ export function useBulkActions(opts: BulkActionsOptions) {
       await navigator.clipboard.writeText(paths.join("\n"));
       opts.onMessage(`已复制 ${paths.length} 个路径`);
     } catch (e: unknown) {
-      opts.onMessage(`复制失败: ${errText(e) || "剪贴板不可用"}`);
+      opts.onMessage(`复制失败：${errText(e) || "剪贴板不可用"}`);
     }
   }
 
@@ -212,7 +212,7 @@ export function useBulkActions(opts: BulkActionsOptions) {
       clearPreviewIfMatch(paths);
       opts.clearSelection();
     } catch (e: unknown) {
-      opts.onMessage(`搁置失败: ${errText(e)}`);
+      opts.onMessage(`搁置失败：${errText(e)}`);
     }
   }
 
