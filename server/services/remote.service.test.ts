@@ -476,6 +476,55 @@ describe("remoteService.forcePull · 丢弃本地改动强制拉取", () => {
   });
 });
 
+describe("remoteService.resetToRemote", () => {
+  let mockGit: MockGit;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGit = makeMockGit();
+    vi.mocked(getGit).mockReturnValue(mockGit as never);
+    vi.mocked(getRemoteGit).mockReturnValue(mockGit as never);
+    vi.mocked(runNetworkGit).mockResolvedValue("");
+    mockGit.raw.mockResolvedValue("");
+  });
+
+  it("fetches the remote branch, hard-resets to its remote-tracking ref, then cleans", async () => {
+    const r = await remoteService.resetToRemote("/repo", "origin", "dev");
+
+    expect(r.success).toBe(true);
+    expect(r.conflicts).toEqual([]);
+    expect(runNetworkGit).toHaveBeenCalledWith(
+      "/repo",
+      ["fetch", "--progress", "origin", "+refs/heads/dev:refs/remotes/origin/dev"],
+      { extraEnv: {} }
+    );
+    expect(mockGit.raw.mock.calls[0]?.[0]).toEqual([
+      "reset",
+      "--hard",
+      "refs/remotes/origin/dev",
+    ]);
+    expect(mockGit.raw.mock.calls[1]?.[0]).toEqual(["clean", "-fd"]);
+  });
+
+  it("returns the fetch error and does not reset or clean", async () => {
+    vi.mocked(runNetworkGit).mockRejectedValue(new Error("network down"));
+
+    const r = await remoteService.resetToRemote("/repo", "origin", "dev");
+
+    expect(r.success).toBe(false);
+    expect(r.message).toMatch(/network down/);
+    expect(mockGit.raw).not.toHaveBeenCalled();
+  });
+
+  it("rejects blank remote or branch input before touching git", async () => {
+    const r = await remoteService.resetToRemote("/repo", "origin", " ");
+
+    expect(r.success).toBe(false);
+    expect(runNetworkGit).not.toHaveBeenCalled();
+    expect(mockGit.raw).not.toHaveBeenCalled();
+  });
+});
+
 describe("remoteService.push · 自动建立上游跟踪", () => {
   let mockGit: MockGit;
 

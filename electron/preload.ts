@@ -73,6 +73,7 @@ const ALLOWED_CHANNELS = new Set<string>([
   "pull_remote",
   "preview_pull_conflicts",
   "force_pull",
+  "reset_to_remote",
   "fetch_remote",
   "fetch_all",
   "fetch_branch",

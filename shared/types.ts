@@ -430,6 +430,7 @@ export interface Commands {
   pull(repoPath: string, remote?: string, rebase?: boolean): Promise<MergeResult>;
   previewPullConflicts(repoPath: string, remote?: string): Promise<PullPreview>;
   forcePull(repoPath: string, remote?: string, rebase?: boolean): Promise<MergeResult>;
+  resetToRemote(repoPath: string, remote: string, branchName: string): Promise<MergeResult>;
   getBehindCount(repoPath: string, remote: string, branch: string): Promise<AheadBehind>;
   fetch(repoPath: string, remote?: string): Promise<void>;
   fetchAll(repoPath: string): Promise<void>;

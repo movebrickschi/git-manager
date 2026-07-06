@@ -386,6 +386,57 @@ export const remoteService = {
     };
   },
 
+  /**
+   * Reset to Remote -- destructive "make local branch exactly match remote branch".
+   *
+   * Unlike forcePull(), this does not run `git pull`, so it will not create a
+   * merge/rebase conflict. It discards unpushed local commits and all worktree
+   * changes by resetting the current branch to refs/remotes/<remote>/<branch>.
+   */
+  async resetToRemote(
+    repoPath: string,
+    remote: string,
+    branchName: string
+  ): Promise<MergeResult> {
+    const git = getRemoteGit(repoPath);
+    const cleanRemote = remote.trim();
+    const cleanBranch = branchName.trim();
+    if (!cleanRemote || !cleanBranch) {
+      return {
+        success: false,
+        conflicts: [],
+        message: "重置到远端失败：remote 或 branch 为空",
+      };
+    }
+
+    try {
+      const extraEnv = await buildAuthEnv(repoPath);
+      const remoteTrackingRef = `refs/remotes/${cleanRemote}/${cleanBranch}`;
+      const refspec = `+refs/heads/${cleanBranch}:${remoteTrackingRef}`;
+      await withRetry(
+        () =>
+          runNetworkGit(repoPath, ["fetch", "--progress", cleanRemote, refspec], {
+            extraEnv,
+          }),
+        { label: `fetch ${cleanRemote} ${cleanBranch}` }
+      );
+      await git.raw(["reset", "--hard", remoteTrackingRef]);
+      await git.raw(["clean", "-fd"]);
+    } catch (e: unknown) {
+      return {
+        success: false,
+        conflicts: [],
+        message: errStr(e) || "重置到远端失败",
+      };
+    }
+
+    return {
+      success: true,
+      conflicts: [],
+      message: `已重置到 ${cleanRemote}/${cleanBranch}`,
+    };
+  },
+
   async getBehindCount(
     repoPath: string,
     remote: string,

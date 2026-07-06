@@ -73,6 +73,9 @@ const conflictAutoStash = ref<{ kind: "merge" | "stash-pop" } | null>(null);
 // Force Pull 二次确认
 const showForceConfirm = ref(false);
 const forceConfirmBranch = ref("");
+// Reset to Remote 二次确认：会丢弃未推送提交，比 force pull 更危险
+const showResetRemoteConfirm = ref(false);
+const resetRemoteConfirmBranch = ref<BranchInfo | null>(null);
 
 // Tag 相关
 const showCreateTagDialog = ref(false);
@@ -243,6 +246,52 @@ async function handleForcePullConfirm() {
   } finally {
     actionLoading.value = false;
     setBranchBusy(forceBranch, false);
+    ui.stopProgress();
+  }
+}
+
+function requestResetToRemote(branch: BranchInfo) {
+  resetRemoteConfirmBranch.value = branch;
+  showResetRemoteConfirm.value = true;
+}
+
+function handleResetToRemoteCancel() {
+  showResetRemoteConfirm.value = false;
+  resetRemoteConfirmBranch.value = null;
+}
+
+async function resolveResetRemoteTarget(branch: BranchInfo): Promise<{ remote: string; branchName: string }> {
+  if (branch.upstream) {
+    const parsed = parseRemoteRef(branch.upstream);
+    if (parsed) return { remote: parsed.remote, branchName: parsed.branch };
+  }
+  return { remote: await resolveDefaultRemote(), branchName: branch.name };
+}
+
+async function handleResetToRemoteConfirm() {
+  showResetRemoteConfirm.value = false;
+  const path = repoStore.activeRepo?.path;
+  const branch = resetRemoteConfirmBranch.value;
+  if (!path || !branch) return;
+  clearActionError();
+  actionLoading.value = true;
+  setBranchBusy(branch.name, true);
+  ui.startProgress(`重置 ${branch.name} 到远端中…`);
+  try {
+    const target = await resolveResetRemoteTarget(branch);
+    const result = await commands.resetToRemote(path, target.remote, target.branchName);
+    await refreshAfterGitOp();
+    if (!result.success) {
+      actionError.value = friendlyErr(result.message);
+    } else {
+      ui.showToast(`已将 ${branch.name} 重置到 ${target.remote}/${target.branchName}`);
+    }
+  } catch (e: unknown) {
+    actionError.value = friendlyErr(e);
+  } finally {
+    actionLoading.value = false;
+    setBranchBusy(branch.name, false);
+    resetRemoteConfirmBranch.value = null;
     ui.stopProgress();
   }
 }
@@ -863,6 +912,10 @@ const contextMenuItems = computed<MenuItem[]>(() => {
     items.push({
       label: "强制拉取（覆盖本地改动）",
       action: () => requestForcePull(branch),
+    });
+    items.push({
+      label: "重置到远端（丢弃本地提交和改动）",
+      action: () => requestResetToRemote(branch),
     });
   }
   items.push({
@@ -1865,6 +1918,17 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
       :danger="true"
       @confirm="handleForcePullConfirm"
       @cancel="handleForcePullCancel"
+    />
+
+    <!-- 重置到远端二次确认 -->
+    <ConfirmDialog
+      :visible="showResetRemoteConfirm"
+      title="重置到远端"
+      :text="`将把本地分支 '${resetRemoteConfirmBranch?.name ?? ''}' 强制重置到 '${resetRemoteConfirmBranch?.upstream ?? '远端同名分支'}'。这会丢弃未推送提交、暂存区、未提交修改和未跟踪文件，且不会打开冲突解决窗口。确定继续？`"
+      confirm-label="重置到远端"
+      :danger="true"
+      @confirm="handleResetToRemoteConfirm"
+      @cancel="handleResetToRemoteCancel"
     />
 
     <!-- 冲突解决弹窗 -->

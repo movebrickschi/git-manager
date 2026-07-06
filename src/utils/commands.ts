@@ -61,7 +61,7 @@ const WRITE_COMMANDS = new Set<CommandMethod>([
   // 提交
   "commit", "commitFixup", "commitFiles",
   // 联网：previewPullConflicts 内部会 fetch（写 refs），一并纳入冻结范围
-  "push", "pull", "forcePull", "fetch", "fetchAll", "fetchBranch", "previewPullConflicts",
+  "push", "pull", "forcePull", "resetToRemote", "fetch", "fetchAll", "fetchBranch", "previewPullConflicts",
   // stash
   "stashSave", "stashApply", "stashPop", "stashDrop", "stashRename", "stashFile", "stashFiles",
   // 冲突 / 合并态
@@ -81,7 +81,7 @@ const WRITE_COMMANDS = new Set<CommandMethod>([
  * push/pull/fetch 在卡住时都能一键 cancelNetworkOps。第一个参数恒为 repoPath。
  */
 const NETWORK_COMMANDS = new Set<CommandMethod>([
-  "push", "pull", "forcePull", "fetch", "fetchAll", "fetchBranch", "previewPullConflicts",
+  "push", "pull", "forcePull", "resetToRemote", "fetch", "fetchAll", "fetchBranch", "previewPullConflicts",
   "deleteRemoteBranch",
 ]);
 
