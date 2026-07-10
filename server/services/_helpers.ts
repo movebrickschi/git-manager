@@ -755,6 +755,24 @@ export function parseNameStatus(raw: string): FileStatus[] {
     .filter((f) => f.path);
 }
 
+/** 判断 ancestor 是否为 descendant 的祖先（含同一提交）。 */
+export async function isAncestorRef(
+  repoPath: string,
+  ancestor: string,
+  descendant: string
+): Promise<boolean> {
+  try {
+    await execFile(
+      "git",
+      ["-C", repoPath, "merge-base", "--is-ancestor", ancestor, descendant],
+      { encoding: "utf8" }
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** 跨 service 的小工具：取出当前冲突文件列表 */
 export async function getConflictFiles(repoPath: string): Promise<string[]> {
   const git = getGit(repoPath);

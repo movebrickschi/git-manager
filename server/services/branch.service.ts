@@ -3,7 +3,13 @@ import { existsSync, promises as fsp } from "node:fs";
 import * as path from "node:path";
 import { promisify } from "node:util";
 import type { BranchInfo, BranchesResult, MergeResult } from "../git-service.js";
-import { errStr, getConflictFiles, getGit, parseBranchVerboseLabel } from "./_helpers.js";
+import {
+  errStr,
+  getConflictFiles,
+  getGit,
+  isAncestorRef,
+  parseBranchVerboseLabel,
+} from "./_helpers.js";
 
 const execFile = promisify(execFileCb);
 
@@ -336,6 +342,9 @@ export const branchService = {
 
   async mergeBranch(repoPath: string, name: string): Promise<MergeResult> {
     const git = getGit(repoPath);
+    if (await isAncestorRef(repoPath, name, "HEAD")) {
+      return { success: true, conflicts: [], message: "已合并" };
+    }
     try {
       const result = await git.merge([name]);
       const conflicts = (result.conflicts ?? []).map((c) =>

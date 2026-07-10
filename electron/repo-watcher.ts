@@ -6,9 +6,9 @@
  *   监听机制，必须手动点"刷新"或切 tab 才能看到新变更——体感上像静态快照。
  *
  * 实现策略：
- *   1. 监听 repo 根目录全树，但忽略 .git/objects、.git/refs/{heads,remotes}、
- *      .git/logs（git 自身写入频率高、噪声大），保留 .git/HEAD / .git/index / .git/MERGE_HEAD
- *      （分支切换、暂存区变化、merge 半成态变化都靠它们驱动）
+ *   1. 监听 repo 根目录全树，但忽略 .git/objects、.git/logs、.git/hooks；
+ *      保留 .git/HEAD / .git/index / .git/refs / FETCH_HEAD / packed-refs /
+ *      MERGE_HEAD（分支、引用、暂存区与 merge 状态变化都靠它们驱动）
  *   2. debounce 500ms：避免编辑器保存触发的 add/change/unlink 风暴
  *   3. 单仓库单 watcher，切仓库时关旧的；窗口关闭时全清
  *   4. 默认 ignored 还排除 node_modules / .DS_Store 等高噪声目录
@@ -26,6 +26,8 @@ import * as path from "path";
 import type { FSWatcher } from "chokidar";
 import type { WebContents } from "electron";
 import { makeIgnoredPredicate } from "../shared/repo-watcher-ignored";
+import { classifyRepoWatcherPath } from "../shared/repo-watcher-types";
+import type { RepoWatcherEvent } from "../shared/repo-watcher-types";
 
 type ChokidarModule = typeof import("chokidar");
 
@@ -53,21 +55,6 @@ function loadChokidar(): Promise<ChokidarModule> {
 const DEBOUNCE_MS = 500;
 const IGNORED_PREDICATE = makeIgnoredPredicate();
 
-export interface RepoWatcherEvent {
-  /** 监听变化的仓库根路径（与 setRepo 入参一致） */
-  repoPath: string;
-  /** 触发时间戳，方便前端 dedup（如果在 IPC 缓冲里堆了两条相邻事件） */
-  at: number;
-  /**
-   * 变化粒度：
-   *  - "work"  工作区文件改了（最常见，需重新拉 status / diff）
-   *  - "index" .git/index 改了（暂存区变更，stage/unstage 的外部触发）
-   *  - "head"  .git/HEAD 改了（外部 checkout / branch 切换）
-   *  - "merge" .git/MERGE_HEAD 等半成态文件改了（外部 git merge / rebase）
-   */
-  kind: "work" | "index" | "head" | "merge";
-}
-
 export type RepoWatcherCallback = (e: RepoWatcherEvent) => void;
 
 export class RepoWatcherManager {
@@ -94,7 +81,7 @@ export class RepoWatcherManager {
       });
 
       this.watcher.on("all", (_event: string, filePath: string) => {
-        const kind = classify(repoPath, filePath);
+        const kind = classifyRepoWatcherPath(path.relative(repoPath, filePath));
         this.scheduleEmit(kind);
       });
       this.watcher.on("error", (err: unknown) => {
@@ -147,22 +134,6 @@ export class RepoWatcherManager {
     }, DEBOUNCE_MS);
     this.debounceTimers.set(kind, timer);
   }
-}
-
-function classify(repoPath: string, file: string): RepoWatcherEvent["kind"] {
-  const rel = path.relative(repoPath, file).replace(/\\/g, "/");
-  if (rel === ".git/HEAD") return "head";
-  if (rel === ".git/index") return "index";
-  if (
-    rel === ".git/MERGE_HEAD" ||
-    rel === ".git/CHERRY_PICK_HEAD" ||
-    rel === ".git/REVERT_HEAD" ||
-    rel.startsWith(".git/rebase-merge/") ||
-    rel.startsWith(".git/rebase-apply/")
-  ) {
-    return "merge";
-  }
-  return "work";
 }
 
 /**

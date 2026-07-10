@@ -1056,6 +1056,16 @@ async function handleMergeBranchIntoHead(sourceBranch: string) {
     await refreshAfterGitOp();
     if (result.conflicts && result.conflicts.length > 0) {
       openConflictDialog(result.conflicts, result.autoStash);
+    } else if (!result.success) {
+      actionError.value = friendlyErr(result.message);
+    } else if (result.message === "已合并") {
+      const headName =
+        branchStore.localBranches.find((b) => b.isHead)?.name ?? "当前分支";
+      ui.showToast(`'${sourceBranch}' 已合并到 '${headName}'，无需重复合并`);
+    } else {
+      const headName =
+        branchStore.localBranches.find((b) => b.isHead)?.name ?? "当前分支";
+      ui.showToast(`已将 '${sourceBranch}' 合并到 '${headName}'`);
     }
   } catch (e: unknown) {
     actionError.value = friendlyErr(e);

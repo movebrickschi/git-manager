@@ -3,15 +3,16 @@ import { watch } from "vue";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useRepoStore } from "./stores/repoStore";
 import { useCommitStore } from "./stores/commitStore";
-import { useBranchStore } from "./stores/branchStore";
-import { useLogStore } from "./stores/logStore";
-import { useRepoWatcher, setWatchedRepo } from "./composables/useRepoWatcher";
+import { refreshGit } from "./composables/useGitRefresh";
+import {
+  repoWatcherNeedsFullRefresh,
+  setWatchedRepo,
+  useRepoWatcher,
+} from "./composables/useRepoWatcher";
 
 const settings = useSettingsStore();
 const repoStore = useRepoStore();
 const commitStore = useCommitStore();
-const branchStore = useBranchStore();
-const logStore = useLogStore();
 
 function syncTitleBarTheme(theme: "dark" | "light") {
   if (window.electronAPI?.invoke) {
@@ -53,16 +54,10 @@ useRepoWatcher((e) => {
   );
   // 用户关闭了自动刷新 → 不处理事件（watcher 也应已关，是双保险）
   if (!settings.autoRefreshOnFsChange) return;
-  if (e.kind === "work" || e.kind === "index") {
-    void commitStore.loadStatus();
-    return;
-  }
-  if (e.kind === "head") {
-    void Promise.all([
-      commitStore.loadStatus(),
-      branchStore.loadBranches(),
-      logStore.loadCommits(true),
-    ]);
+  // 切仓库与 IPC/SSE 事件可能交错，旧仓库迟到的事件不能刷新当前仓库。
+  if (!repoStore.activeRepo || e.repoPath !== repoStore.activeRepo.path) return;
+  if (repoWatcherNeedsFullRefresh(e.kind)) {
+    void refreshGit();
     return;
   }
   void commitStore.loadStatus();

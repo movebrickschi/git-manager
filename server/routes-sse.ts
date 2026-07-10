@@ -19,29 +19,15 @@ import { Router, Request, Response } from "express";
 import { watch, FSWatcher } from "chokidar";
 import * as path from "node:path";
 import { makeIgnoredPredicate } from "../shared/repo-watcher-ignored.js";
+import {
+  classifyRepoWatcherPath,
+  type RepoWatcherEventKind,
+} from "../shared/repo-watcher-types.js";
 
 const router = Router();
 
 const DEBOUNCE_MS = 500;
 const IGNORED_PREDICATE = makeIgnoredPredicate();
-
-type Kind = "work" | "index" | "head" | "merge";
-
-function classify(repoPath: string, file: string): Kind {
-  const rel = path.relative(repoPath, file).replace(/\\/g, "/");
-  if (rel === ".git/HEAD") return "head";
-  if (rel === ".git/index") return "index";
-  if (
-    rel === ".git/MERGE_HEAD" ||
-    rel === ".git/CHERRY_PICK_HEAD" ||
-    rel === ".git/REVERT_HEAD" ||
-    rel.startsWith(".git/rebase-merge/") ||
-    rel.startsWith(".git/rebase-apply/")
-  ) {
-    return "merge";
-  }
-  return "work";
-}
 
 function writeSseEvent(res: Response, event: string, data: unknown): void {
   res.write(`event: ${event}\n`);
@@ -65,9 +51,9 @@ router.get("/repo/events", (req: Request, res: Response) => {
   writeSseEvent(res, "ready", { repoPath, at: Date.now() });
 
   let watcher: FSWatcher | null = null;
-  const debounceTimers = new Map<Kind, NodeJS.Timeout>();
+  const debounceTimers = new Map<RepoWatcherEventKind, NodeJS.Timeout>();
 
-  const scheduleEmit = (kind: Kind) => {
+  const scheduleEmit = (kind: RepoWatcherEventKind) => {
     const existing = debounceTimers.get(kind);
     if (existing) clearTimeout(existing);
     const timer = setTimeout(() => {
@@ -87,7 +73,7 @@ router.get("/repo/events", (req: Request, res: Response) => {
     });
 
     watcher.on("all", (_event: string, filePath: string) => {
-      scheduleEmit(classify(repoPath, filePath));
+      scheduleEmit(classifyRepoWatcherPath(path.relative(repoPath, filePath)));
     });
 
     watcher.on("error", (err: unknown) => {

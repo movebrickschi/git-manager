@@ -16,6 +16,11 @@ type Cb = (e: RepoWatcherEvent) => void;
 
 const DEDUP_WINDOW_MS = 100;
 
+/** HEAD 或任意 Git ref 变化都会影响分支、ahead/behind 与提交日志。 */
+export function repoWatcherNeedsFullRefresh(kind: RepoWatcherEvent["kind"]): boolean {
+  return kind === "head" || kind === "refs";
+}
+
 /** 当前 Web 模式追踪的 repoPath（由 setWatchedRepo 写入）。Electron 模式不使用。 */
 const webWatchedRepo = ref<string | null>(null);
 
