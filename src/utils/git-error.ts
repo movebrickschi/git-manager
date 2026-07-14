@@ -20,7 +20,6 @@ const CODE_MAP: Record<string, string> = {
 };
 
 const PATTERN_MAP: Array<[RegExp, string]> = [
-  [/^Error invoking remote method/i, "调用本地功能失败"],
   [/non-?fast-?forward/i, "远端有新提交，请先拉取"],
   [/permission denied/i, "权限被拒绝（公钥 / 文件锁）"],
   [/authentication failed/i, "认证失败"],
@@ -120,6 +119,18 @@ function translateRaw(msg: string): string {
   // 生产模式下后端只回错误码字符串（见 server/routes.ts wrap），这里按裸 code 兜底翻译
   const trimmed = msg.trim();
   if (CODE_MAP[trimmed]) return CODE_MAP[trimmed];
+
+  // Electron IPC 会把主进程错误包成：
+  // "Error invoking remote method 'push_remote': Error: <git stderr>"。
+  // 先拆掉这一层，否则会把 non-fast-forward / 认证失败等真实原因盖成通用错误。
+  const remoteMethodMatch = trimmed.match(
+    /^Error invoking remote method ['"][^'"]+['"]:\s*(.*)$/is
+  );
+  if (remoteMethodMatch) {
+    const inner = (remoteMethodMatch[1] ?? "").replace(/^Error:\s*/i, "").trim();
+    return inner ? translateRaw(inner) : "调用本地功能失败";
+  }
+
   // git 的 stderr 常按 ~80 列硬折行，会把「did not specify a branch」拆成
   // 「did not specify\na branch」，令依赖连续空格的正则漏匹配。匹配前把连续空白
   // （含换行）折叠成单空格，兜底仍返回原文以保留原始换行格式。

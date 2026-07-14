@@ -73,10 +73,23 @@ watch(optForceWithLease, (v) => {
 // 推送进行中状态回传父组件，用于在对应分支条目显示 spinner
 watch(pushing, (v) => emit("busy", v));
 
-const remoteName = computed(() => props.remote ?? "origin");
-const branchName = computed(() => props.branch ?? props.targetBranch ?? "");
+const headBranch = computed(() => branchStore.localBranches.find((b) => b.isHead) ?? null);
+const upstreamTarget = computed(() => {
+  const upstream = headBranch.value?.upstream;
+  const slash = upstream?.indexOf("/") ?? -1;
+  if (!upstream || slash <= 0 || slash === upstream.length - 1) return null;
+  return {
+    remote: upstream.slice(0, slash),
+    branch: upstream.slice(slash + 1),
+  };
+});
+const remoteName = computed(() => props.remote ?? upstreamTarget.value?.remote ?? "origin");
+const branchName = computed(() => props.branch ?? props.targetBranch ?? headBranch.value?.name ?? "");
+const remoteBranchName = computed(
+  () => props.branch ?? props.targetBranch ?? upstreamTarget.value?.branch ?? branchName.value
+);
 const destination = computed(() =>
-  branchName.value ? `${remoteName.value}/${branchName.value}` : remoteName.value
+  remoteBranchName.value ? `${remoteName.value}/${remoteBranchName.value}` : remoteName.value
 );
 const repoLabel = computed(
   () => props.repoName ?? props.repoPath.split(/[\\/]/).pop() ?? props.repoPath
@@ -122,8 +135,8 @@ async function doPush() {
   try {
     await commands.push(
       props.repoPath,
-      props.remote,
-      props.branch,
+      remoteName.value,
+      branchName.value || undefined,
       Object.keys(options).length > 0 ? options : undefined
     );
     emit("confirm");
@@ -208,6 +221,11 @@ function onCredentialClose() {
 
 async function handlePush() {
   pushError.value = "";
+  try {
+    await branchStore.loadBranches();
+  } catch {
+    // 分支刷新失败不阻断推送；后续 fetch / push 会给出更具体的错误。
+  }
   if (optForce.value) {
     const ok = window.confirm(
       `⚠ 你勾选了 --force（强制推送）。\n\n` +
@@ -229,7 +247,12 @@ async function handlePush() {
   pushing.value = true;
   try {
     await commands.fetch(props.repoPath, remoteName.value);
-    const branch = branchName.value || "HEAD";
+    const branch = remoteBranchName.value;
+    if (!branch) {
+      pushing.value = false;
+      await doPush();
+      return;
+    }
     const { ahead, behind } = await commands.getBehindCount(
       props.repoPath,
       remoteName.value,
@@ -431,7 +454,7 @@ watch(
     :behind="divergenceBehind"
     :ahead="divergenceAhead"
     :remote="remoteName"
-    :branch="branchName"
+    :branch="remoteBranchName"
     @rebase="handleDivergenceRebase"
     @merge="handleDivergenceMerge"
     @force="handleDivergenceForce"

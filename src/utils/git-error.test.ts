@@ -107,6 +107,15 @@ describe("translateGitError", () => {
         /推送失败/
       );
     });
+    it("Electron IPC 包装的 push non-fast-forward 错误仍翻译真实原因", () => {
+      expect(
+        translateGitError(
+          "Error invoking remote method 'push_remote': Error: ! [rejected] dev -> dev (non-fast-forward)\n" +
+            "error: failed to push some refs to 'origin'\n" +
+            "hint: Updates were rejected because the tip of your current branch is behind"
+        )
+      ).toMatch(/远端有新提交|推送失败|推送被拒绝/);
+    });
     it("everything up-to-date", () => {
       expect(translateGitError("Everything up-to-date")).toMatch(/已是最新/);
     });
