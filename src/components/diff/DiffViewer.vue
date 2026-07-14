@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
+import { useLinkedVerticalScroll } from "@/composables/useLinkedVerticalScroll";
 import { useSettingsStore } from "@/stores/settingsStore";
-import type { DiffResult, DiffLine } from "@/utils/commands";
+import type { DiffResult } from "@/utils/commands";
+import { buildDiffLayout, buildMinimapSegments } from "@/utils/diff-layout";
 
 const props = defineProps<{
   diff: DiffResult;
@@ -15,76 +17,22 @@ const unifiedContentRef = ref<HTMLElement | null>(null);
 const sideLeftContentRef = ref<HTMLElement | null>(null);
 const sideRightContentRef = ref<HTMLElement | null>(null);
 const currentHunkIdx = ref(0);
+const linkedVerticalScroll = useLinkedVerticalScroll();
 
-const allLines = computed(() => {
-  const lines: DiffLine[] = [];
-  for (const hunk of props.diff.hunks) {
-    lines.push(...hunk.lines);
-  }
-  return lines;
-});
-
-/**
- * 计算每个 hunk 在 unified 视图里"第一条 line 的全局 index"，用于 scrollTo。
- * 同时反向：每行属于哪个 hunk。
- */
-const hunkLineStarts = computed<number[]>(() => {
-  const starts: number[] = [];
-  let cum = 0;
-  for (const hunk of props.diff.hunks) {
-    starts.push(cum);
-    cum += hunk.lines.length;
-  }
-  return starts;
-});
-
-const totalLineCount = computed(() => allLines.value.length);
+const layout = computed(() => buildDiffLayout(props.diff.hunks));
+const allLines = computed(() => layout.value.unifiedLines);
+const sideBySideLines = computed(() => layout.value.sideBySideRows);
+const isSideBySide = computed(() => viewMode.value === "side-by-side" && !props.inline);
+const renderedHunkStarts = computed(() =>
+  isSideBySide.value ? layout.value.sideBySideHunkStarts : layout.value.unifiedHunkStarts
+);
+const renderedLineCount = computed(() =>
+  isSideBySide.value ? layout.value.sideBySideRows.length : layout.value.unifiedLines.length
+);
+const renderedKinds = computed(() =>
+  isSideBySide.value ? layout.value.sideBySideKinds : layout.value.unifiedKinds
+);
 const hunkCount = computed(() => props.diff.hunks.length);
-
-interface SideBySidePair {
-  left: DiffLine | null;
-  right: DiffLine | null;
-}
-
-const sideBySideLines = computed<SideBySidePair[]>(() => {
-  const pairs: SideBySidePair[] = [];
-
-  for (const hunk of props.diff.hunks) {
-    const deletions: DiffLine[] = [];
-    const additions: DiffLine[] = [];
-
-    for (const line of hunk.lines) {
-      if (line.lineType === "deletion") {
-        if (additions.length > 0) {
-          flushPairs(pairs, deletions, additions);
-          deletions.length = 0;
-          additions.length = 0;
-        }
-        deletions.push(line);
-      } else if (line.lineType === "addition") {
-        additions.push(line);
-      } else {
-        flushPairs(pairs, deletions, additions);
-        deletions.length = 0;
-        additions.length = 0;
-        pairs.push({ left: line, right: line });
-      }
-    }
-    flushPairs(pairs, deletions, additions);
-  }
-
-  return pairs;
-});
-
-function flushPairs(pairs: SideBySidePair[], dels: DiffLine[], adds: DiffLine[]) {
-  const max = Math.max(dels.length, adds.length);
-  for (let i = 0; i < max; i++) {
-    pairs.push({
-      left: i < dels.length ? dels[i] : null,
-      right: i < adds.length ? adds[i] : null,
-    });
-  }
-}
 
 function getLineClass(lineType: string): string {
   if (lineType === "addition") return "line-added";
@@ -94,26 +42,33 @@ function getLineClass(lineType: string): string {
 
 const LINE_HEIGHT_PX = 20;
 
-function getScrollEl(): HTMLElement | null {
-  if (viewMode.value === "unified" || props.inline) return unifiedContentRef.value;
-  return sideRightContentRef.value;
+function sideScrollElements(): HTMLElement[] {
+  return [sideLeftContentRef.value, sideRightContentRef.value].filter(
+    (element): element is HTMLElement => element !== null
+  );
+}
+
+function setRenderedScrollTop(top: number): void {
+  if (isSideBySide.value) {
+    linkedVerticalScroll.setScrollTop(sideScrollElements(), top);
+  } else if (unifiedContentRef.value) {
+    unifiedContentRef.value.scrollTop = top;
+  }
+}
+
+function onSideScroll(source: "left" | "right"): void {
+  const sourceElement = source === "left" ? sideLeftContentRef.value : sideRightContentRef.value;
+  const targetElement = source === "left" ? sideRightContentRef.value : sideLeftContentRef.value;
+  if (!sourceElement || !targetElement) return;
+  linkedVerticalScroll.syncFrom(sourceElement, [targetElement]);
 }
 
 function jumpToHunk(idx: number) {
   if (hunkCount.value === 0) return;
   const wrapped = ((idx % hunkCount.value) + hunkCount.value) % hunkCount.value;
   currentHunkIdx.value = wrapped;
-  const lineIdx = hunkLineStarts.value[wrapped] ?? 0;
-  const el = getScrollEl();
-  if (!el) return;
-  el.scrollTo({ top: Math.max(0, lineIdx * LINE_HEIGHT_PX - 40), behavior: "smooth" });
-  // side-by-side：左右滚动同步
-  if (viewMode.value === "side-by-side" && !props.inline && sideLeftContentRef.value) {
-    sideLeftContentRef.value.scrollTo({
-      top: Math.max(0, lineIdx * LINE_HEIGHT_PX - 40),
-      behavior: "smooth",
-    });
-  }
+  const lineIdx = renderedHunkStarts.value[wrapped] ?? 0;
+  setRenderedScrollTop(Math.max(0, lineIdx * LINE_HEIGHT_PX - 40));
 }
 
 function nextHunk() {
@@ -128,63 +83,21 @@ watch(
   () => {
     currentHunkIdx.value = 0;
     void nextTick(() => {
-      const el = getScrollEl();
-      if (el) el.scrollTop = 0;
+      setRenderedScrollTop(0);
     });
   }
 );
 
-interface MinimapSegment {
-  topPct: number;
-  heightPct: number;
-  kind: "added" | "removed";
-}
-
-/**
- * minimap 段：根据 hunk 在 allLines 中占比，生成 added / removed 的色条。
- * 多个连续同类型 line 合并为一段。
- */
-const minimapSegments = computed<MinimapSegment[]>(() => {
-  const total = totalLineCount.value;
-  if (total === 0) return [];
-  const segs: MinimapSegment[] = [];
-  let runKind: "added" | "removed" | null = null;
-  let runStart = 0;
-  const lines = allLines.value;
-  for (let i = 0; i <= lines.length; i++) {
-    const k =
-      i < lines.length
-        ? lines[i].lineType === "addition"
-          ? "added"
-          : lines[i].lineType === "deletion"
-            ? "removed"
-            : null
-        : null;
-    if (k !== runKind) {
-      if (runKind && i > runStart) {
-        segs.push({
-          topPct: (runStart / total) * 100,
-          heightPct: Math.max(0.5, ((i - runStart) / total) * 100),
-          kind: runKind,
-        });
-      }
-      runKind = k as "added" | "removed" | null;
-      runStart = i;
-    }
-  }
-  return segs;
-});
+const minimapSegments = computed(() => buildMinimapSegments(renderedKinds.value));
 
 function onMinimapClick(e: MouseEvent) {
   const el = e.currentTarget as HTMLElement;
   const rect = el.getBoundingClientRect();
   const ratio = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
-  const targetLine = Math.floor(ratio * totalLineCount.value);
-  const scroll = getScrollEl();
-  if (!scroll) return;
-  scroll.scrollTo({ top: targetLine * LINE_HEIGHT_PX, behavior: "smooth" });
+  const targetLine = Math.floor(ratio * renderedLineCount.value);
+  setRenderedScrollTop(targetLine * LINE_HEIGHT_PX);
   // 找到落点所在 hunk index，更新 currentHunkIdx
-  const starts = hunkLineStarts.value;
+  const starts = renderedHunkStarts.value;
   let idx = 0;
   for (let i = 0; i < starts.length; i++) {
     if (starts[i] <= targetLine) idx = i;
@@ -219,6 +132,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener("keydown", onKey);
+  linkedVerticalScroll.dispose();
 });
 </script>
 
@@ -252,9 +166,7 @@ onUnmounted(() => {
           >
             ↑
           </button>
-          <span class="hunk-nav-label">
-            差异块 {{ currentHunkIdx + 1 }} / {{ hunkCount }}
-          </span>
+          <span class="hunk-nav-label"> 差异块 {{ currentHunkIdx + 1 }} / {{ hunkCount }} </span>
           <button
             class="hunk-nav-btn"
             :disabled="hunkCount <= 1"
@@ -270,7 +182,7 @@ onUnmounted(() => {
       <div v-if="viewMode === 'side-by-side' && !inline" class="side-by-side">
         <div class="side left-side">
           <div class="side-header">{{ diff.oldPath || "(新文件)" }}</div>
-          <div ref="sideLeftContentRef" class="side-content">
+          <div ref="sideLeftContentRef" class="side-content" @scroll="onSideScroll('left')">
             <div
               v-for="(pair, i) in sideBySideLines"
               :key="'l' + i"
@@ -284,7 +196,7 @@ onUnmounted(() => {
         </div>
         <div class="side right-side">
           <div class="side-header">{{ diff.newPath || "(已删除)" }}</div>
-          <div ref="sideRightContentRef" class="side-content">
+          <div ref="sideRightContentRef" class="side-content" @scroll="onSideScroll('right')">
             <div
               v-for="(pair, i) in sideBySideLines"
               :key="'r' + i"
@@ -371,8 +283,7 @@ onUnmounted(() => {
   display: flex;
   gap: 2px;
   padding: 4px 8px;
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
   flex-shrink: 0;
 }
 
@@ -406,30 +317,31 @@ onUnmounted(() => {
 }
 
 .left-side {
-  border-right: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-divider);
 }
 
 .side-header {
   padding: 4px 8px;
   font-size: 11px;
   color: var(--color-foreground-muted);
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-emphasis);
   flex-shrink: 0;
 }
 
 .side-content {
   flex: 1;
-  overflow-y: auto;
+  overflow: auto;
 }
 
 .unified-view {
   flex: 1;
-  overflow-y: auto;
+  overflow: auto;
 }
 
 .diff-line {
   display: flex;
+  width: max-content;
+  min-width: 100%;
   min-height: 20px;
   line-height: 20px;
   font-size: 12px;
@@ -480,9 +392,8 @@ onUnmounted(() => {
 }
 
 .line-content {
-  flex: 1;
+  flex: 0 0 auto;
   white-space: pre;
-  overflow-x: auto;
   padding-right: 8px;
   tab-size: 4;
   /* 覆盖 #app 全局的 user-select: none，让 diff 正文可以选中复制（行号/前缀仍不可选，复制出来是干净代码） */
@@ -496,8 +407,6 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   margin-left: 12px;
-  padding-left: 12px;
-  border-left: 1px solid var(--color-border);
 }
 
 .hunk-nav-btn {
@@ -544,8 +453,8 @@ onUnmounted(() => {
   position: relative;
   width: 10px;
   flex-shrink: 0;
-  background: var(--color-surface);
-  border-left: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  border-left: 1px solid var(--color-divider);
   cursor: pointer;
   overflow: hidden;
 }
@@ -568,6 +477,15 @@ onUnmounted(() => {
 
 .minimap-seg.removed {
   background: var(--color-git-deleted, #e06c75);
+  opacity: 0.7;
+}
+
+.minimap-seg.modified {
+  background: linear-gradient(
+    to right,
+    var(--color-git-deleted, #e06c75) 0 50%,
+    var(--color-git-added, #4ec9b0) 50% 100%
+  );
   opacity: 0.7;
 }
 </style>

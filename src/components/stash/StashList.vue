@@ -9,6 +9,7 @@ import type { MenuItem } from "@/components/common/ContextMenu.vue";
 import type { StashEntry, FileStatus, DiffResult } from "@/utils/commands";
 import { commands } from "@/utils/commands";
 import { refreshGit } from "@/composables/useGitRefresh";
+import { useRepoChangeEvents } from "@/composables/useRepoWatcher";
 import { formatTimestamp } from "@/utils/format";
 import { errText } from "@/utils/error";
 
@@ -45,6 +46,9 @@ const contextMenuItems = ref<MenuItem[]>([]);
 const toastMessage = ref("");
 const toastVisible = ref(false);
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
+let stashLoadSeq = 0;
+let stashFilesLoadSeq = 0;
+let stashDiffLoadSeq = 0;
 
 function showToast(msg: string) {
   toastMessage.value = msg;
@@ -57,57 +61,142 @@ function showToast(msg: string) {
 
 async function loadStashes() {
   if (!repoStore.activeRepo) return;
+  const repoPath = repoStore.activeRepo.path;
+  const seq = ++stashLoadSeq;
   loading.value = true;
   try {
-    stashes.value = await commands.getStashList(repoStore.activeRepo.path);
-    // If previously selected stash no longer exists, clear
-    if (selectedStash.value && !stashes.value.find((s) => s.index === selectedStash.value!.index)) {
-      selectedStash.value = null;
-      stashFiles.value = [];
-      selectedFile.value = null;
-      diffResult.value = null;
+    const next = await commands.getStashList(repoPath);
+    if (seq !== stashLoadSeq || repoStore.activeRepo?.path !== repoPath) return;
+    const previousCommitId = selectedStash.value?.commitId;
+    stashes.value = next;
+    if (previousCommitId) {
+      // stash index 会在前项被 drop/pop 后整体移动，commitId 才是稳定身份。
+      const retained = next.find((stash) => stash.commitId === previousCommitId);
+      if (retained) {
+        if (selectedStash.value?.index !== retained.index) {
+          stashFilesLoadSeq += 1;
+          stashDiffLoadSeq += 1;
+          filesLoading.value = false;
+          diffLoading.value = false;
+        }
+        selectedStash.value = retained;
+      } else {
+        stashFilesLoadSeq += 1;
+        stashDiffLoadSeq += 1;
+        filesLoading.value = false;
+        diffLoading.value = false;
+        selectedStash.value = null;
+        stashFiles.value = [];
+        selectedFile.value = null;
+        diffResult.value = null;
+        showRemoveFileDialog.value = false;
+        removeFileTarget.value = null;
+      }
+    }
+    if (renameTarget.value) {
+      const retainedRenameTarget = next.find(
+        (stash) => stash.commitId === renameTarget.value?.commitId
+      );
+      if (retainedRenameTarget) {
+        // 只更新稳定目标/index，不覆盖用户正在输入的 renameMessage。
+        renameTarget.value = retainedRenameTarget;
+      } else {
+        renameTarget.value = null;
+        showRenameDialog.value = false;
+      }
     }
   } catch (e) {
     console.error("Failed to load stashes:", e);
   } finally {
-    loading.value = false;
+    if (seq === stashLoadSeq && repoStore.activeRepo?.path === repoPath) {
+      loading.value = false;
+    }
   }
 }
 
 onMounted(loadStashes);
-watch(() => repoStore.activeRepo?.path, loadStashes);
+watch(
+  () => repoStore.activeRepo?.path,
+  () => {
+    stashLoadSeq += 1;
+    stashFilesLoadSeq += 1;
+    stashDiffLoadSeq += 1;
+    loading.value = false;
+    filesLoading.value = false;
+    diffLoading.value = false;
+    stashes.value = [];
+    selectedStash.value = null;
+    stashFiles.value = [];
+    selectedFile.value = null;
+    diffResult.value = null;
+    showSaveDialog.value = false;
+    showRenameDialog.value = false;
+    renameTarget.value = null;
+    showRemoveFileDialog.value = false;
+    removeFileTarget.value = null;
+    void loadStashes();
+  }
+);
+
+useRepoChangeEvents({
+  repoPath: () => repoStore.activeRepo?.path,
+  kinds: ["stash"],
+  onEvent: () => {
+    void loadStashes();
+  },
+});
 
 async function selectStash(stash: StashEntry) {
   if (selectedStash.value?.index === stash.index) return;
+  const repoPath = repoStore.activeRepo?.path;
+  if (!repoPath) return;
+  const seq = ++stashFilesLoadSeq;
   selectedStash.value = stash;
   selectedFile.value = null;
   diffResult.value = null;
   stashFiles.value = [];
   filesLoading.value = true;
   try {
-    stashFiles.value = await commands.getStashFiles(repoStore.activeRepo!.path, stash.index);
+    const files = await commands.getStashFiles(repoPath, stash.index);
+    if (
+      seq === stashFilesLoadSeq &&
+      repoStore.activeRepo?.path === repoPath &&
+      selectedStash.value?.commitId === stash.commitId &&
+      selectedStash.value.index === stash.index
+    ) {
+      stashFiles.value = files;
+    }
   } catch (e) {
     console.error("Failed to load stash files:", e);
   } finally {
-    filesLoading.value = false;
+    if (seq === stashFilesLoadSeq) filesLoading.value = false;
   }
 }
 
 async function selectFile(file: FileStatus) {
   if (!selectedStash.value || !repoStore.activeRepo) return;
+  const repoPath = repoStore.activeRepo.path;
+  const stashCommitId = selectedStash.value.commitId;
+  const stashIndex = selectedStash.value.index;
+  const seq = ++stashDiffLoadSeq;
   selectedFile.value = file;
   diffResult.value = null;
   diffLoading.value = true;
   try {
-    diffResult.value = await commands.getStashFileDiff(
-      repoStore.activeRepo.path,
-      selectedStash.value.index,
-      file.path
-    );
+    const next = await commands.getStashFileDiff(repoPath, stashIndex, file.path);
+    if (
+      seq === stashDiffLoadSeq &&
+      repoStore.activeRepo?.path === repoPath &&
+      selectedStash.value?.commitId === stashCommitId &&
+      selectedStash.value.index === stashIndex &&
+      selectedFile.value?.path === file.path
+    ) {
+      diffResult.value = next;
+    }
   } catch (e) {
     console.error("Failed to load stash file diff:", e);
   } finally {
-    diffLoading.value = false;
+    if (seq === stashDiffLoadSeq) diffLoading.value = false;
   }
 }
 
@@ -119,7 +208,7 @@ async function saveStash() {
     showSaveDialog.value = false;
     await loadStashes();
     showToast("已创建搁置");
-  } catch (e: any) {
+  } catch (e: unknown) {
     showToast(`搁置失败：${errText(e)}`);
   }
 }
@@ -131,7 +220,7 @@ async function applyStash(stash: StashEntry) {
     // stash 内容回到工作区，刷新本地变更文件状态（旧实现只刷新 stash 列表）
     await Promise.all([loadStashes(), refreshGit({ status: true, branches: false, log: false })]);
     showToast(`已应用：${stashDisplayName(stash.message)}`);
-  } catch (e: any) {
+  } catch (e: unknown) {
     showToast(`应用失败：${errText(e)}`);
   }
 }
@@ -143,7 +232,7 @@ async function popStash(stash: StashEntry) {
     // stash 内容回到工作区，刷新本地变更文件状态（旧实现只刷新 stash 列表）
     await Promise.all([loadStashes(), refreshGit({ status: true, branches: false, log: false })]);
     showToast(`已弹出：${stashDisplayName(stash.message)}`);
-  } catch (e: any) {
+  } catch (e: unknown) {
     showToast(`弹出失败：${errText(e)}`);
   }
 }
@@ -154,7 +243,7 @@ async function dropStash(stash: StashEntry) {
     await commands.stashDrop(repoStore.activeRepo.path, stash.index);
     await loadStashes();
     showToast(`已删除：${stashDisplayName(stash.message)}`);
-  } catch (e: any) {
+  } catch (e: unknown) {
     showToast(`删除失败：${errText(e)}`);
   }
 }
@@ -174,7 +263,7 @@ async function confirmRename() {
     showRenameDialog.value = false;
     await loadStashes();
     showToast("已重命名");
-  } catch (e: any) {
+  } catch (e: unknown) {
     showToast(`重命名失败：${errText(e)}`);
   }
 }
@@ -232,7 +321,7 @@ async function confirmRemoveFile() {
       showToast(`已从搁置移除 ${file.path}`);
     }
     await loadStashes();
-  } catch (e: any) {
+  } catch (e: unknown) {
     showToast(`移除失败：${errText(e)}`);
   }
 }
@@ -504,7 +593,7 @@ function getStatusClass(status: FileStatus["status"]): string {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--color-surface);
+  background: var(--color-background);
 }
 
 
@@ -524,10 +613,10 @@ function getStatusClass(status: FileStatus["status"]): string {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--color-border);
+  padding: 2px 8px;
+  background: var(--color-surface-emphasis);
   flex-shrink: 0;
-  min-height: 30px;
+  min-height: var(--panel-header-height);
   min-width: 0;
   overflow: hidden;
 }
@@ -544,11 +633,14 @@ function getStatusClass(status: FileStatus["status"]): string {
 }
 
 .panel-count {
+  min-width: 16px;
   font-size: 10px;
   color: var(--color-foreground-muted);
-  background: var(--color-surface-active);
+  background: var(--color-surface-raised);
   padding: 0 6px;
-  border-radius: 8px;
+  border-radius: 999px;
+  text-align: center;
+  font-feature-settings: "tnum";
   flex-shrink: 0;
 }
 
@@ -563,16 +655,20 @@ function getStatusClass(status: FileStatus["status"]): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: none;
+  width: 24px;
+  height: 24px;
+  background: transparent;
   color: var(--color-foreground-muted);
-  padding: 3px;
-  border-radius: 3px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
 .action-btn:hover {
   background: var(--color-surface-hover);
   color: var(--color-foreground);
+  border-color: var(--color-divider);
 }
 
 .state-hint {
@@ -586,11 +682,12 @@ function getStatusClass(status: FileStatus["status"]): string {
 .stash-list {
   flex: 1;
   overflow-y: auto;
+  padding: 4px;
 }
 
 .stash-item {
-  padding: 7px 8px;
-  border-bottom: 1px solid var(--color-border);
+  padding: 6px 8px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   min-width: 0;
 }
@@ -600,7 +697,8 @@ function getStatusClass(status: FileStatus["status"]): string {
 }
 
 .stash-item.selected {
-  background: var(--color-surface-active);
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
+  box-shadow: inset 2px 0 0 var(--color-primary);
 }
 
 .stash-top {
@@ -634,16 +732,19 @@ function getStatusClass(status: FileStatus["status"]): string {
 }
 
 .stash-btn {
+  min-height: 22px;
   padding: 2px 8px;
-  background: var(--color-surface-hover);
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
-  border-radius: 3px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   font-size: 10px;
   cursor: pointer;
 }
 
 .stash-btn:hover {
-  background: var(--color-surface-active);
+  background: var(--color-surface-hover);
+  border-color: var(--color-divider);
 }
 
 .stash-btn.danger:hover {
@@ -655,12 +756,16 @@ function getStatusClass(status: FileStatus["status"]): string {
 .file-list {
   flex: 1;
   overflow-y: auto;
+  padding: 4px 0;
 }
 
 .file-item {
   display: flex;
   align-items: center;
-  padding: 3px 8px;
+  min-height: 26px;
+  margin: 0 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   gap: 6px;
   font-size: 12px;
@@ -671,7 +776,8 @@ function getStatusClass(status: FileStatus["status"]): string {
 }
 
 .file-item.selected {
-  background: var(--color-surface-active);
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
+  box-shadow: inset 2px 0 0 var(--color-primary);
 }
 
 .status-letter {
@@ -713,7 +819,7 @@ function getStatusClass(status: FileStatus["status"]): string {
   background: none;
   color: var(--color-foreground-muted);
   padding: 2px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -739,7 +845,7 @@ function getStatusClass(status: FileStatus["status"]): string {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--color-overlay-backdrop);
   z-index: 9000;
   display: flex;
   align-items: center;
@@ -747,13 +853,13 @@ function getStatusClass(status: FileStatus["status"]): string {
 }
 
 .modal-dialog {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
   width: 380px;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-overlay);
   overflow: hidden;
 }
 
@@ -761,8 +867,9 @@ function getStatusClass(status: FileStatus["status"]): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--color-border);
+  min-height: var(--panel-header-height);
+  padding: 4px 14px;
+  background: var(--color-surface-emphasis);
 }
 
 .modal-title {
@@ -773,11 +880,12 @@ function getStatusClass(status: FileStatus["status"]): string {
 
 .modal-close {
   background: none;
+  border: 1px solid transparent;
   color: var(--color-foreground-muted);
   cursor: pointer;
   font-size: 14px;
   padding: 2px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
 }
 
 .modal-close:hover {
@@ -795,17 +903,19 @@ function getStatusClass(status: FileStatus["status"]): string {
 .modal-input {
   width: 100%;
   box-sizing: border-box;
-  padding: 6px 10px;
+  min-height: var(--control-height-regular);
+  padding: 4px 10px;
   font-size: 12px;
-  border-radius: 4px;
-  background: var(--color-surface-active);
-  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-emphasis);
+  border: 1px solid var(--color-border-strong);
   color: var(--color-foreground);
 }
 
 .modal-input:focus {
   outline: none;
   border-color: var(--color-primary);
+  box-shadow: var(--focus-ring);
 }
 
 .modal-checkbox {
@@ -822,15 +932,17 @@ function getStatusClass(status: FileStatus["status"]): string {
   justify-content: flex-end;
   gap: 8px;
   padding: 10px 14px;
-  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  border-top: 1px solid var(--color-divider);
 }
 
 .modal-btn {
-  padding: 5px 14px;
+  min-height: var(--control-height-regular);
+  padding: 4px 14px;
   font-size: 12px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  background: var(--color-surface-active);
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
   border: 1px solid var(--color-border);
 }
@@ -883,13 +995,13 @@ function getStatusClass(status: FileStatus["status"]): string {
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--color-surface-active);
-  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
   color: var(--color-foreground);
   font-size: 12px;
   padding: 7px 16px;
-  border-radius: 4px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-overlay);
   z-index: 9999;
   pointer-events: none;
   white-space: nowrap;
@@ -917,9 +1029,9 @@ function getStatusClass(status: FileStatus["status"]): string {
 }
 
 .stash-layout .splitpanes__splitter {
-  width: 6px !important;
-  min-width: 6px !important;
-  background: var(--color-border) !important;
+  width: 1px !important;
+  min-width: 1px !important;
+  background: var(--color-splitter) !important;
   cursor: col-resize !important;
   position: relative !important;
   z-index: 10 !important;

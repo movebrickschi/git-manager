@@ -4,6 +4,7 @@ import { useRepoStore } from "@/stores/repoStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { commands } from "@/utils/commands";
 import { errText } from "@/utils/error";
+import { isGitWriting } from "@/utils/git-busy";
 
 /**
  * 后台定时 fetch 所有打开的仓库的 remote。
@@ -28,6 +29,7 @@ async function tick() {
   const branchStore = useBranchStore();
   const repoStore = useRepoStore();
   if (document.visibilityState !== "visible") return;
+  if (isGitWriting.value) return;
   if (isFetching.value) return;
   if (repoStore.repos.length === 0) return;
   isFetching.value = true;

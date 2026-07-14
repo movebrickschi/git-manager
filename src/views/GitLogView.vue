@@ -58,9 +58,6 @@ const mergeFilePath = ref("");
 const mergeConflictFiles = ref<string[]>([]);
 
 onMounted(() => {
-  console.log(
-    `[bug-trace] ${performance.now().toFixed(1)} GitLogView.onMounted tab=${activeTab.value} repo=${repoStore.activeRepo?.path ?? "∅"}`
-  );
   if (repoStore.activeRepo) {
     if (activeTab.value === "log") {
       void logStore.loadCommits(true);
@@ -74,10 +71,7 @@ onMounted(() => {
 
 watch(
   () => repoStore.activeRepo?.path,
-  (newPath, oldPath) => {
-    console.log(
-      `[bug-trace] ${performance.now().toFixed(1)} GitLogView.WATCH old=${oldPath ?? "∅"} new=${newPath ?? "∅"} tab=${activeTab.value}`
-    );
+  () => {
     // logStore 内部 watch 会自行 swap per-repo 的 filter（含 branch/author/date/searchText 等）
     selectedFile.value = null;
     diffResult.value = null;
@@ -342,28 +336,31 @@ onUnmounted(() => document.removeEventListener("keydown", onGlobalKeydown));
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background: var(--color-surface);
+  background: var(--color-surface-muted);
 }
 
 .diff-preview {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--color-surface);
+  background: var(--color-background);
 }
 
 .diff-preview-header {
-  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  min-height: var(--panel-header-height);
+  padding: 0 8px;
   font-size: 11px;
   color: var(--color-foreground-muted);
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-divider);
+  background: var(--color-surface-emphasis);
 }
 
 .fullscreen-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--color-overlay-backdrop);
   z-index: 1000;
   display: flex;
   align-items: center;
@@ -378,13 +375,13 @@ onUnmounted(() => document.removeEventListener("keydown", onGlobalKeydown));
   min-height: 400px;
   max-width: calc(100vw - 48px);
   max-height: calc(100vh - 60px);
-  background: var(--color-surface);
-  border-radius: 8px;
+  background: var(--color-surface-raised);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--color-border);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--color-border-strong);
+  box-shadow: var(--shadow-overlay);
   resize: both;
 }
 
@@ -392,10 +389,11 @@ onUnmounted(() => document.removeEventListener("keydown", onGlobalKeydown));
   position: relative;
   display: flex;
   align-items: center;
-  padding: 8px 12px;
+  min-height: var(--panel-header-height);
+  padding: 4px 12px;
   padding-right: 44px;
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-emphasis);
+  border-bottom: 1px solid var(--color-divider);
   font-size: 13px;
   font-weight: 500;
   flex-shrink: 0;
@@ -418,17 +416,17 @@ onUnmounted(() => document.removeEventListener("keydown", onGlobalKeydown));
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-surface-hover);
-  border: 1px solid var(--color-border);
+  background: transparent;
+  border: 1px solid transparent;
   color: var(--color-foreground);
   padding: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 
 .close-btn:hover {
-  background: #c04040;
-  border-color: #c04040;
+  background: var(--color-error);
+  border-color: var(--color-error);
   color: #fff;
 }
 

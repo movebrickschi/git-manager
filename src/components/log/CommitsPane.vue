@@ -899,18 +899,18 @@ function getRefClass(refType: string): string {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--color-surface);
+  background: var(--color-background);
 }
 
 .list-header {
   display: flex;
   align-items: center;
-  height: 22px;
-  border-bottom: 1px solid var(--color-border);
+  height: var(--panel-header-height);
+  border-bottom: 1px solid var(--color-divider);
   font-size: 11px;
   font-weight: 600;
   color: var(--color-foreground-muted);
-  background: var(--color-surface);
+  background: var(--color-surface-emphasis);
   flex-shrink: 0;
 }
 
@@ -937,12 +937,9 @@ function getRefClass(refType: string): string {
   font-size: 12px;
 }
 
-.commit-row.row-odd {
-  background: var(--color-surface);
-}
-
+.commit-row.row-odd,
 .commit-row.row-even {
-  background: var(--color-background);
+  background: transparent;
 }
 
 .commit-row:hover {
@@ -950,7 +947,8 @@ function getRefClass(refType: string): string {
 }
 
 .commit-row.selected {
-  background: var(--color-surface-active);
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-background));
+  box-shadow: inset 2px 0 0 var(--color-primary);
 }
 
 .commit-row.is-merge {
@@ -1001,7 +999,8 @@ function getRefClass(refType: string): string {
   align-items: center;
   padding: 0 5px;
   height: 16px;
-  border-radius: 3px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   font-size: 10px;
   font-weight: 500;
   white-space: nowrap;
@@ -1010,26 +1009,27 @@ function getRefClass(refType: string): string {
 }
 
 .ref-head {
-  background: var(--color-branch-head);
-  color: #1e1e1e;
+  background: color-mix(in srgb, var(--color-branch-head) 18%, transparent);
+  color: var(--color-branch-head);
+  border-color: color-mix(in srgb, var(--color-branch-head) 42%, transparent);
 }
 
 .ref-local {
-  background: rgba(78, 201, 176, 0.2);
+  background: color-mix(in srgb, var(--color-branch-local) 14%, transparent);
   color: var(--color-branch-local);
-  border: 1px solid var(--color-branch-local);
+  border-color: color-mix(in srgb, var(--color-branch-local) 36%, transparent);
 }
 
 .ref-remote {
-  background: rgba(197, 134, 192, 0.2);
+  background: color-mix(in srgb, var(--color-branch-remote) 14%, transparent);
   color: var(--color-branch-remote);
-  border: 1px solid var(--color-branch-remote);
+  border-color: color-mix(in srgb, var(--color-branch-remote) 36%, transparent);
 }
 
 .ref-tag {
-  background: rgba(220, 220, 170, 0.2);
+  background: color-mix(in srgb, var(--color-branch-tag) 14%, transparent);
   color: var(--color-branch-tag);
-  border: 1px solid var(--color-branch-tag);
+  border-color: color-mix(in srgb, var(--color-branch-tag) 36%, transparent);
 }
 
 .loading-indicator {
@@ -1043,7 +1043,7 @@ function getRefClass(refType: string): string {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--color-overlay-backdrop);
   z-index: 9000;
   display: flex;
   align-items: center;
@@ -1051,12 +1051,12 @@ function getRefClass(refType: string): string {
 }
 
 .modal-dialog {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-overlay);
   overflow: hidden;
 }
 
@@ -1073,7 +1073,9 @@ function getRefClass(refType: string): string {
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--color-border);
+  min-height: var(--panel-header-height);
+  background: var(--color-surface-emphasis);
+  border-bottom: 1px solid var(--color-divider);
   flex-shrink: 0;
 }
 
@@ -1090,7 +1092,7 @@ function getRefClass(refType: string): string {
   cursor: pointer;
   font-size: 14px;
   padding: 2px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   line-height: 1;
 }
 
@@ -1118,7 +1120,7 @@ function getRefClass(refType: string): string {
 .reset-target code {
   color: var(--color-foreground);
   font-family: var(--font-mono, monospace);
-  background: var(--color-surface-active);
+  background: var(--color-surface-emphasis);
   padding: 1px 4px;
   border-radius: 3px;
 }
@@ -1134,8 +1136,8 @@ function getRefClass(refType: string): string {
   align-items: flex-start;
   gap: 10px;
   padding: 8px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: border-color 0.15s;
 }
@@ -1145,8 +1147,8 @@ function getRefClass(refType: string): string {
 }
 
 .reset-mode-option.active {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 48%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface-raised));
 }
 
 .reset-mode-option input[type="radio"] {
@@ -1195,16 +1197,18 @@ function getRefClass(refType: string): string {
   justify-content: flex-end;
   gap: 8px;
   padding: 10px 14px;
-  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  border-top: 1px solid var(--color-divider);
   flex-shrink: 0;
 }
 
 .modal-btn {
-  padding: 5px 14px;
+  min-height: var(--control-height-regular);
+  padding: 4px 14px;
   font-size: 12px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  background: var(--color-surface-active);
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
   border: 1px solid var(--color-border);
 }
@@ -1239,13 +1243,13 @@ function getRefClass(refType: string): string {
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--color-surface-active);
-  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
   color: var(--color-foreground);
   font-size: 12px;
   padding: 7px 16px;
-  border-radius: 4px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-overlay);
   z-index: 9999;
   pointer-events: none;
   white-space: nowrap;
@@ -1286,14 +1290,14 @@ function getRefClass(refType: string): string {
   position: fixed;
   z-index: 9500;
   min-width: 240px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 5px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-overlay);
 }
 
 .filter-popover.date-popover {
@@ -1312,15 +1316,16 @@ function getRefClass(refType: string): string {
   padding: 4px 8px;
   height: 26px;
   font-size: 12px;
-  background: var(--color-background);
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
-  border: 1px solid var(--color-border);
-  border-radius: 3px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
 }
 
 .popover-input:focus {
   outline: none;
   border-color: var(--color-primary);
+  box-shadow: var(--focus-ring);
 }
 
 .popover-hint {
@@ -1348,12 +1353,13 @@ function getRefClass(refType: string): string {
 }
 
 .preset-btn {
-  padding: 3px 8px;
+  min-height: var(--control-height-compact);
+  padding: 2px 8px;
   font-size: 11px;
-  background: var(--color-surface-active);
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
   border: 1px solid var(--color-border);
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 
@@ -1370,12 +1376,13 @@ function getRefClass(refType: string): string {
 }
 
 .popover-btn {
-  padding: 4px 12px;
+  min-height: var(--control-height-compact);
+  padding: 2px 12px;
   font-size: 12px;
-  background: var(--color-surface-active);
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
   border: 1px solid var(--color-border);
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 

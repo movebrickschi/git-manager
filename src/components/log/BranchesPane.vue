@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, defineAsyncComponent } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, watch, defineAsyncComponent } from "vue";
 import { useBranchStore } from "@/stores/branchStore";
 import { useLogStore } from "@/stores/logStore";
 import { useRepoStore } from "@/stores/repoStore";
@@ -10,6 +10,7 @@ import type { MenuItem } from "@/components/common/ContextMenu.vue";
 import type { BranchInfo, Submodule } from "@/utils/commands";
 import { commands } from "@/utils/commands";
 import { refreshGit } from "@/composables/useGitRefresh";
+import { useRepoChangeEvents } from "@/composables/useRepoWatcher";
 import { translateGitError } from "@/utils/git-error";
 import { SHORTCUTS, useKeyboardShortcuts } from "@/utils/keyboard";
 import { useUiStore } from "@/stores/uiStore";
@@ -309,6 +310,29 @@ useKeyboardShortcuts([
 onMounted(() => {
   // branches already loaded by parent
   void branchStore.loadSubmodules();
+});
+
+let submoduleRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleSubmoduleRefresh() {
+  if (submoduleRefreshTimer) clearTimeout(submoduleRefreshTimer);
+  submoduleRefreshTimer = setTimeout(() => {
+    submoduleRefreshTimer = null;
+    void branchStore.loadSubmodules();
+  }, 150);
+}
+
+useRepoChangeEvents({
+  repoPath: () => repoStore.activeRepo?.path,
+  kinds: ["submodule", "head", "index"],
+  onEvent: (event) => {
+    // 普通源码 work 事件不扫描子模块；index 也仅在仓库确有子模块时触发。
+    if (event.kind === "index" && branchStore.submodules.length === 0) return;
+    scheduleSubmoduleRefresh();
+  },
+});
+
+onBeforeUnmount(() => {
+  if (submoduleRefreshTimer) clearTimeout(submoduleRefreshTimer);
 });
 
 watch(
@@ -1979,22 +2003,27 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
   display: flex;
   flex-direction: column;
   height: 100%;
+  background: var(--color-surface-muted);
 }
 
 .tab-buttons {
   display: flex;
-  gap: 1px;
-  padding: 5px 6px 4px;
-  border-bottom: 1px solid var(--color-border);
+  gap: 2px;
+  margin: 6px 6px 4px;
+  padding: 2px;
+  background: var(--color-surface-emphasis);
+  border-radius: var(--radius-md);
   flex-shrink: 0;
 }
 
 .tab-btn {
   flex: 1;
-  padding: 3px 6px;
+  min-width: 0;
+  min-height: 24px;
+  padding: 2px 6px;
   background: transparent;
   color: var(--color-foreground-muted);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   font-size: 11px;
   text-align: center;
   white-space: nowrap;
@@ -2008,13 +2037,13 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
 }
 
 .tab-btn.active {
-  background: var(--color-surface-active);
-  color: var(--color-foreground-bright);
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface-raised));
+  color: var(--color-primary);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-primary) 72%, transparent);
 }
 
 .git-actions {
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--color-border);
+  padding: 4px 6px;
   flex-shrink: 0;
 }
 
@@ -2029,7 +2058,8 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
   flex: 1;
   min-width: 0;
   font-size: 11px;
-  padding: 4px 4px;
+  min-height: var(--control-height-compact);
+  padding: 0 4px;
   justify-content: center;
 }
 
@@ -2042,38 +2072,41 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
 }
 
 .pane-header {
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--color-border);
+  padding: 2px 6px 6px;
 }
 
 .branches-list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 0;
+  padding: 4px 0 8px;
+  background: var(--color-surface);
 }
 
 .filter-indicator {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px;
-  margin: 2px 4px;
-  background: var(--color-primary);
-  color: white;
-  border-radius: 3px;
+  min-height: 24px;
+  padding: 2px 8px;
+  margin: 2px 6px 6px;
+  background: color-mix(in srgb, var(--color-primary) 13%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, transparent);
+  color: var(--color-primary);
+  border-radius: var(--radius-md);
   font-size: 11px;
   cursor: pointer;
 }
 
 .branch-group {
-  margin-bottom: 4px;
+  margin: 4px 0 8px;
 }
 
 .group-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px;
+  min-height: 24px;
+  padding: 3px 10px;
   font-size: 10px;
   font-weight: 600;
   color: var(--color-foreground-muted);
@@ -2082,7 +2115,13 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
 }
 
 .count {
+  min-width: 16px;
+  padding: 0 5px;
+  background: var(--color-surface-emphasis);
+  border-radius: 999px;
+  text-align: center;
   font-weight: 400;
+  font-feature-settings: "tnum";
 }
 
 .tags-header {
@@ -2105,8 +2144,8 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
   justify-content: center;
   background: transparent;
   color: var(--color-foreground-muted);
-  border: 1px solid var(--color-border);
-  border-radius: 3px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
@@ -2115,7 +2154,7 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
 .tag-create-btn:hover {
   background: var(--color-surface-hover);
   color: var(--color-foreground);
-  border-color: var(--color-foreground-muted);
+  border-color: var(--color-border);
 }
 
 .tag-empty-hint {
@@ -2154,7 +2193,10 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 8px;
+  min-height: 24px;
+  margin: 0 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 12px;
 }
@@ -2168,7 +2210,8 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
 }
 
 .branch-item.selected {
-  background: var(--color-surface-active);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  box-shadow: inset 2px 0 0 var(--color-primary);
 }
 
 .branch-name {
@@ -2221,7 +2264,7 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
 .conflict-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--color-overlay-backdrop);
   z-index: 2000;
   display: flex;
   align-items: center;
@@ -2236,13 +2279,13 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
   min-height: 400px;
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 60px);
-  background: var(--color-surface);
-  border-radius: 8px;
+  background: var(--color-surface-raised);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--color-border);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--color-border-strong);
+  box-shadow: var(--shadow-overlay);
   resize: both;
 }
 
@@ -2250,9 +2293,11 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
   position: relative;
   display: flex;
   align-items: center;
-  padding: 8px 14px;
+  min-height: var(--panel-header-height);
+  padding: 4px 14px;
   padding-right: 44px;
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-emphasis);
+  border-bottom: 1px solid var(--color-divider);
   font-size: 13px;
   font-weight: 500;
   flex-shrink: 0;
@@ -2275,17 +2320,17 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-surface-hover);
-  border: 1px solid var(--color-border);
+  background: transparent;
+  border: 1px solid transparent;
   color: var(--color-foreground);
   padding: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 
 .conflict-modal-header .conflict-close-btn:hover {
-  background: #c04040;
-  border-color: #c04040;
+  background: var(--color-error);
+  border-color: var(--color-error);
   color: #fff;
 }
 
@@ -2349,7 +2394,7 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
 .rename-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--color-overlay-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2357,15 +2402,15 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
 }
 
 .rename-dialog {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 20px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
   min-width: 360px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-overlay);
 }
 
 .rename-dialog h4 {
@@ -2385,8 +2430,8 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
 }
 
 .rename-input {
-  padding: 6px 8px;
-  border-radius: 3px;
+  min-height: var(--control-height-regular);
+  padding: 4px 8px;
 }
 
 .rename-input.disabled {
@@ -2402,10 +2447,12 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
 }
 
 .rename-btn {
-  padding: 6px 16px;
-  background: var(--color-surface-hover);
+  min-height: var(--control-height-regular);
+  padding: 4px 16px;
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
-  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   font-size: 12px;
 }
 

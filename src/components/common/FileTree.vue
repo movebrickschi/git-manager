@@ -118,7 +118,10 @@ function getStatusLabel(status: string): string {
   display: flex;
   align-items: center;
   gap: 4px;
+  min-height: 24px;
+  margin: 0 4px;
   padding: 2px 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--color-foreground-muted);
 }
@@ -132,7 +135,10 @@ function getStatusLabel(status: string): string {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-height: 26px;
+  margin: 0 4px;
   padding: 2px 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
@@ -147,7 +153,8 @@ function getStatusLabel(status: string): string {
 
 .tree-file.selected,
 .flat-file.selected {
-  background: var(--color-surface-active);
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
+  box-shadow: inset 2px 0 0 var(--color-primary);
 }
 
 .file-name {
@@ -169,5 +176,6 @@ function getStatusLabel(status: string): string {
   font-size: 11px;
   min-width: 14px;
   text-align: center;
+  font-feature-settings: "tnum";
 }
 </style>

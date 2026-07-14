@@ -388,7 +388,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
   display: flex;
   align-items: center;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-emphasis);
 }
 
 .ai-dialog-header h3 {

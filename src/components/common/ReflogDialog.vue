@@ -4,6 +4,7 @@ import { commands } from "@/utils/commands";
 import type { ReflogEntry } from "@/utils/commands";
 import { translateGitError } from "@/utils/git-error";
 import { formatTimestamp } from "@/utils/format";
+import { useRepoChangeEvents } from "@/composables/useRepoWatcher";
 
 const props = defineProps<{
   visible: boolean;
@@ -22,6 +23,7 @@ const selectedIndex = ref<number | null>(null);
 const errorMsg = ref<string>("");
 const busy = ref(false);
 const limit = ref(200);
+let loadSeq = 0;
 
 const selectedEntry = computed<ReflogEntry | null>(() =>
   selectedIndex.value == null ? null : (entries.value[selectedIndex.value] ?? null)
@@ -40,18 +42,33 @@ const filteredEntries = computed<ReflogEntry[]>(() => {
   );
 });
 
-async function loadEntries(): Promise<void> {
+async function loadEntries(preserveSelection = false): Promise<void> {
   if (!props.repoPath) return;
+  const repoPath = props.repoPath;
+  const previous = preserveSelection ? selectedEntry.value : null;
+  const seq = ++loadSeq;
   loading.value = true;
   errorMsg.value = "";
   try {
-    entries.value = await commands.getReflog(props.repoPath, limit.value);
-    selectedIndex.value = entries.value.length > 0 ? 0 : null;
+    const next = await commands.getReflog(repoPath, limit.value);
+    if (seq !== loadSeq || props.repoPath !== repoPath || !props.visible) return;
+    entries.value = next;
+    const retainedIndex = previous
+      ? next.findIndex(
+          (entry) =>
+            entry.commitId === previous.commitId &&
+            entry.ref === previous.ref &&
+            entry.action === previous.action
+        )
+      : -1;
+    selectedIndex.value = retainedIndex >= 0 ? retainedIndex : next.length > 0 ? 0 : null;
   } catch (e: unknown) {
-    errorMsg.value = translateGitError(e instanceof Error ? e.message : String(e));
-    entries.value = [];
+    if (seq === loadSeq) {
+      errorMsg.value = translateGitError(e instanceof Error ? e.message : String(e));
+      entries.value = [];
+    }
   } finally {
-    loading.value = false;
+    if (seq === loadSeq) loading.value = false;
   }
 }
 
@@ -148,6 +165,27 @@ watch(
   },
   { immediate: true }
 );
+
+watch(
+  () => props.repoPath,
+  () => {
+    loadSeq += 1;
+    entries.value = [];
+    selectedIndex.value = null;
+    loading.value = false;
+    errorMsg.value = "";
+    if (props.visible) void loadEntries();
+  }
+);
+
+useRepoChangeEvents({
+  repoPath: () => props.repoPath,
+  kinds: ["head", "refs", "stash", "merge"],
+  onEvent: () => {
+    if (!props.visible || busy.value) return;
+    void loadEntries(true);
+  },
+});
 </script>
 
 <template>
@@ -180,7 +218,7 @@ watch(
             spellcheck="false"
           />
           <span class="reflog-stats">{{ filteredEntries.length }} / {{ entries.length }}</span>
-          <button class="reflog-refresh" :disabled="loading" :title="'刷新'" @click="loadEntries">
+          <button class="reflog-refresh" :disabled="loading" :title="'刷新'" @click="loadEntries()">
             <span v-if="loading">刷新中…</span><span v-else>刷新</span>
           </button>
         </div>
@@ -283,7 +321,7 @@ watch(
 .reflog-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--color-overlay-backdrop);
   z-index: 9100;
   display: flex;
   align-items: center;
@@ -291,10 +329,10 @@ watch(
 }
 
 .reflog-panel {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.4);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-overlay);
   display: flex;
   flex-direction: column;
   width: 900px;
@@ -308,7 +346,7 @@ watch(
   display: flex;
   align-items: center;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-emphasis);
 }
 
 .reflog-title {
@@ -341,8 +379,7 @@ watch(
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-background);
+  background: var(--color-surface-muted);
 }
 
 .reflog-filter {
@@ -385,7 +422,6 @@ watch(
   background: color-mix(in srgb, var(--color-error, #e05252) 12%, transparent);
   color: var(--color-error, #e05252);
   font-size: 11px;
-  border-bottom: 1px solid var(--color-border);
 }
 
 .reflog-body {
@@ -397,7 +433,7 @@ watch(
 .reflog-list {
   flex: 1.6;
   overflow-y: auto;
-  border-right: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-divider);
   background: var(--color-background);
 }
 
@@ -414,9 +450,9 @@ watch(
   align-items: center;
   gap: 8px;
   padding: 5px 10px;
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
   cursor: pointer;
   font-size: 11px;
+  transition: background var(--transition-fast);
 }
 
 .reflog-row:hover {
@@ -424,7 +460,8 @@ watch(
 }
 
 .reflog-row.selected {
-  background: var(--color-surface-active);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-background));
+  box-shadow: inset 2px 0 0 var(--color-primary);
 }
 
 .reflog-ref {

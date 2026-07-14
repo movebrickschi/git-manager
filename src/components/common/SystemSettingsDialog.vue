@@ -14,6 +14,7 @@ import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from "vue
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useRepoStore } from "@/stores/repoStore";
 import { commands } from "@/utils/commands";
+import { useRepoChangeEvents } from "@/composables/useRepoWatcher";
 import { parseRemoteUrl, type RemoteMeta } from "../../../shared/remote-host";
 import type { GitCredentialInfo } from "../../../shared/types";
 import GitCredentialDialog from "./GitCredentialDialog.vue";
@@ -56,6 +57,7 @@ const showCompareDialog = ref(false);
 const showHooksDialog = ref(false);
 const remoteMeta = ref<RemoteMeta | null>(null);
 const remoteLoading = ref(false);
+let remoteLoadSeq = 0;
 
 // Git 凭据管理
 const credentials = ref<GitCredentialInfo[]>([]);
@@ -105,17 +107,21 @@ const sections: { id: Section; label: string; icon: string }[] = [
 ];
 
 async function loadRemoteMeta() {
+  const seq = ++remoteLoadSeq;
   remoteMeta.value = null;
+  remoteLoading.value = false;
   if (!repoStore.activeRepo) return;
+  const repoPath = repoStore.activeRepo.path;
   remoteLoading.value = true;
   try {
-    const remotes = await commands.getRemotes(repoStore.activeRepo.path);
+    const remotes = await commands.getRemotes(repoPath);
+    if (seq !== remoteLoadSeq || repoStore.activeRepo?.path !== repoPath) return;
     const origin = remotes.find((r) => r.name === "origin") ?? remotes[0];
     if (origin?.url) remoteMeta.value = parseRemoteUrl(origin.url);
   } catch (e) {
     console.warn("[settings] getRemotes failed:", e);
   } finally {
-    remoteLoading.value = false;
+    if (seq === remoteLoadSeq) remoteLoading.value = false;
   }
 }
 
@@ -126,6 +132,15 @@ watch(
     if (activeSection.value === "credentials") void loadCredentials();
   }
 );
+
+useRepoChangeEvents({
+  repoPath: () => repoStore.activeRepo?.path,
+  kinds: ["config"],
+  onEvent: () => {
+    if (!props.visible || activeSection.value !== "integrations") return;
+    void loadRemoteMeta();
+  },
+});
 
 function openExternal(url: string) {
   // Electron 主进程 setWindowOpenHandler 会把 http(s) URL 转给 shell.openExternal
@@ -537,7 +552,7 @@ const appVersion = computed(() => __APP_VERSION__);
 .settings-mask {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--color-overlay-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -547,25 +562,26 @@ const appVersion = computed(() => __APP_VERSION__);
 }
 
 .settings-dialog {
-  background: var(--color-surface);
+  background: var(--color-surface-raised);
   color: var(--color-foreground);
   width: min(960px, 92vw);
   height: min(620px, 86vh);
-  border-radius: var(--radius-lg, 10px);
-  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-overlay);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
 }
 
 .settings-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-background);
+  min-height: 36px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--color-divider);
+  background: var(--color-surface-emphasis);
 }
 
 .settings-title {
@@ -576,12 +592,14 @@ const appVersion = computed(() => __APP_VERSION__);
 
 .settings-close {
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   color: var(--color-foreground-muted);
   cursor: pointer;
   font-size: 16px;
-  padding: 4px 8px;
-  border-radius: var(--radius-sm, 4px);
+  min-width: 26px;
+  min-height: 26px;
+  padding: 2px 6px;
+  border-radius: var(--radius-md);
   transition: background var(--transition-fast, 100ms ease);
 }
 
@@ -598,21 +616,22 @@ const appVersion = computed(() => __APP_VERSION__);
 
 .settings-nav {
   width: 180px;
-  padding: 12px 8px;
-  border-right: 1px solid var(--color-border);
+  padding: 8px 6px;
+  border-right: 1px solid var(--color-divider);
   display: flex;
   flex-direction: column;
   gap: 2px;
   overflow-y: auto;
-  background: var(--color-background);
+  background: var(--color-surface-muted);
 }
 
 .nav-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  border-radius: var(--radius-md, 6px);
+  min-height: var(--control-height-regular);
+  padding: 5px 10px;
+  border-radius: var(--radius-md);
   background: transparent;
   border: none;
   color: var(--color-foreground);
@@ -627,8 +646,9 @@ const appVersion = computed(() => __APP_VERSION__);
 }
 
 .nav-item.active {
-  background: var(--color-surface-active);
-  color: var(--color-foreground-bright);
+  background: color-mix(in srgb, var(--color-primary) 13%, var(--color-surface-muted));
+  color: var(--color-primary);
+  box-shadow: inset 2px 0 0 var(--color-primary);
 }
 
 .nav-icon {
@@ -637,20 +657,20 @@ const appVersion = computed(() => __APP_VERSION__);
 
 .settings-content {
   flex: 1;
-  padding: 18px 24px;
+  padding: 16px 20px;
   overflow-y: auto;
-  background: var(--color-surface);
+  background: var(--color-surface-raised);
 }
 
 .section h3 {
-  margin: 0 0 16px;
-  font-size: 16px;
+  margin: 0 0 14px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--color-foreground-bright);
 }
 
 .field {
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .field.disabled {
@@ -673,10 +693,11 @@ const appVersion = computed(() => __APP_VERSION__);
 
 .field-label select,
 .field-label input[type="number"] {
-  background: var(--color-background);
+  min-height: var(--control-height-regular);
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
   border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-md);
   padding: 4px 8px;
   font-size: 13px;
   min-width: 160px;
@@ -687,6 +708,7 @@ const appVersion = computed(() => __APP_VERSION__);
 .field-label input[type="number"]:focus {
   outline: none;
   border-color: var(--color-primary);
+  box-shadow: var(--focus-ring);
 }
 
 .field-toggle {
@@ -716,20 +738,21 @@ const appVersion = computed(() => __APP_VERSION__);
   margin-top: 12px;
   font-size: 12px;
   color: var(--color-foreground-muted);
-  background: var(--color-surface-active);
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface-emphasis));
   padding: 8px 12px;
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-md);
   border-left: 3px solid var(--color-primary);
 }
 
 .ai-open-btn {
   margin-top: 10px;
-  padding: 8px 16px;
-  font-size: 13px;
+  min-height: var(--control-height-regular);
+  padding: 4px 14px;
+  font-size: 12px;
   background: var(--color-primary);
   color: white;
   border: none;
-  border-radius: var(--radius-md, 6px);
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: background var(--transition-fast, 100ms ease);
 }
@@ -739,9 +762,9 @@ const appVersion = computed(() => __APP_VERSION__);
 }
 
 .about-block {
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md, 6px);
+  background: var(--color-surface-emphasis);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
   padding: 12px 16px;
   display: flex;
   flex-direction: column;
@@ -763,9 +786,9 @@ const appVersion = computed(() => __APP_VERSION__);
 
 .integrations-block {
   margin-top: 12px;
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md, 6px);
+  background: var(--color-surface-emphasis);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
   padding: 12px 16px;
   display: flex;
   flex-direction: column;
@@ -819,9 +842,9 @@ const appVersion = computed(() => __APP_VERSION__);
   justify-content: space-between;
   gap: 10px;
   padding: 8px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-background);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-emphasis);
 }
 
 .cred-item-info {
@@ -858,11 +881,12 @@ const appVersion = computed(() => __APP_VERSION__);
 
 .cred-del-btn {
   flex-shrink: 0;
-  padding: 4px 12px;
+  min-height: var(--control-height-compact);
+  padding: 3px 12px;
   font-size: 12px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  background: var(--color-surface-active);
+  background: var(--color-surface-raised);
   color: var(--color-error, #e05252);
   border: 1px solid color-mix(in srgb, var(--color-error, #e05252) 40%, var(--color-border));
 }

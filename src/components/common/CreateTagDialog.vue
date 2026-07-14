@@ -177,7 +177,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-emphasis);
   font-size: 13px;
   font-weight: 600;
   color: var(--color-foreground);

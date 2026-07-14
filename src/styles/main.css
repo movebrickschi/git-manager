@@ -3,10 +3,16 @@
 :root {
   --color-background: #1a1b23;
   --color-surface: #22242e;
+  --color-surface-muted: #1e2029;
+  --color-surface-emphasis: #292c38;
+  --color-surface-raised: #303440;
   --color-surface-hover: #2a2d3a;
   --color-surface-active: #343849;
   --color-border: rgba(255, 255, 255, 0.05);
   --color-border-strong: rgba(255, 255, 255, 0.1);
+  --color-divider: rgba(255, 255, 255, 0.045);
+  --color-overlay-backdrop: rgba(8, 9, 14, 0.64);
+  --color-surface-error: rgba(245, 101, 101, 0.1);
   --color-splitter: rgba(255, 255, 255, 0.05);
   --color-splitter-hover: color-mix(in srgb, var(--color-primary) 35%, transparent);
   --color-splitter-active: var(--color-primary);
@@ -52,9 +58,19 @@
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 10px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --control-height-compact: 26px;
+  --control-height-regular: 30px;
+  --app-toolbar-height: 36px;
+  --panel-header-height: 30px;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-overlay: 0 16px 48px rgba(0, 0, 0, 0.48);
+  --focus-ring: 0 0 0 2px color-mix(in srgb, var(--color-primary) 24%, transparent);
   --transition-fast: 100ms ease;
   --transition-normal: 150ms ease;
 }
@@ -62,10 +78,16 @@
 [data-theme="light"] {
   --color-background: #f8f9fc;
   --color-surface: #ffffff;
+  --color-surface-muted: #f3f5f9;
+  --color-surface-emphasis: #e9eef6;
+  --color-surface-raised: #ffffff;
   --color-surface-hover: #f0f3f9;
   --color-surface-active: #e3eaf5;
   --color-border: rgba(0, 0, 0, 0.08);
   --color-border-strong: rgba(0, 0, 0, 0.15);
+  --color-divider: rgba(15, 23, 42, 0.07);
+  --color-overlay-backdrop: rgba(15, 23, 42, 0.34);
+  --color-surface-error: rgba(220, 38, 38, 0.08);
   --color-splitter: #e5e7eb;
   --color-splitter-hover: color-mix(in srgb, var(--color-primary) 22%, #e5e7eb);
   --color-splitter-active: color-mix(in srgb, var(--color-primary) 38%, #e5e7eb);
@@ -94,6 +116,7 @@
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.15);
+  --shadow-overlay: 0 16px 44px rgba(15, 23, 42, 0.18);
 }
 
 * {
@@ -154,7 +177,20 @@ input:focus,
 textarea:focus,
 select:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
+  box-shadow: var(--focus-ring);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-foreground-muted);
+  opacity: 0.72;
+}
+
+input:disabled,
+textarea:disabled,
+select:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
 }
 
 button {
@@ -169,6 +205,14 @@ button {
 
 button:active:not(:disabled) {
   transform: scale(0.97);
+}
+
+button:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+button:disabled {
+  cursor: not-allowed;
 }
 
 code,

@@ -34,18 +34,23 @@ export function useMergeState(opts: {
 }) {
   const mergeState = ref<MergeStateSnapshot | null>(null);
   const mergeBusy = ref(false);
+  let refreshSeq = 0;
 
   const notify = (m: string) => opts.onMessage?.(m);
 
   async function refresh(): Promise<void> {
+    const seq = ++refreshSeq;
     const repoPath = opts.getRepoPath();
     if (!repoPath) {
       mergeState.value = null;
       return;
     }
     try {
-      mergeState.value = await commands.getMergeState(repoPath);
+      const next = await commands.getMergeState(repoPath);
+      if (seq !== refreshSeq || opts.getRepoPath() !== repoPath) return;
+      mergeState.value = next;
     } catch (e: unknown) {
+      if (seq !== refreshSeq || opts.getRepoPath() !== repoPath) return;
       console.error("getMergeState failed:", errMsg(e));
       mergeState.value = null;
     }
@@ -54,11 +59,12 @@ export function useMergeState(opts: {
   async function continueOp(): Promise<void> {
     const repoPath = opts.getRepoPath();
     if (!repoPath || !mergeState.value || mergeState.value.state === "none") return;
+    const op = mergeState.value.state;
     mergeBusy.value = true;
     try {
-      const result = await commands.continueOperation(repoPath, mergeState.value.state);
+      const result = await commands.continueOperation(repoPath, op);
       if (!result.success) notify(`继续失败：${translateGitError(result.message)}`);
-      else notify(`${mergeOpLabel(mergeState.value.state)} 已继续完成`);
+      else notify(`${mergeOpLabel(op)} 已继续完成`);
       await refresh();
       await opts.onAfterAction?.();
     } catch (e: unknown) {
@@ -71,10 +77,11 @@ export function useMergeState(opts: {
   async function abortOp(): Promise<void> {
     const repoPath = opts.getRepoPath();
     if (!repoPath || !mergeState.value || mergeState.value.state === "none") return;
+    const op = mergeState.value.state;
     mergeBusy.value = true;
     try {
-      await commands.abortOperation(repoPath, mergeState.value.state);
-      notify(`${mergeOpLabel(mergeState.value.state)} 已中止`);
+      await commands.abortOperation(repoPath, op);
+      notify(`${mergeOpLabel(op)} 已中止`);
       await refresh();
       await opts.onAfterAction?.();
     } catch (e: unknown) {

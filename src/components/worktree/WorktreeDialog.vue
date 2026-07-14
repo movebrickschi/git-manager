@@ -17,6 +17,7 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { commands } from "@/utils/commands";
 import type { WorktreeInfo } from "@/utils/types";
 import { errText } from "@/utils/error";
+import { useRepoChangeEvents } from "@/composables/useRepoWatcher";
 
 const props = defineProps<{
   visible: boolean;
@@ -33,17 +34,21 @@ const addTarget = ref("");
 const addBranch = ref("");
 const addNewBranch = ref("");
 const addBusy = ref(false);
+let reloadSeq = 0;
 
 async function reload() {
   if (!props.visible || !props.repoPath) return;
+  const repoPath = props.repoPath;
+  const seq = ++reloadSeq;
   loading.value = true;
   error.value = null;
   try {
-    list.value = await commands.listWorktrees(props.repoPath);
+    const next = await commands.listWorktrees(repoPath);
+    if (seq === reloadSeq && props.visible && props.repoPath === repoPath) list.value = next;
   } catch (e) {
-    error.value = errText(e);
+    if (seq === reloadSeq) error.value = errText(e);
   } finally {
-    loading.value = false;
+    if (seq === reloadSeq) loading.value = false;
   }
 }
 
@@ -123,6 +128,30 @@ watch(
   },
   { immediate: true }
 );
+
+watch(
+  () => props.repoPath,
+  () => {
+    reloadSeq += 1;
+    list.value = [];
+    loading.value = false;
+    error.value = null;
+    showAddForm.value = false;
+    addTarget.value = "";
+    addBranch.value = "";
+    addNewBranch.value = "";
+    if (props.visible) void reload();
+  }
+);
+
+useRepoChangeEvents({
+  repoPath: () => props.repoPath,
+  kinds: ["head", "refs", "worktree"],
+  onEvent: () => {
+    if (!props.visible || addBusy.value) return;
+    void reload();
+  },
+});
 
 onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 
@@ -258,11 +287,11 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
 .wt-dialog {
   width: min(1100px, 95vw);
   max-height: 88vh;
-  background: var(--color-surface);
+  background: var(--color-surface-raised);
   color: var(--color-foreground);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-lg, 10px);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-overlay);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -273,8 +302,7 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
   align-items: center;
   justify-content: space-between;
   padding: 12px 18px;
-  background: var(--color-background);
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-emphasis);
 }
 
 .wt-title {
@@ -350,8 +378,7 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
 
 .wt-add-form {
   padding: 12px 18px;
-  background: var(--color-background);
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -411,7 +438,7 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
 }
 
 .wt-table thead {
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-divider);
 }
 
 .wt-table th {
@@ -426,7 +453,14 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
 
 .wt-table td {
   padding: 8px 6px;
-  border-bottom: 1px solid var(--color-border);
+}
+
+.wt-table tbody tr {
+  transition: background var(--transition-fast);
+}
+
+.wt-table tbody tr:hover {
+  background: var(--color-surface-hover);
 }
 
 .wt-path {

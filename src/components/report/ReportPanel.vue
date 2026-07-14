@@ -515,12 +515,13 @@ function currentBranchFor(repoPath: string): string {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--color-surface);
+  background: var(--color-background);
 }
 
 .filter-bar {
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--color-border);
+  padding: 8px 12px;
+  background: var(--color-surface-muted);
+  border-bottom: 1px solid var(--color-divider);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -541,24 +542,28 @@ function currentBranchFor(repoPath: string): string {
 
 .preset-group {
   display: flex;
-  gap: 4px;
+  gap: 2px;
+  padding: 2px;
+  background: var(--color-surface-emphasis);
+  border-radius: var(--radius-md);
 }
 
 .chip {
   font-size: 12px;
-  padding: 3px 10px;
-  border-radius: 12px;
-  background: var(--color-surface-hover);
-  color: var(--color-foreground);
-  border: 1px solid var(--color-border);
+  min-height: 22px;
+  padding: 2px 9px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-foreground-muted);
+  border: 1px solid transparent;
   cursor: pointer;
   transition: all 120ms ease;
 }
 
 .chip.active {
-  background: var(--color-accent, #0066cc);
-  color: #fff;
-  border-color: var(--color-accent, #0066cc);
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface-raised));
+  color: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 24%, transparent);
 }
 
 .custom-range {
@@ -569,11 +574,12 @@ function currentBranchFor(repoPath: string): string {
 
 .custom-range input[type="date"] {
   font-size: 12px;
-  padding: 3px 6px;
-  background: var(--color-surface);
+  min-height: var(--control-height-compact);
+  padding: 2px 6px;
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
   border: 1px solid var(--color-border);
-  border-radius: 3px;
+  border-radius: var(--radius-md);
 }
 
 .dash {
@@ -587,9 +593,9 @@ function currentBranchFor(repoPath: string): string {
   max-height: 80px;
   overflow-y: auto;
   flex: 1;
-  background: var(--color-surface-hover);
+  background: var(--color-surface-emphasis);
   padding: 4px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 .picker-item {
@@ -622,18 +628,18 @@ function currentBranchFor(repoPath: string): string {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: var(--color-surface-hover);
-  padding: 2px 6px 2px 4px;
-  border-radius: 4px;
+  min-height: var(--control-height-compact);
+  padding: 0 4px;
 }
 
 .branch-select {
   font-size: 11px;
+  min-height: 24px;
   padding: 2px 6px;
-  background: var(--color-surface);
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
   border: 1px solid var(--color-border);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   max-width: 180px;
 }
 
@@ -658,11 +664,12 @@ function currentBranchFor(repoPath: string): string {
 .text-input {
   flex: 1;
   font-size: 12px;
-  padding: 3px 6px;
-  background: var(--color-surface);
+  min-height: var(--control-height-compact);
+  padding: 2px 8px;
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
   border: 1px solid var(--color-border);
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   min-width: 120px;
 }
 
@@ -681,16 +688,17 @@ function currentBranchFor(repoPath: string): string {
 .primary-btn {
   margin-left: auto;
   font-size: 12px;
+  min-height: var(--control-height-regular);
   padding: 4px 14px;
-  background: var(--color-accent, #0066cc);
+  background: var(--color-primary);
   color: #fff;
   border: none;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 
 .primary-btn:hover:not(:disabled) {
-  filter: brightness(1.1);
+  background: var(--color-primary-hover);
 }
 
 .primary-btn:disabled {
@@ -700,16 +708,17 @@ function currentBranchFor(repoPath: string): string {
 
 .secondary-btn {
   font-size: 12px;
-  padding: 4px 10px;
-  background: var(--color-surface-hover);
+  min-height: var(--control-height-compact);
+  padding: 3px 10px;
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
   border: 1px solid var(--color-border);
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 
 .secondary-btn:hover:not(:disabled) {
-  background: var(--color-surface);
+  background: var(--color-surface-hover);
 }
 
 .secondary-btn:disabled {
@@ -719,10 +728,10 @@ function currentBranchFor(repoPath: string): string {
 
 .error-banner {
   padding: 6px 14px;
-  background: rgba(216, 80, 80, 0.12);
-  color: #d85050;
+  background: var(--color-surface-error);
+  color: var(--color-error);
   font-size: 12px;
-  border-bottom: 1px solid rgba(216, 80, 80, 0.3);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-error) 25%, transparent);
 }
 
 .preview-area {
@@ -738,8 +747,9 @@ function currentBranchFor(repoPath: string): string {
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
-  padding: 6px 14px;
-  border-bottom: 1px solid var(--color-border);
+  min-height: var(--panel-header-height);
+  padding: 4px 12px;
+  background: var(--color-surface-muted);
 }
 
 .stat {
@@ -753,11 +763,12 @@ function currentBranchFor(repoPath: string): string {
 
 .select-mini {
   font-size: 12px;
-  padding: 3px 6px;
-  background: var(--color-surface);
+  min-height: var(--control-height-compact);
+  padding: 2px 6px;
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
   border: 1px solid var(--color-border);
-  border-radius: 3px;
+  border-radius: var(--radius-md);
 }
 
 .polish-group {
@@ -765,9 +776,9 @@ function currentBranchFor(repoPath: string): string {
   align-items: center;
   gap: 4px;
   padding: 2px 8px 2px 6px;
-  background: rgba(99, 102, 241, 0.08);
-  border: 1px dashed rgba(99, 102, 241, 0.45);
-  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface-emphasis));
+  border: 1px solid color-mix(in srgb, var(--color-primary) 18%, transparent);
+  border-radius: var(--radius-md);
 }
 
 .polish-label {
@@ -777,9 +788,9 @@ function currentBranchFor(repoPath: string): string {
 }
 
 .polish-btn {
-  background: var(--color-accent, #6366f1);
+  background: var(--color-primary);
   color: #fff;
-  border-color: var(--color-accent, #6366f1);
+  border-color: var(--color-primary);
 }
 
 .polish-btn:disabled {
@@ -792,17 +803,19 @@ function currentBranchFor(repoPath: string): string {
   background: transparent;
   border: none;
   cursor: pointer;
+  min-height: var(--control-height-compact);
   padding: 2px 6px;
+  border-radius: var(--radius-sm);
 }
 
 .link-btn:hover {
   color: var(--color-foreground);
+  background: var(--color-surface-hover);
 }
 
 .prompt-panel {
-  border-bottom: 1px solid var(--color-border);
   padding: 8px 14px 10px;
-  background: var(--color-surface-hover);
+  background: var(--color-surface-emphasis);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -830,10 +843,10 @@ function currentBranchFor(repoPath: string): string {
   font-size: 12px;
   line-height: 1.5;
   padding: 6px 8px;
-  background: var(--color-surface);
+  background: var(--color-surface-raised);
   color: var(--color-foreground);
   border: 1px solid var(--color-border);
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   resize: vertical;
 }
 
@@ -854,7 +867,7 @@ function currentBranchFor(repoPath: string): string {
   border: none;
   outline: none;
   padding: 14px 18px;
-  background: var(--color-surface);
+  background: var(--color-background);
   color: var(--color-foreground);
   font-family: ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
   font-size: 13px;
@@ -865,24 +878,26 @@ function currentBranchFor(repoPath: string): string {
 .view-mode-group {
   display: inline-flex;
   margin-left: 8px;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  overflow: hidden;
+  gap: 2px;
+  padding: 2px;
+  background: var(--color-surface-emphasis);
+  border-radius: var(--radius-md);
 }
 
 .view-mode-btn {
   font-size: 11px;
-  padding: 3px 10px;
-  background: var(--color-surface);
+  min-height: 22px;
+  padding: 2px 10px;
+  background: transparent;
   color: var(--color-foreground-muted);
-  border: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  border-right: 1px solid var(--color-border);
   transition: all 120ms ease;
 }
 
 .view-mode-btn:last-child {
-  border-right: none;
+  border-right: 1px solid transparent;
 }
 
 .view-mode-btn:hover:not(.active) {
@@ -891,15 +906,16 @@ function currentBranchFor(repoPath: string): string {
 }
 
 .view-mode-btn.active {
-  background: var(--color-accent, #0066cc);
-  color: #fff;
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface-raised));
+  color: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 24%, transparent);
 }
 
 .preview-rendered {
   flex: 1;
   overflow: auto;
   padding: 14px 18px;
-  background: var(--color-surface);
+  background: var(--color-background);
   color: var(--color-foreground);
   font-size: 13px;
   line-height: 1.7;
@@ -928,13 +944,13 @@ function currentBranchFor(repoPath: string): string {
 .preview-rendered :deep(h1) {
   font-size: 22px;
   padding-bottom: 6px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-divider);
 }
 
 .preview-rendered :deep(h2) {
   font-size: 18px;
   padding-bottom: 4px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-divider);
 }
 
 .preview-rendered :deep(h3) {
@@ -984,16 +1000,16 @@ function currentBranchFor(repoPath: string): string {
   font-family: ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
   font-size: 12px;
   padding: 1px 5px;
-  background: var(--color-surface-hover);
-  border-radius: 3px;
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-sm);
 }
 
 .preview-rendered :deep(pre) {
   margin: 10px 0;
   padding: 10px 12px;
-  background: var(--color-surface-hover);
+  background: var(--color-surface-muted);
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   overflow-x: auto;
 }
 
@@ -1007,19 +1023,19 @@ function currentBranchFor(repoPath: string): string {
 .preview-rendered :deep(blockquote) {
   margin: 8px 0;
   padding: 6px 12px;
-  border-left: 3px solid var(--color-accent, #0066cc);
-  background: var(--color-surface-hover);
+  border-left: 3px solid var(--color-primary);
+  background: var(--color-surface-muted);
   color: var(--color-foreground-muted);
 }
 
 .preview-rendered :deep(hr) {
   border: none;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--color-divider);
   margin: 14px 0;
 }
 
 .preview-rendered :deep(a) {
-  color: var(--color-accent, #0066cc);
+  color: var(--color-primary);
   text-decoration: none;
 }
 
@@ -1035,11 +1051,13 @@ function currentBranchFor(repoPath: string): string {
   position: absolute;
   bottom: 12px;
   right: 14px;
-  background: rgba(0, 0, 0, 0.7);
-  color: #fff;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-foreground);
   padding: 6px 12px;
   font-size: 12px;
-  border-radius: 4px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-overlay);
 }
 
 .empty-area {
@@ -1052,12 +1070,12 @@ function currentBranchFor(repoPath: string): string {
 .empty-tip {
   text-align: center;
   color: var(--color-foreground-muted);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .empty-icon {
-  font-size: 48px;
-  margin-bottom: 10px;
+  font-size: 36px;
+  margin-bottom: 8px;
 }
 
 .empty-sub {

@@ -2,9 +2,9 @@
  * Repo Watcher Ignored Patterns · 主进程 watcher 与 SSE watcher 共用的忽略规则
  *
  * 设计原则：
- *   1. `.git/` 内大量频繁写入的子路径（objects/logs/hooks）排除
- *      但保留 HEAD / index / refs / FETCH_HEAD / packed-refs / MERGE_HEAD /
- *      rebase-* 作为状态变化信号
+ *   1. 通用规则排除 `.git/` 内 objects/logs/hooks；实际 repo watcher 再按解析出的
+ *      git-dir 为 hooks 与 reflog 精确开白名单，并保留 HEAD / index / refs /
+ *      FETCH_HEAD / packed-refs / MERGE_HEAD / rebase-* 等状态信号
  *   2. 常见大目录（node_modules / dist / build / venv / target / coverage 等）排除
  *      避免百万级文件 watch 占用过多 inotify watch / RAM
  *   3. OS 元数据文件（.DS_Store / Thumbs.db）排除
@@ -16,8 +16,14 @@
 export const REPO_WATCHER_IGNORED: ReadonlyArray<RegExp> = [
   // .git 内噪声
   /(^|[\\/])\.git[\\/]objects([\\/]|$)/,
+  // 专用 watcher 会按真实 git-dir 为 hooks 与 HEAD/refs reflog 开白名单；
+  // 通用 predicate 仍保持默认降噪行为。
   /(^|[\\/])\.git[\\/]logs([\\/]|$)/,
   /(^|[\\/])\.git[\\/]hooks([\\/]|$)/,
+  // common-dir/modules 下是嵌套仓库，只保留 HEAD/index 等轻量状态，排除对象库与 reflog。
+  /(^|[\\/])\.git[\\/]modules(?:[\\/].*)?[\\/]objects([\\/]|$)/,
+  /(^|[\\/])\.git[\\/]modules(?:[\\/].*)?[\\/]logs([\\/]|$)/,
+  /(^|[\\/])\.git[\\/]worktrees[\\/][^\\/]+[\\/]logs([\\/]|$)/,
 
   // 包管理器 / 构建输出
   /(^|[\\/])node_modules([\\/]|$)/,

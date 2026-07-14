@@ -1,12 +1,21 @@
 <script setup lang="ts">
-defineProps<{
-  compact?: boolean;
-  draggable?: boolean;
-}>();
+withDefaults(
+  defineProps<{
+    compact?: boolean;
+    draggable?: boolean;
+    variant?: "app" | "embedded";
+  }>(),
+  {
+    variant: "embedded",
+  }
+);
 </script>
 
 <template>
-  <div class="toolbar" :class="{ compact, 'app-drag': draggable }">
+  <div
+    class="toolbar"
+    :class="[`toolbar--${variant}`, { compact, 'app-drag': draggable }]"
+  >
     <slot />
   </div>
 </template>
@@ -15,13 +24,21 @@ defineProps<{
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 4px 8px;
-  background: var(--color-surface);
-  border-bottom: none;
-  box-shadow: 0 1px 0 var(--color-border);
+  gap: var(--space-1);
+  min-height: var(--control-height-regular);
+  padding: 2px var(--space-2);
+  background: var(--color-surface-muted);
   flex-shrink: 0;
-  min-height: 32px;
+}
+
+.toolbar--app {
+  min-height: var(--app-toolbar-height);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.toolbar--embedded {
+  box-shadow: none;
 }
 
 .toolbar.app-drag {
@@ -39,6 +56,6 @@ defineProps<{
 
 .toolbar.compact {
   padding: 2px 4px;
-  min-height: 26px;
+  min-height: var(--control-height-compact);
 }
 </style>

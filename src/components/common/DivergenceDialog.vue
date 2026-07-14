@@ -129,7 +129,7 @@ const destination = computed(() => `${props.remote}/${props.branch}`);
   align-items: center;
   gap: 8px;
   padding: 14px 18px;
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-emphasis);
 }
 
 .warn-icon {

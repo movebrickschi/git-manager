@@ -63,7 +63,8 @@ const WRITE_COMMANDS = new Set<CommandMethod>([
   // 联网：previewPullConflicts 内部会 fetch（写 refs），一并纳入冻结范围
   "push", "pull", "forcePull", "resetToRemote", "fetch", "fetchAll", "fetchBranch", "previewPullConflicts",
   // stash
-  "stashSave", "stashApply", "stashPop", "stashDrop", "stashRename", "stashFile", "stashFiles",
+  "stashSave", "stashApply", "stashPop", "stashDrop", "stashRename", "stashRemoveFile",
+  "stashFile", "stashFiles",
   // 冲突 / 合并态
   "resolveConflict", "continueOperation", "abortOperation",
   // 标签

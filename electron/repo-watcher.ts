@@ -6,12 +6,13 @@
  *   监听机制，必须手动点"刷新"或切 tab 才能看到新变更——体感上像静态快照。
  *
  * 实现策略：
- *   1. 监听 repo 根目录全树，但忽略 .git/objects、.git/logs、.git/hooks；
- *      保留 .git/HEAD / .git/index / .git/refs / FETCH_HEAD / packed-refs /
- *      MERGE_HEAD（分支、引用、暂存区与 merge 状态变化都靠它们驱动）
- *   2. debounce 500ms：避免编辑器保存触发的 add/change/unlink 风暴
- *   3. 单仓库单 watcher，切仓库时关旧的；窗口关闭时全清
- *   4. 默认 ignored 还排除 node_modules / .DS_Store 等高噪声目录
+ *   1. 监听工作区以及 rev-parse 解析出的实际 git-dir / common-dir；linked worktree
+ *      的元数据位于主工作树 .git/worktrees 下，也能完整接收
+ *   2. 忽略对象库等高噪声目录，保留 HEAD / index / refs / config / hooks /
+ *      stash reflog / merge 与 rebase 半成态信号
+ *   3. debounce 500ms：避免编辑器保存触发的 add/change/unlink 风暴
+ *   4. 单仓库单 watcher，切仓库时关旧的；窗口关闭时全清
+ *   5. 默认 ignored 还排除 node_modules / .DS_Store 等高噪声目录
  *
  * chokidar 5.x 加载策略：
  *   chokidar 5.x 是 ESM-only 包，Electron 主进程编译目标是 CommonJS，
@@ -22,12 +23,15 @@
  *   - chokidar 自身只读，不写文件
  *   - 监听器在 setRepo(null) 或 closeAll() 后释放，避免 memory leak
  */
-import * as path from "path";
 import type { FSWatcher } from "chokidar";
 import type { WebContents } from "electron";
-import { makeIgnoredPredicate } from "../shared/repo-watcher-ignored";
-import { classifyRepoWatcherPath } from "../shared/repo-watcher-types";
 import type { RepoWatcherEvent } from "../shared/repo-watcher-types";
+import {
+  classifyRepoWatchFile,
+  createRepoWatchIgnoredPredicate,
+  repoWatchFileRequiresContextRefresh,
+  resolveRepoWatchContext,
+} from "../server/services/_helpers";
 
 type ChokidarModule = typeof import("chokidar");
 
@@ -53,7 +57,6 @@ function loadChokidar(): Promise<ChokidarModule> {
 }
 
 const DEBOUNCE_MS = 500;
-const IGNORED_PREDICATE = makeIgnoredPredicate();
 
 export type RepoWatcherCallback = (e: RepoWatcherEvent) => void;
 
@@ -61,33 +64,68 @@ export class RepoWatcherManager {
   private watcher: FSWatcher | null = null;
   private currentRepo: string | null = null;
   private debounceTimers = new Map<RepoWatcherEvent["kind"], NodeJS.Timeout>();
+  private contextRefreshKinds = new Set<RepoWatcherEvent["kind"]>();
   private listeners = new Set<RepoWatcherCallback>();
+  private generation = 0;
+  private settleReadyWait: (() => void) | null = null;
 
-  /** 切到新仓库（同路径直接复用）。传 null 表示停止监听。 */
-  async setRepo(repoPath: string | null): Promise<void> {
-    if (repoPath === this.currentRepo) return;
-    await this.close();
+  /** 切到新仓库（同路径默认复用）；force 用于 config 变化后重新解析 hooks 等动态路径。 */
+  async setRepo(repoPath: string | null, force = false): Promise<void> {
+    if (!force && repoPath === this.currentRepo && this.watcher) return;
+    const generation = ++this.generation;
+    await this.closeWatcher();
+    if (generation !== this.generation) return;
     if (!repoPath) return;
 
-    this.currentRepo = repoPath;
     try {
+      const context = await resolveRepoWatchContext(repoPath);
+      if (generation !== this.generation) return;
       const { watch } = await loadChokidar();
-      this.watcher = watch(repoPath, {
-        ignored: IGNORED_PREDICATE,
+      if (generation !== this.generation) return;
+
+      const watcher = watch(context.watchPaths, {
+        ignored: createRepoWatchIgnoredPredicate(context),
         ignoreInitial: true,
         persistent: true,
         // depth: 不限，由 ignored 控制深度
         awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
       });
 
-      this.watcher.on("all", (_event: string, filePath: string) => {
-        const kind = classifyRepoWatcherPath(path.relative(repoPath, filePath));
-        this.scheduleEmit(kind);
+      if (generation !== this.generation) {
+        await watcher.close();
+        return;
+      }
+      this.currentRepo = repoPath;
+      this.watcher = watcher;
+
+      const ready = new Promise<void>((resolve) => {
+        let settled = false;
+        const settle = () => {
+          if (settled) return;
+          settled = true;
+          watcher.off("ready", settle);
+          if (this.settleReadyWait === settle) this.settleReadyWait = null;
+          resolve();
+        };
+        this.settleReadyWait = settle;
+        watcher.once("ready", settle);
       });
-      this.watcher.on("error", (err: unknown) => {
+
+      watcher.on("all", (_event: string, filePath: string) => {
+        if (generation !== this.generation) return;
+        this.scheduleEmit(
+          classifyRepoWatchFile(context, filePath),
+          repoPath,
+          generation,
+          repoWatchFileRequiresContextRefresh(context, filePath)
+        );
+      });
+      watcher.on("error", (err: unknown) => {
         console.warn(`[repo-watcher] error on ${repoPath}:`, err);
       });
+      await ready;
     } catch (e) {
+      if (generation !== this.generation) return;
       console.error(`[repo-watcher] failed to watch ${repoPath}:`, e);
       this.currentRepo = null;
       this.watcher = null;
@@ -100,8 +138,16 @@ export class RepoWatcherManager {
   }
 
   async close(): Promise<void> {
+    this.generation += 1;
+    await this.closeWatcher();
+  }
+
+  private async closeWatcher(): Promise<void> {
+    this.settleReadyWait?.();
+    this.settleReadyWait = null;
     for (const t of this.debounceTimers.values()) clearTimeout(t);
     this.debounceTimers.clear();
+    this.contextRefreshKinds.clear();
     if (this.watcher) {
       try {
         await this.watcher.close();
@@ -113,16 +159,23 @@ export class RepoWatcherManager {
     this.currentRepo = null;
   }
 
-  private scheduleEmit(kind: RepoWatcherEvent["kind"]): void {
+  private scheduleEmit(
+    kind: RepoWatcherEvent["kind"],
+    repoPath: string,
+    generation: number,
+    requiresContextRefresh = false
+  ): void {
+    if (requiresContextRefresh) this.contextRefreshKinds.add(kind);
     const existing = this.debounceTimers.get(kind);
     if (existing) clearTimeout(existing);
     const timer = setTimeout(() => {
       this.debounceTimers.delete(kind);
-      if (!this.currentRepo) return;
+      if (generation !== this.generation || this.currentRepo !== repoPath) return;
       const payload: RepoWatcherEvent = {
-        repoPath: this.currentRepo,
+        repoPath,
         at: Date.now(),
         kind,
+        ...(this.contextRefreshKinds.delete(kind) ? { requiresContextRefresh: true } : {}),
       };
       for (const cb of this.listeners) {
         try {

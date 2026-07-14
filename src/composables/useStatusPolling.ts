@@ -1,4 +1,5 @@
 import { onMounted, onUnmounted } from "vue";
+import { isGitWriting } from "@/utils/git-busy";
 
 /**
  * 周期性轮询。仅在 document.visible 时调用 `tick`，避免后台 tab 浪费请求。
@@ -11,6 +12,7 @@ export function useStatusPolling(tick: () => Promise<void> | void, intervalMs = 
     stop();
     pollTimer = setInterval(async () => {
       if (document.visibilityState !== "visible") return;
+      if (isGitWriting.value) return;
       try {
         await tick();
       } catch {

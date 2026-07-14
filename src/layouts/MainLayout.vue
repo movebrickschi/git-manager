@@ -276,7 +276,7 @@ onUnmounted(() => {
 <template>
   <div class="main-layout">
     <!-- Top toolbar -->
-    <Toolbar draggable>
+    <Toolbar variant="app" draggable>
       <div class="repo-tabs">
         <div
           v-for="(repo, i) in repoStore.repos"
@@ -599,6 +599,7 @@ onUnmounted(() => {
   flex-direction: column;
   height: 100%;
   width: 100%;
+  background: var(--color-background);
 }
 
 .global-toast {
@@ -608,28 +609,31 @@ onUnmounted(() => {
   transform: translateX(-50%);
   z-index: 2000;
   padding: 8px 16px;
-  border-radius: 4px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  color: var(--color-foreground);
   font-size: 12px;
   max-width: 70vw;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-overlay);
   user-select: text;
   pointer-events: none;
   white-space: pre-wrap;
 }
 
 .global-toast--ok {
-  background: rgba(0, 122, 51, 0.92);
-  color: #fff;
+  border-color: color-mix(in srgb, var(--color-success) 48%, var(--color-border-strong));
+  color: var(--color-success);
 }
 
 .global-toast--err {
-  background: rgba(192, 64, 64, 0.92);
-  color: #fff;
+  border-color: color-mix(in srgb, var(--color-error) 52%, var(--color-border-strong));
+  color: var(--color-error);
 }
 
 .global-toast--info {
-  background: rgba(40, 40, 40, 0.92);
-  color: #fff;
+  border-color: color-mix(in srgb, var(--color-info) 42%, var(--color-border-strong));
+  color: var(--color-foreground-bright);
 }
 
 .main-content {
@@ -649,9 +653,10 @@ onUnmounted(() => {
   gap: 6px;
   min-width: 0;
   max-width: 220px;
-  padding: 3px 8px;
+  min-height: var(--control-height-compact);
+  padding: 0 8px;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   font-size: 12px;
   color: var(--color-foreground);
@@ -659,12 +664,12 @@ onUnmounted(() => {
 
 .repo-tab:hover {
   background: var(--color-surface-hover);
-  border-color: var(--color-border);
 }
 
 .repo-tab.active {
-  background: var(--color-surface-active);
-  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface-emphasis));
+  border-color: transparent;
+  color: var(--color-primary);
   box-shadow: inset 0 -2px 0 var(--color-primary);
 }
 
@@ -693,7 +698,7 @@ onUnmounted(() => {
   background: none;
   color: var(--color-foreground-muted);
   padding: 1px;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
 }
 
 .repo-close:hover {
@@ -716,11 +721,11 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: var(--control-height-compact);
+  height: var(--control-height-compact);
   background: transparent;
   color: var(--color-foreground-muted);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   margin-left: 4px;
   flex-shrink: 0;
 }
@@ -734,13 +739,13 @@ onUnmounted(() => {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
   padding: 4px;
   min-width: 140px;
   z-index: 500;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-overlay);
 }
 
 .add-menu-item {
@@ -748,10 +753,11 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 6px 10px;
+  min-height: var(--control-height-compact);
+  padding: 4px 10px;
   background: transparent;
   color: var(--color-foreground);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   font-size: 12px;
   text-align: left;
 }
@@ -762,7 +768,7 @@ onUnmounted(() => {
 
 .add-menu-divider {
   height: 1px;
-  background: var(--color-border);
+  background: var(--color-divider);
   margin: 4px 0;
 }
 
@@ -794,10 +800,10 @@ onUnmounted(() => {
   max-height: 420px;
   overflow-y: auto;
   padding: 4px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-overlay);
   z-index: 501;
 }
 
@@ -806,10 +812,11 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 6px 10px;
+  min-height: var(--control-height-compact);
+  padding: 4px 10px;
   background: transparent;
   color: var(--color-foreground);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   font-size: 12px;
   text-align: left;
 }
@@ -839,10 +846,11 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 6px 10px;
+  min-height: var(--control-height-compact);
+  padding: 4px 10px;
   background: transparent;
   color: var(--color-foreground-muted);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   font-size: 12px;
   text-align: left;
 }
@@ -856,7 +864,7 @@ onUnmounted(() => {
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--color-overlay-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -864,14 +872,15 @@ onUnmounted(() => {
 }
 
 .dialog {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 24px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
   min-width: 400px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  box-shadow: var(--shadow-overlay);
 }
 
 .dialog h3 {
@@ -891,8 +900,8 @@ onUnmounted(() => {
 }
 
 .dialog-field input {
-  padding: 6px 8px;
-  border-radius: 4px;
+  min-height: var(--control-height-regular);
+  padding: 4px 8px;
 }
 
 .dialog-actions {
@@ -902,11 +911,13 @@ onUnmounted(() => {
 }
 
 .btn {
-  padding: 6px 16px;
-  background: var(--color-surface-hover);
+  min-height: var(--control-height-regular);
+  padding: 4px 16px;
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
-  border-radius: 4px;
-  font-size: 13px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 12px;
 }
 
 .btn:hover {
@@ -929,7 +940,7 @@ onUnmounted(() => {
 }
 
 .error-msg {
-  color: #e06c75;
+  color: var(--color-error);
   font-size: 12px;
   padding: 4px 0;
 }
@@ -946,14 +957,14 @@ onUnmounted(() => {
   right: 12px;
   max-width: 420px;
   padding: 10px 14px;
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  box-shadow: var(--shadow-overlay);
   z-index: 1100;
   display: flex;
   gap: 8px;
@@ -962,13 +973,13 @@ onUnmounted(() => {
 }
 
 .patch-toast.ok {
-  border-color: #4ec9b0;
-  color: #b8e4d8;
+  border-color: color-mix(in srgb, var(--color-success) 48%, var(--color-border-strong));
+  color: var(--color-success);
 }
 
 .patch-toast.err {
-  border-color: #e06c75;
-  color: #f3c0c4;
+  border-color: color-mix(in srgb, var(--color-error) 52%, var(--color-border-strong));
+  color: var(--color-error);
 }
 
 .patch-toast-close {
@@ -982,7 +993,7 @@ onUnmounted(() => {
 .conflict-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--color-overlay-backdrop);
   z-index: 2000;
   display: flex;
   align-items: center;
@@ -997,12 +1008,13 @@ onUnmounted(() => {
   min-height: 400px;
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 60px);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  box-shadow: var(--shadow-overlay);
 }
 
 .conflict-modal-header {
@@ -1011,7 +1023,9 @@ onUnmounted(() => {
   align-items: center;
   padding: 8px 14px;
   padding-right: 44px;
-  border-bottom: 1px solid var(--color-border);
+  min-height: var(--panel-header-height);
+  background: var(--color-surface-emphasis);
+  border-bottom: 1px solid var(--color-divider);
   font-size: 13px;
   font-weight: 500;
   flex-shrink: 0;
@@ -1034,16 +1048,16 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-surface-hover);
-  border: 1px solid var(--color-border);
+  background: transparent;
+  border: 1px solid transparent;
   color: var(--color-foreground);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 
 .conflict-modal-close:hover {
-  background: #c04040;
-  border-color: #c04040;
+  background: var(--color-error);
+  border-color: var(--color-error);
   color: #fff;
 }
 

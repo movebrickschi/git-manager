@@ -4,6 +4,7 @@ import { ref } from "vue";
 const props = defineProps<{
   modelValue: string;
   placeholder?: string;
+  disabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -41,7 +42,7 @@ defineExpose({ focus });
 </script>
 
 <template>
-  <div class="search-bar">
+  <div class="search-bar" :class="{ disabled }">
     <svg
       class="search-icon"
       width="14"
@@ -59,10 +60,17 @@ defineExpose({ focus });
       type="text"
       :value="modelValue"
       :placeholder="placeholder || '搜索...'"
+      :disabled="disabled"
       @input="onInput"
       @keydown="onKeydown"
     />
-    <button v-if="modelValue" class="clear-btn" @click="clear">
+    <button
+      v-if="modelValue"
+      class="clear-btn"
+      :disabled="disabled"
+      aria-label="清空搜索"
+      @click="clear"
+    >
       <svg
         width="12"
         height="12"
@@ -82,16 +90,28 @@ defineExpose({ focus });
 .search-bar {
   display: flex;
   align-items: center;
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: 3px;
-  padding: 0 6px;
+  min-width: 0;
+  height: var(--control-height-compact);
+  padding: 0 7px;
   gap: 4px;
-  height: 24px;
+  background: var(--color-surface-emphasis);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    background var(--transition-fast);
 }
 
 .search-bar:focus-within {
   border-color: var(--color-primary);
+  background: var(--color-surface-raised);
+  box-shadow: var(--focus-ring);
+}
+
+.search-bar.disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
 }
 
 .search-icon {
@@ -109,17 +129,25 @@ defineExpose({ focus });
   font-size: 12px;
 }
 
+.search-bar input:focus {
+  box-shadow: none;
+}
+
 .clear-btn {
   display: flex;
   align-items: center;
   background: none;
   color: var(--color-foreground-muted);
   padding: 2px;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
 }
 
-.clear-btn:hover {
+.clear-btn:hover:not(:disabled) {
   color: var(--color-foreground);
   background: var(--color-surface-hover);
+}
+
+.clear-btn:focus-visible {
+  box-shadow: var(--focus-ring);
 }
 </style>

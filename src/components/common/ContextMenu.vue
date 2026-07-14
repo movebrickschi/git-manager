@@ -162,18 +162,20 @@ defineExpose({ show, hide });
   position: fixed;
   z-index: 9999;
   min-width: 200px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  padding: 4px 0;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  padding: 4px;
+  box-shadow: var(--shadow-overlay);
 }
 
 .context-menu-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 5px 12px;
+  min-height: var(--control-height-compact);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   gap: 16px;
   font-size: 12px;
@@ -182,8 +184,8 @@ defineExpose({ show, hide });
 
 .context-menu-item:hover:not(.disabled),
 .context-menu-item.active:not(.disabled) {
-  background: var(--color-primary);
-  color: white;
+  background: color-mix(in srgb, var(--color-primary) 13%, var(--color-surface-raised));
+  color: var(--color-foreground-bright);
 }
 
 .context-menu-item.disabled {
@@ -205,7 +207,7 @@ defineExpose({ show, hide });
 
 .context-menu-separator {
   height: 1px;
-  background: var(--color-border);
-  margin: 4px 0;
+  background: var(--color-divider);
+  margin: 4px 6px;
 }
 </style>

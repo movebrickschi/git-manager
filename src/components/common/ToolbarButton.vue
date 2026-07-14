@@ -28,25 +28,34 @@ defineEmits<{
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 3px 6px;
+  min-height: var(--control-height-compact);
+  padding: 0 8px;
   background: transparent;
   color: var(--color-foreground);
-  border-radius: 3px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   font-size: 12px;
   white-space: nowrap;
 }
 
 .toolbar-btn:hover:not(.disabled) {
   background: var(--color-surface-hover);
+  color: var(--color-foreground-bright);
 }
 
 .toolbar-btn.active {
-  background: var(--color-surface-active);
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface-emphasis));
+  color: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 24%, transparent);
 }
 
 .toolbar-btn.disabled {
-  opacity: 0.4;
+  opacity: 0.48;
   cursor: default;
+}
+
+.toolbar-btn:focus-visible {
+  box-shadow: var(--focus-ring);
 }
 
 .toolbar-btn :deep(svg) {

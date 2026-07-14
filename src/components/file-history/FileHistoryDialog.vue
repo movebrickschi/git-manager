@@ -9,9 +9,11 @@
  * Diff 走 `commands.getCommitDiff(repoPath, commitId, filePath)`。
  */
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+import DiffViewer from "@/components/diff/DiffViewer.vue";
 import { commands } from "@/utils/commands";
 import type { CommitInfo, DiffResult, LogFilter } from "@/utils/commands";
 import { errText } from "@/utils/error";
+import { useRepoChangeEvents } from "@/composables/useRepoWatcher";
 
 const props = defineProps<{
   visible: boolean;
@@ -32,6 +34,8 @@ const diffLoading = ref(false);
 const diffError = ref<string | null>(null);
 const hasMore = ref(true);
 const loadingMore = ref(false);
+let historyLoadSeq = 0;
+let diffLoadSeq = 0;
 
 const fileName = computed(() => {
   if (!props.filePath) return "";
@@ -41,6 +45,9 @@ const fileName = computed(() => {
 
 async function loadHistory(skip: number, append: boolean) {
   if (!props.visible || !props.repoPath || !props.filePath) return;
+  const repoPath = props.repoPath;
+  const filePath = props.filePath;
+  const seq = ++historyLoadSeq;
   if (append) loadingMore.value = true;
   else loading.value = true;
   error.value = null;
@@ -52,36 +59,72 @@ async function loadHistory(skip: number, append: boolean) {
       author: null,
       dateFrom: null,
       dateTo: null,
-      path: props.filePath,
+      path: filePath,
       searchText: "",
       useRegex: false,
       matchCase: false,
     };
-    const result = await commands.getLog(props.repoPath, filter);
-    if (append) commits.value.push(...result.commits);
-    else commits.value = result.commits;
-    hasMore.value = result.commits.length === PAGE_LIMIT;
-    if (!append && result.commits.length > 0 && !selectedCommitId.value) {
-      selectedCommitId.value = result.commits[0]!.id;
+    const result = await commands.getLog(repoPath, filter);
+    if (
+      seq !== historyLoadSeq ||
+      !props.visible ||
+      props.repoPath !== repoPath ||
+      props.filePath !== filePath
+    ) {
+      return;
     }
+    if (append) commits.value.push(...result.commits);
+    else {
+      const previousId = selectedCommitId.value;
+      commits.value = result.commits;
+      selectedCommitId.value =
+        (previousId && result.commits.some((commit) => commit.id === previousId)
+          ? previousId
+          : result.commits[0]?.id) ?? null;
+    }
+    hasMore.value = result.commits.length === PAGE_LIMIT;
   } catch (e) {
-    error.value = errText(e);
+    if (seq === historyLoadSeq) error.value = errText(e);
   } finally {
-    loading.value = false;
-    loadingMore.value = false;
+    if (seq === historyLoadSeq) {
+      loading.value = false;
+      loadingMore.value = false;
+    }
   }
 }
 
 async function loadDiff(commitId: string) {
+  const repoPath = props.repoPath;
+  const filePath = props.filePath;
+  const seq = ++diffLoadSeq;
   diffLoading.value = true;
   diffError.value = null;
   diff.value = null;
   try {
-    diff.value = await commands.getCommitDiff(props.repoPath, commitId, props.filePath);
+    const next = await commands.getCommitDiff(repoPath, commitId, filePath);
+    if (
+      seq === diffLoadSeq &&
+      props.visible &&
+      props.repoPath === repoPath &&
+      props.filePath === filePath &&
+      selectedCommitId.value === commitId
+    ) {
+      diff.value = next;
+    }
   } catch (e) {
-    diffError.value = errText(e);
+    if (seq === diffLoadSeq) diffError.value = errText(e);
   } finally {
-    diffLoading.value = false;
+    if (seq === diffLoadSeq) diffLoading.value = false;
+  }
+}
+
+async function refreshHistorySnapshot(): Promise<void> {
+  if (!props.visible) return;
+  const selectedId = selectedCommitId.value;
+  await loadHistory(0, false);
+  // 同一 SHA 仍存在时 ref 标签可能已变；watch 不会触发，主动重拉右侧快照。
+  if (selectedId && selectedCommitId.value === selectedId) {
+    await loadDiff(selectedId);
   }
 }
 
@@ -99,6 +142,18 @@ watch(
 
 watch(selectedCommitId, (id) => {
   if (id) void loadDiff(id);
+  else {
+    diffLoadSeq += 1;
+    diff.value = null;
+  }
+});
+
+useRepoChangeEvents({
+  repoPath: () => props.repoPath,
+  kinds: ["head", "refs"],
+  onEvent: () => {
+    void refreshHistorySnapshot();
+  },
 });
 
 function selectCommit(c: CommitInfo) {
@@ -213,24 +268,7 @@ function copyCommitId(sha: string) {
               二进制文件 · 不显示文本差异
             </div>
             <div v-else-if="diff && diff.hunks && diff.hunks.length > 0" class="fh-diff-content">
-              <div v-for="(hunk, hi) in diff.hunks" :key="hi" class="fh-hunk">
-                <div class="fh-hunk-header">
-                  @@ -{{ hunk.oldStart }},{{ hunk.oldLines }} +{{ hunk.newStart }},{{ hunk.newLines }} @@{{ hunk.header ? " " + hunk.header : "" }}
-                </div>
-                <div
-                  v-for="(line, li) in hunk.lines"
-                  :key="li"
-                  class="fh-line"
-                  :class="`type-${line.lineType}`"
-                >
-                  <span class="fh-line-no fh-line-no-old">{{ line.oldLineNo ?? "" }}</span>
-                  <span class="fh-line-no fh-line-no-new">{{ line.newLineNo ?? "" }}</span>
-                  <span class="fh-line-prefix">
-                    {{ line.lineType === "addition" ? "+" : line.lineType === "deletion" ? "-" : " " }}
-                  </span>
-                  <span class="fh-line-content">{{ line.content }}</span>
-                </div>
-              </div>
+              <DiffViewer :diff="diff" />
             </div>
             <div v-else class="fh-diff-empty">
               该提交中此文件无可显示的差异（新增空文件或纯重命名）
@@ -427,61 +465,16 @@ function copyCommitId(sha: string) {
 
 .fh-diff {
   flex: 1;
-  overflow-y: auto;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   background: var(--color-surface);
 }
 
 .fh-diff-content {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.5;
-  padding: 8px 0;
-}
-
-.fh-hunk {
-  margin-bottom: 12px;
-}
-
-.fh-hunk-header {
-  padding: 6px 12px;
-  background: var(--color-surface-active);
-  color: var(--color-foreground-muted);
-  border-top: 1px solid var(--color-border);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.fh-line {
-  display: flex;
-  gap: 8px;
-  padding: 0 8px;
-  white-space: pre;
-}
-
-.fh-line.type-addition {
-  background: var(--color-diff-added-bg);
-}
-
-.fh-line.type-deletion {
-  background: var(--color-diff-removed-bg);
-}
-
-.fh-line-no {
-  flex-shrink: 0;
-  width: 44px;
-  color: var(--color-foreground-muted);
-  text-align: right;
-  user-select: none;
-}
-
-.fh-line-prefix {
-  flex-shrink: 0;
-  width: 16px;
-  color: var(--color-foreground-muted);
-  user-select: none;
-}
-
-.fh-line-content {
   flex: 1;
-  overflow-x: auto;
+  min-width: 0;
+  min-height: 0;
 }
 </style>

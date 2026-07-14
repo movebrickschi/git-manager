@@ -71,13 +71,14 @@ watch(
 // 请求序号守卫：快速切 commit 时，只让最新一次请求的结果落库，避免迟到的旧请求覆盖当前选中
 let filesLoadSeq = 0;
 watch(
-  () => logStore.selectedCommitId,
-  async (commitId) => {
+  () => [logStore.selectedCommitId, logStore.selectionRefreshToken] as const,
+  async ([commitId]) => {
+    const seq = ++filesLoadSeq;
     if (!commitId || !repoStore.activeRepo) {
       commitFiles.value = [];
+      loadingCommit.value = false;
       return;
     }
-    const seq = ++filesLoadSeq;
     loadingCommit.value = true;
     try {
       const files =
@@ -267,20 +268,30 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--color-surface);
+  background: var(--color-background);
+}
+
+.changed-files-pane > :deep(.toolbar) {
+  min-height: var(--panel-header-height);
+  padding-inline: 6px;
+  background: var(--color-surface-muted);
 }
 
 .mode-tabs {
   display: flex;
-  gap: 1px;
+  gap: 2px;
   margin-right: 6px;
+  padding: 2px;
+  background: var(--color-surface-emphasis);
+  border-radius: var(--radius-md);
 }
 
 .mode-tab {
-  padding: 2px 8px;
+  min-height: 22px;
+  padding: 1px 8px;
   background: transparent;
   color: var(--color-foreground-muted);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   font-size: 11px;
   font-weight: 600;
 }
@@ -291,14 +302,15 @@ const contextMenuItems = computed<MenuItem[]>(() => {
 }
 
 .mode-tab.active {
-  background: var(--color-surface-active);
-  color: var(--color-foreground-bright);
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface-raised));
+  color: var(--color-primary);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-primary) 72%, transparent);
 }
 
 .file-count {
   font-size: 10px;
   color: var(--color-foreground-muted);
-  background: var(--color-surface-active);
+  background: var(--color-surface-emphasis);
   padding: 0 6px;
   border-radius: 8px;
   margin-left: 4px;
@@ -307,6 +319,8 @@ const contextMenuItems = computed<MenuItem[]>(() => {
 .files-content {
   flex: 1;
   overflow-y: auto;
+  padding: 4px 0;
+  background: var(--color-surface);
 }
 
 .loading,
@@ -338,13 +352,13 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--color-surface-active);
-  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
   color: var(--color-foreground);
   font-size: 12px;
   padding: 7px 16px;
-  border-radius: 4px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-overlay);
   z-index: 9999;
   pointer-events: none;
   white-space: nowrap;

@@ -66,6 +66,8 @@ export const useLogStore = defineStore("log", () => {
   const graphRows = ref<GraphRow[]>([]);
   const selectedCommitId = ref<string | null>(null);
   const selectedCommitIds = ref<string[]>([]);
+  /** 日志快照刷新后，即使选中 SHA 未变，也驱动详情/文件面板重拉。 */
+  const selectionRefreshToken = ref(0);
   const loading = ref(false);
   const hasMore = ref(true);
   const page = ref(0);
@@ -80,6 +82,7 @@ export const useLogStore = defineStore("log", () => {
   const logCache = new Map<string, LogCacheEntry>();
 
   const repoStore = useRepoStore();
+  let loadSeq = 0;
 
   const { run: runFetchLog, cancel: cancelFetchLog } = useAbortable(
     async (
@@ -103,10 +106,8 @@ export const useLogStore = defineStore("log", () => {
 
     const repoPath = repoStore.activeRepo.path;
     const targetPage = reset ? 0 : page.value;
+    const seq = ++loadSeq;
 
-    console.log(
-      `[bug-trace] ${performance.now().toFixed(1)} loadCommits START repo=${repoPath} reset=${reset} branch=${filter.value.branch ?? "∅"}`
-    );
     loading.value = true;
     try {
       const result = await runFetchLog(repoPath, {
@@ -128,16 +129,20 @@ export const useLogStore = defineStore("log", () => {
         commits.value = result.commits;
         graphRows.value = result.graphRows;
         page.value = 1;
+
+        const available = new Set(result.commits.map((commit) => commit.id));
+        selectedCommitIds.value = selectedCommitIds.value.filter((id) => available.has(id));
+        if (selectedCommitId.value && !available.has(selectedCommitId.value)) {
+          clearSelection();
+        } else if (selectedCommitId.value) {
+          selectionRefreshToken.value += 1;
+        }
       } else {
         commits.value.push(...result.commits);
         graphRows.value.push(...result.graphRows);
         page.value++;
       }
       hasMore.value = result.commits.length === pageSize;
-
-      console.log(
-        `[bug-trace] ${performance.now().toFixed(1)} loadCommits DONE repo=${repoPath} reset=${reset} got=${result.commits.length} commitsNow=${commits.value.length}`
-      );
 
       // 写入每仓库结果缓存：下次切回该仓库可立即回填，配合 needsReload 后台刷新形成 SWR。
       logCache.set(repoPath, {
@@ -149,14 +154,11 @@ export const useLogStore = defineStore("log", () => {
       });
     } catch (e) {
       if (isAbortError(e)) {
-        console.log(
-          `[bug-trace] ${performance.now().toFixed(1)} loadCommits ABORTED repo=${repoPath} reset=${reset} (request superseded/cancelled)`
-        );
         return; // 旧请求被新调用顶替，安静退出
       }
       throw e;
     } finally {
-      loading.value = false;
+      if (seq === loadSeq) loading.value = false;
     }
   }
 
@@ -190,6 +192,8 @@ export const useLogStore = defineStore("log", () => {
       }
 
       cancelFetchLog("repo switched");
+      loadSeq += 1;
+      loading.value = false;
       selectedCommitId.value = null;
       selectedCommitIds.value = [];
 
@@ -216,16 +220,10 @@ export const useLogStore = defineStore("log", () => {
         needsReload.value = true;
       }
 
-      console.log(
-        `[bug-trace] ${performance.now().toFixed(1)} logStore.WATCH old=${oldPath ?? "∅"} new=${newPath ?? "∅"} cacheHit=${!!(cached && cached.filterKey === filterKey(filter.value))} commitsAfter=${commits.value.length} needsReload=${needsReload.value}`
-      );
     }
   );
 
   function ensureLoaded() {
-    console.log(
-      `[bug-trace] ${performance.now().toFixed(1)} ensureLoaded needsReload=${needsReload.value} hasRepo=${!!repoStore.activeRepo} repo=${repoStore.activeRepo?.path ?? "∅"}`
-    );
     if (needsReload.value && repoStore.activeRepo) {
       needsReload.value = false;
       loadCommits(true);
@@ -237,6 +235,7 @@ export const useLogStore = defineStore("log", () => {
     graphRows,
     selectedCommitId,
     selectedCommitIds,
+    selectionRefreshToken,
     loading,
     hasMore,
     filter,

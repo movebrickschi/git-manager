@@ -186,7 +186,7 @@ function onKeydown(e: KeyboardEvent) {
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-emphasis);
 }
 
 .cred-title {

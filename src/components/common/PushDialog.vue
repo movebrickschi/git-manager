@@ -7,6 +7,7 @@ import type { CommitInfo, FileStatus, PushOptions } from "@/utils/commands";
 import { formatTimestamp } from "@/utils/format";
 import { isAuthError } from "../../../shared/git/auth-error";
 import { resolveHost } from "../../../shared/git/host";
+import { useRepoChangeEvents } from "@/composables/useRepoWatcher";
 import DivergenceDialog from "./DivergenceDialog.vue";
 import GitCredentialDialog from "./GitCredentialDialog.vue";
 
@@ -55,6 +56,8 @@ const showCredentialDialog = ref(false);
 const credHost = ref("");
 const credUsername = ref("");
 let pendingAuthRetry: (() => Promise<void>) | null = null;
+let commitsLoadSeq = 0;
+let filesLoadSeq = 0;
 
 // Conflict resolution state
 const showConflictResolver = ref(false);
@@ -95,31 +98,48 @@ const repoLabel = computed(
   () => props.repoName ?? props.repoPath.split(/[\\/]/).pop() ?? props.repoPath
 );
 
-async function loadCommits() {
+async function loadCommits(preserveSelection = false) {
   if (!props.repoPath) return;
+  const repoPath = props.repoPath;
+  const selectedId = preserveSelection ? selectedCommit.value?.id : undefined;
+  const seq = ++commitsLoadSeq;
+  filesLoadSeq += 1;
+  filesLoading.value = false;
   loading.value = true;
-  commits.value = [];
-  selectedCommit.value = null;
-  commitFiles.value = [];
+  if (!preserveSelection) {
+    commits.value = [];
+    selectedCommit.value = null;
+    commitFiles.value = [];
+  }
   try {
-    commits.value = await commands.getUnpushedCommits(props.repoPath, props.remote, props.branch);
-    if (commits.value.length > 0) {
-      await selectCommit(commits.value[0]!);
+    const next = await commands.getUnpushedCommits(repoPath, props.remote, props.branch);
+    if (seq !== commitsLoadSeq || props.repoPath !== repoPath || !props.visible) return;
+    commits.value = next;
+    const nextSelected = next.find((commit) => commit.id === selectedId) ?? next[0] ?? null;
+    if (nextSelected) {
+      await selectCommit(nextSelected);
+    } else {
+      selectedCommit.value = null;
+      commitFiles.value = [];
+      filesLoading.value = false;
     }
   } finally {
-    loading.value = false;
+    if (seq === commitsLoadSeq && props.repoPath === repoPath) loading.value = false;
   }
 }
 
 async function selectCommit(commit: CommitInfo) {
+  const repoPath = props.repoPath;
+  const seq = ++filesLoadSeq;
   selectedCommit.value = commit;
   filesLoading.value = true;
   try {
-    commitFiles.value = await commands.getCommitFiles(props.repoPath, commit.id);
+    const files = await commands.getCommitFiles(repoPath, commit.id);
+    if (seq === filesLoadSeq && props.repoPath === repoPath) commitFiles.value = files;
   } catch {
-    commitFiles.value = [];
+    if (seq === filesLoadSeq && props.repoPath === repoPath) commitFiles.value = [];
   } finally {
-    filesLoading.value = false;
+    if (seq === filesLoadSeq && props.repoPath === repoPath) filesLoading.value = false;
   }
 }
 
@@ -221,6 +241,7 @@ function onCredentialClose() {
 
 async function handlePush() {
   pushError.value = "";
+  pushing.value = true;
   try {
     await branchStore.loadBranches();
   } catch {
@@ -234,7 +255,10 @@ async function handlePush() {
         `推荐改用 --force-with-lease（远端被他人改动时会安全失败）。\n\n` +
         `仍要使用 --force 推送 ${branchName.value || "(当前分支)"} 到 ${remoteName.value} ？`
     );
-    if (!ok) return;
+    if (!ok) {
+      pushing.value = false;
+      return;
+    }
     await doPush();
     return;
   }
@@ -445,6 +469,33 @@ watch(
   },
   { immediate: true }
 );
+
+watch(
+  () => [props.repoPath, props.remote, props.branch, props.targetBranch] as const,
+  () => {
+    commitsLoadSeq += 1;
+    filesLoadSeq += 1;
+    loading.value = false;
+    filesLoading.value = false;
+    commits.value = [];
+    selectedCommit.value = null;
+    commitFiles.value = [];
+    optForce.value = false;
+    optForceWithLease.value = false;
+    optSetUpstream.value = false;
+    optPushTags.value = false;
+    if (props.visible) void loadCommits();
+  }
+);
+
+useRepoChangeEvents({
+  repoPath: () => props.repoPath,
+  kinds: ["head", "refs", "config"],
+  onEvent: () => {
+    if (!props.visible || pushing.value || showConflictResolver.value) return;
+    void loadCommits(true);
+  },
+});
 </script>
 
 <template>
@@ -661,7 +712,7 @@ watch(
 .push-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--color-overlay-backdrop);
   z-index: 9000;
   display: flex;
   align-items: center;
@@ -669,12 +720,12 @@ watch(
 }
 
 .push-dialog {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-overlay);
   overflow: hidden;
   width: 720px;
   max-width: 95vw;
@@ -687,8 +738,9 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--color-border);
+  min-height: var(--panel-header-height);
+  padding: 4px 14px;
+  background: var(--color-surface-emphasis);
   flex-shrink: 0;
 }
 
@@ -700,12 +752,12 @@ watch(
 
 .push-close {
   background: none;
-  border: none;
+  border: 1px solid transparent;
   color: var(--color-foreground-muted);
   cursor: pointer;
   font-size: 14px;
   padding: 2px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   line-height: 1;
 }
 
@@ -719,6 +771,7 @@ watch(
   display: flex;
   flex: 1;
   overflow: hidden;
+  background: var(--color-background);
 }
 
 /* Left panel */
@@ -727,18 +780,18 @@ watch(
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-right: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-divider);
 }
 
 .repo-row {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--color-border);
+  min-height: var(--panel-header-height);
+  padding: 4px 12px;
   flex-shrink: 0;
   font-size: 12px;
-  background: var(--color-background);
+  background: var(--color-surface-muted);
 }
 
 .repo-icon {
@@ -773,11 +826,15 @@ watch(
   margin-left: auto;
   color: var(--color-foreground-muted);
   flex-shrink: 0;
+  padding: 0 6px;
+  background: var(--color-surface-emphasis);
+  border-radius: 999px;
 }
 
 .commit-list-area {
   flex: 1;
   overflow-y: auto;
+  padding: 4px;
 }
 
 .list-empty {
@@ -789,9 +846,9 @@ watch(
 .commit-row {
   display: flex;
   flex-direction: column;
-  padding: 6px 12px;
+  padding: 5px 8px;
   cursor: pointer;
-  border-bottom: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
   gap: 2px;
 }
 
@@ -800,7 +857,8 @@ watch(
 }
 
 .commit-row.selected {
-  background: var(--color-surface-active);
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-background));
+  box-shadow: inset 2px 0 0 var(--color-primary);
 }
 
 .commit-hash {
@@ -841,12 +899,14 @@ watch(
 }
 
 .files-header {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  min-height: var(--panel-header-height);
+  padding: 4px 12px;
   font-size: 12px;
   font-weight: 600;
   color: var(--color-foreground);
-  background: var(--color-background);
+  background: var(--color-surface-muted);
   flex-shrink: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -866,15 +926,18 @@ watch(
 .files-area {
   flex: 1;
   overflow-y: auto;
+  padding: 4px 0;
 }
 
 .file-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 12px;
+  min-height: 26px;
+  margin: 0 4px;
+  padding: 3px 8px;
   font-size: 12px;
-  border-bottom: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
 }
 
 .file-row:hover {
@@ -891,19 +954,19 @@ watch(
 }
 
 .file-status.status-added {
-  color: #4caf50;
+  color: var(--color-git-added);
 }
 .file-status.status-modified {
-  color: #2196f3;
+  color: var(--color-git-modified);
 }
 .file-status.status-deleted {
-  color: #f44336;
+  color: var(--color-git-deleted);
 }
 .file-status.status-renamed {
-  color: #ff9800;
+  color: var(--color-git-renamed);
 }
 .file-status.status-copied {
-  color: #9c27b0;
+  color: var(--color-git-renamed);
 }
 
 .file-path {
@@ -920,8 +983,8 @@ watch(
   flex-wrap: wrap;
   gap: 6px 16px;
   padding: 8px 14px;
-  border-top: 1px solid var(--color-border);
-  background: var(--color-background);
+  border-top: 1px solid var(--color-divider);
+  background: var(--color-surface-muted);
   flex-shrink: 0;
 }
 
@@ -960,8 +1023,8 @@ watch(
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 10px 14px;
-  border-top: 1px solid var(--color-border);
+  padding: 4px 14px 10px;
+  background: var(--color-surface-muted);
   flex-shrink: 0;
 }
 
@@ -977,11 +1040,12 @@ watch(
 }
 
 .push-btn {
-  padding: 5px 16px;
+  min-height: var(--control-height-regular);
+  padding: 4px 16px;
   font-size: 12px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  background: var(--color-surface-active);
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
   border: 1px solid var(--color-border);
 }
@@ -1033,9 +1097,9 @@ watch(
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
-  background: color-mix(in srgb, var(--color-error, #e05252) 12%, var(--color-surface));
-  border-top: 1px solid color-mix(in srgb, var(--color-error, #e05252) 30%, transparent);
-  color: var(--color-error, #e05252);
+  background: var(--color-surface-error);
+  border-top: 1px solid color-mix(in srgb, var(--color-error) 28%, transparent);
+  color: var(--color-error);
   font-size: 12px;
   flex-shrink: 0;
 }
@@ -1049,12 +1113,12 @@ watch(
 
 .push-error-close {
   background: none;
-  border: none;
-  color: var(--color-error, #e05252);
+  border: 1px solid transparent;
+  color: var(--color-error);
   cursor: pointer;
   font-size: 12px;
   padding: 2px 4px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   opacity: 0.7;
 }
 
@@ -1067,7 +1131,7 @@ watch(
 .conflict-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--color-overlay-backdrop);
   z-index: 9200;
   display: flex;
   align-items: center;
@@ -1077,21 +1141,23 @@ watch(
 .conflict-modal-panel {
   width: 95vw;
   height: 85vh;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-overlay);
 }
 
 .conflict-modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--color-border);
+  min-height: var(--panel-header-height);
+  padding: 4px 16px;
+  background: var(--color-surface-emphasis);
+  border-bottom: 1px solid var(--color-divider);
   flex-shrink: 0;
   font-size: 13px;
   font-weight: 600;
@@ -1100,11 +1166,11 @@ watch(
 
 .conflict-close-btn {
   background: none;
-  border: none;
+  border: 1px solid transparent;
   color: var(--color-foreground-muted);
   cursor: pointer;
   padding: 4px;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
 }

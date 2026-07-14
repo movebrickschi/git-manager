@@ -18,7 +18,9 @@ import type {
   FileStatus,
   LogFilter,
 } from "@/utils/commands";
+import DiffViewer from "@/components/diff/DiffViewer.vue";
 import { errText } from "@/utils/error";
+import { useRepoChangeEvents } from "@/composables/useRepoWatcher";
 
 const props = defineProps<{
   visible: boolean;
@@ -38,24 +40,33 @@ const diff = ref<DiffResult | null>(null);
 const error = ref<string | null>(null);
 const loading = ref(false);
 const diffLoading = ref(false);
+let reloadSeq = 0;
+let diffLoadSeq = 0;
+let branchesLoadSeq = 0;
 
 const branchOptions = computed(() => branches.value.map((b) => b.name).filter(Boolean));
 
 async function loadBranches() {
   if (!props.repoPath) return;
+  const repoPath = props.repoPath;
+  const seq = ++branchesLoadSeq;
   try {
-    const result = await commands.getBranches(props.repoPath);
+    const result = await commands.getBranches(repoPath);
+    if (seq !== branchesLoadSeq || props.repoPath !== repoPath || !props.visible) return;
     branches.value = result.local ?? [];
-    if (!targetBranch.value) {
-      const head = branches.value.find((b) => b.isHead);
-      if (head) targetBranch.value = head.name;
+    const available = new Set(branches.value.map((branch) => branch.name));
+    if (!targetBranch.value || !available.has(targetBranch.value)) {
+      targetBranch.value = branches.value.find((branch) => branch.isHead)?.name ?? "";
     }
-    if (!baseBranch.value) {
+    if (!baseBranch.value || !available.has(baseBranch.value)) {
       const main = branches.value.find((b) => /^(main|master|develop|trunk)$/.test(b.name));
-      if (main && main.name !== targetBranch.value) baseBranch.value = main.name;
+      baseBranch.value =
+        (main?.name !== targetBranch.value ? main?.name : undefined) ??
+        branches.value.find((branch) => branch.name !== targetBranch.value)?.name ??
+        "";
     }
   } catch (e) {
-    error.value = errText(e);
+    if (seq === branchesLoadSeq && props.repoPath === repoPath) error.value = errText(e);
   }
 }
 
@@ -65,11 +76,16 @@ async function reload() {
     files.value = [];
     return;
   }
+  const repoPath = props.repoPath;
+  const base = baseBranch.value;
+  const target = targetBranch.value;
+  const selectedPath = selectedFile.value?.path;
+  const seq = ++reloadSeq;
   loading.value = true;
   error.value = null;
   try {
     // base..target 表示 target 上有但 base 上没有的 commit
-    const range = `${baseBranch.value}..${targetBranch.value}`;
+    const range = `${base}..${target}`;
     const filter: LogFilter = {
       skip: 0,
       limit: 500,
@@ -83,49 +99,74 @@ async function reload() {
       matchCase: false,
     };
     const [logResult, fileDiff] = await Promise.all([
-      commands.getLog(props.repoPath, filter),
-      commands.compareCommits(props.repoPath, baseBranch.value, targetBranch.value),
+      commands.getLog(repoPath, filter),
+      commands.compareCommits(repoPath, base, target),
     ]);
+    if (
+      seq !== reloadSeq ||
+      !props.visible ||
+      props.repoPath !== repoPath ||
+      baseBranch.value !== base ||
+      targetBranch.value !== target
+    ) {
+      return;
+    }
     commits.value = logResult.commits ?? [];
     files.value = fileDiff ?? [];
-    if (files.value.length > 0 && !selectedFile.value) {
-      selectedFile.value = files.value[0]!;
-    }
+    selectedFile.value =
+      files.value.find((file) => file.path === selectedPath) ?? files.value[0] ?? null;
   } catch (e) {
-    error.value = errText(e);
+    if (seq === reloadSeq) error.value = errText(e);
   } finally {
-    loading.value = false;
+    if (seq === reloadSeq) loading.value = false;
   }
 }
 
 async function loadDiff(file: FileStatus | null) {
+  const seq = ++diffLoadSeq;
   if (!file) {
     diff.value = null;
+    diffLoading.value = false;
     return;
   }
+  const repoPath = props.repoPath;
+  const target = targetBranch.value;
   diffLoading.value = true;
   try {
     const result = await commands.getFileDiff(
-      props.repoPath,
+      repoPath,
       file.path,
       false
     );
     // 工作区 diff 对 "已 commit 但分支间不同" 的场景不准；改用 compareCommits 视角下
     // 的 git diff，借用 getCommitDiff 用 targetBranch tip
-    if (targetBranch.value) {
+    if (target) {
       try {
-        diff.value = await commands.getCommitDiff(props.repoPath, targetBranch.value, file.path);
+        const next = await commands.getCommitDiff(repoPath, target, file.path);
+        if (seq === diffLoadSeq && props.repoPath === repoPath) diff.value = next;
       } catch {
-        diff.value = result;
+        if (seq === diffLoadSeq && props.repoPath === repoPath) diff.value = result;
       }
-    } else {
+    } else if (seq === diffLoadSeq && props.repoPath === repoPath) {
       diff.value = result;
     }
   } catch (e) {
-    error.value = errText(e);
-    diff.value = null;
+    if (seq === diffLoadSeq && props.repoPath === repoPath) {
+      error.value = errText(e);
+      diff.value = null;
+    }
   } finally {
-    diffLoading.value = false;
+    if (seq === diffLoadSeq) diffLoading.value = false;
+  }
+}
+
+async function refreshSnapshot(): Promise<void> {
+  if (!props.visible) return;
+  const previousBase = baseBranch.value;
+  const previousTarget = targetBranch.value;
+  await loadBranches();
+  if (baseBranch.value === previousBase && targetBranch.value === previousTarget) {
+    await reload();
   }
 }
 
@@ -142,6 +183,25 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => props.repoPath,
+  () => {
+    branchesLoadSeq += 1;
+    reloadSeq += 1;
+    diffLoadSeq += 1;
+    loading.value = false;
+    diffLoading.value = false;
+    branches.value = [];
+    baseBranch.value = "";
+    targetBranch.value = "";
+    commits.value = [];
+    files.value = [];
+    selectedFile.value = null;
+    diff.value = null;
+    if (props.visible) void loadBranches();
+  }
+);
+
 watch([baseBranch, targetBranch], () => {
   selectedFile.value = null;
   diff.value = null;
@@ -149,6 +209,14 @@ watch([baseBranch, targetBranch], () => {
 });
 
 watch(selectedFile, (f) => void loadDiff(f));
+
+useRepoChangeEvents({
+  repoPath: () => props.repoPath,
+  kinds: ["head", "refs"],
+  onEvent: () => {
+    void refreshSnapshot();
+  },
+});
 
 function close() {
   emit("update:visible", false);
@@ -251,22 +319,7 @@ function statusBadge(s: string): string {
             <div v-else-if="diffLoading" class="cb-empty">读取差异…</div>
             <div v-else-if="diff?.binary" class="cb-empty">二进制文件</div>
             <div v-else-if="diff && diff.hunks && diff.hunks.length" class="cb-diff-content">
-              <div v-for="(hunk, hi) in diff.hunks" :key="hi" class="cb-hunk">
-                <div class="cb-hunk-header">
-                  @@ -{{ hunk.oldStart }},{{ hunk.oldLines }} +{{ hunk.newStart }},{{ hunk.newLines }} @@
-                </div>
-                <div
-                  v-for="(line, li) in hunk.lines"
-                  :key="li"
-                  class="cb-line"
-                  :class="`type-${line.lineType}`"
-                >
-                  <span class="cb-line-prefix">{{
-                    line.lineType === "addition" ? "+" : line.lineType === "deletion" ? "-" : " "
-                  }}</span>
-                  <span class="cb-line-content">{{ line.content }}</span>
-                </div>
-              </div>
+              <DiffViewer :diff="diff" />
             </div>
             <div v-else class="cb-empty">无可显示的差异</div>
           </section>
@@ -303,8 +356,7 @@ function statusBadge(s: string): string {
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-background);
+  background: var(--color-surface-emphasis);
 }
 .cb-selectors {
   display: flex;
@@ -447,42 +499,16 @@ function statusBadge(s: string): string {
 }
 .cb-diff {
   flex: 1;
-  overflow-y: auto;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   background: var(--color-surface);
 }
 .cb-diff-content {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.5;
-}
-.cb-hunk-header {
-  padding: 4px 12px;
-  background: var(--color-surface-active);
-  color: var(--color-foreground-muted);
-  border-bottom: 1px solid var(--color-border);
-}
-.cb-line {
-  display: flex;
-  gap: 8px;
-  padding: 0 12px;
-  white-space: pre;
-}
-.cb-line.type-addition {
-  background: var(--color-diff-added-bg);
-}
-.cb-line.type-deletion {
-  background: var(--color-diff-removed-bg);
-}
-.cb-line-prefix {
-  width: 16px;
-  text-align: center;
-  flex-shrink: 0;
-  color: var(--color-foreground-muted);
-  user-select: none;
-}
-.cb-line-content {
   flex: 1;
-  overflow-x: auto;
+  min-width: 0;
+  min-height: 0;
 }
 .cb-empty {
   padding: 24px;

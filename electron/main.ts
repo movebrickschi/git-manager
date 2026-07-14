@@ -130,14 +130,6 @@ function createWindow() {
     },
   });
 
-  // [诊断] 把 renderer 的 [bug-trace] 日志镜像到主进程终端，便于直接在终端日志中排查偶发竞态，
-  // 且不受 DevTools 页面 reload 清屏影响。仅转发 [bug-trace] 前缀以避免噪音。
-  mainWindow.webContents.on("console-message", (_event, _level, message) => {
-    if (typeof message === "string" && message.startsWith("[bug-trace]")) {
-      console.log(message);
-    }
-  });
-
   if (process.env.VITE_DEV_SERVER_URL) {
     const devUrl = process.env.VITE_DEV_SERVER_URL;
     // dev 下 electron 可能先于 Vite dev server ready 启动；loadURL 失败时短间隔重试，避免白屏。
@@ -183,12 +175,15 @@ function createWindow() {
   });
 }
 
-ipcMain.handle("repo:watch", async (_e, repoPath: unknown) => {
+ipcMain.handle("repo:watch", async (_e, repoPath: unknown, force: unknown = false) => {
   if (!repoWatcher) return;
   if (repoPath !== null && typeof repoPath !== "string") {
     throw new Error("INVALID_REPO_PATH: must be string or null");
   }
-  await repoWatcher.manager.setRepo(repoPath as string | null);
+  if (typeof force !== "boolean") {
+    throw new Error("INVALID_FORCE: must be boolean");
+  }
+  await repoWatcher.manager.setRepo(repoPath as string | null, force);
 });
 
 app.whenReady().then(() => {

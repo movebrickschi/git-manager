@@ -14,14 +14,15 @@ const loading = ref(false);
 // 请求序号守卫：快速切 commit 时，只让最新一次请求的结果落库，避免迟到的旧请求覆盖当前详情
 let detailLoadSeq = 0;
 watch(
-  () => logStore.selectedCommitId,
-  async (commitId) => {
+  () => [logStore.selectedCommitId, logStore.selectionRefreshToken] as const,
+  async ([commitId]) => {
+    const seq = ++detailLoadSeq;
     const repoPath = repoStore.activeRepo?.path;
     if (!commitId || !repoPath) {
       selectedCommit.value = null;
+      loading.value = false;
       return;
     }
-    const seq = ++detailLoadSeq;
     loading.value = true;
     try {
       const detail = await commands.getCommitDetail(repoPath, commitId);
@@ -104,11 +105,11 @@ function copyHash() {
           <span class="detail-label">引用</span>
           <span class="detail-value refs-value">
             <span
-              v-for="ref in selectedCommit.refs"
-              :key="ref.name"
+              v-for="commitRef in selectedCommit.refs"
+              :key="commitRef.name"
               class="ref-badge"
-              :class="'ref-' + ref.refType"
-              >{{ ref.name }}</span
+              :class="'ref-' + commitRef.refType"
+              >{{ commitRef.name }}</span
             >
           </span>
         </div>
@@ -122,12 +123,15 @@ function copyHash() {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--color-surface);
+  background: var(--color-background);
 }
 
 .pane-header {
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  min-height: var(--panel-header-height);
+  padding: 0 8px;
+  background: var(--color-surface-emphasis);
   flex-shrink: 0;
 }
 
@@ -148,7 +152,7 @@ function copyHash() {
 .details-content {
   flex: 1;
   overflow-y: auto;
-  padding: 8px;
+  padding: 10px;
   user-select: text;
   cursor: text;
 }
@@ -161,7 +165,11 @@ function copyHash() {
 .commit-message {
   font-size: 13px;
   line-height: 1.5;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-md);
+  color: var(--color-foreground-bright);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -227,28 +235,30 @@ function copyHash() {
   height: 18px;
   display: inline-flex;
   align-items: center;
-  border-radius: 3px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   font-size: 10px;
   font-weight: 500;
 }
 
 .ref-head {
-  background: var(--color-branch-head);
-  color: #1e1e1e;
+  background: color-mix(in srgb, var(--color-branch-head) 18%, transparent);
+  color: var(--color-branch-head);
+  border-color: color-mix(in srgb, var(--color-branch-head) 42%, transparent);
 }
 .ref-local {
-  background: rgba(78, 201, 176, 0.2);
+  background: color-mix(in srgb, var(--color-branch-local) 14%, transparent);
   color: var(--color-branch-local);
-  border: 1px solid var(--color-branch-local);
+  border-color: color-mix(in srgb, var(--color-branch-local) 36%, transparent);
 }
 .ref-remote {
-  background: rgba(197, 134, 192, 0.2);
+  background: color-mix(in srgb, var(--color-branch-remote) 14%, transparent);
   color: var(--color-branch-remote);
-  border: 1px solid var(--color-branch-remote);
+  border-color: color-mix(in srgb, var(--color-branch-remote) 36%, transparent);
 }
 .ref-tag {
-  background: rgba(220, 220, 170, 0.2);
+  background: color-mix(in srgb, var(--color-branch-tag) 14%, transparent);
   color: var(--color-branch-tag);
-  border: 1px solid var(--color-branch-tag);
+  border-color: color-mix(in srgb, var(--color-branch-tag) 36%, transparent);
 }
 </style>

@@ -319,25 +319,26 @@ const fetchTitle = computed(() => {
   align-items: center;
   justify-content: space-between;
   height: 24px;
-  padding: 0 10px;
-  background: var(--color-surface);
+  padding: 0 8px;
+  background: var(--color-surface-muted);
   color: var(--color-foreground-muted);
   font-size: 12px;
   flex-shrink: 0;
-  box-shadow: 0 -1px 0 var(--color-border);
+  border-top: 1px solid var(--color-divider);
+  box-shadow: none;
 }
 
 .global-toast {
   position: fixed;
   bottom: 36px;
   right: 16px;
-  background: var(--color-surface-active);
-  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
   color: var(--color-foreground);
   font-size: 12px;
   padding: 8px 16px;
-  border-radius: 4px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-overlay);
   z-index: 9999;
   pointer-events: none;
   white-space: nowrap;
@@ -358,7 +359,8 @@ const fetchTitle = computed(() => {
 .status-bar-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
+  min-width: 0;
 }
 
 .status-item {
@@ -375,20 +377,39 @@ const fetchTitle = computed(() => {
 .repo-path {
   opacity: 0.85;
   font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.theme-toggle {
-  background: none;
+.theme-toggle,
+.auto-fetch-toggle,
+.auto-refresh-toggle,
+.settings-gear-btn {
+  min-width: 22px;
+  min-height: 20px;
+  justify-content: center;
+  background: transparent;
   color: var(--color-foreground-muted);
-  padding: 2px;
+  padding: 2px 4px;
   display: flex;
   align-items: center;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
-.theme-toggle:hover {
+.theme-toggle:hover,
+.auto-fetch-toggle:hover,
+.auto-refresh-toggle:hover,
+.settings-gear-btn:hover {
   background: var(--color-surface-hover);
-  color: var(--color-foreground);
+  color: var(--color-foreground-bright);
+}
+
+.theme-toggle:focus-visible,
+.auto-fetch-toggle:focus-visible,
+.auto-refresh-toggle:focus-visible,
+.settings-gear-btn:focus-visible {
+  box-shadow: var(--focus-ring);
 }
 
 .auto-fetch-wrapper {
@@ -401,10 +422,7 @@ const fetchTitle = computed(() => {
   display: flex;
   align-items: center;
   gap: 3px;
-  background: none;
-  color: var(--color-foreground-muted);
   padding: 2px 6px;
-  border-radius: 3px;
   font-size: 11px;
   opacity: 0.7;
 }
@@ -416,8 +434,14 @@ const fetchTitle = computed(() => {
 }
 
 .auto-fetch-toggle.active {
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
   color: var(--color-primary);
   opacity: 1;
+}
+
+.auto-refresh-toggle.active {
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  color: var(--color-primary);
 }
 
 .auto-fetch-toggle.busy svg {
@@ -440,10 +464,10 @@ const fetchTitle = computed(() => {
   z-index: 1000;
   width: 180px;
   padding: 10px;
-  background: var(--color-surface);
+  background: var(--color-surface-raised);
   border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-overlay);
   color: var(--color-foreground);
 }
 
@@ -462,12 +486,14 @@ const fetchTitle = computed(() => {
 .interval-row input {
   min-width: 0;
   flex: 1;
+  min-height: var(--control-height-compact);
   padding: 4px 6px;
 }
 
 .interval-row button {
+  min-height: var(--control-height-compact);
   padding: 4px 8px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--color-primary);
   color: white;
 }

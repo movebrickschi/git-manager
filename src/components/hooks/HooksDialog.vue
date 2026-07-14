@@ -14,6 +14,7 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { commands } from "@/utils/commands";
 import type { HookInfo } from "@/utils/types";
 import { errText } from "@/utils/error";
+import { useRepoChangeEvents } from "@/composables/useRepoWatcher";
 
 const props = defineProps<{ visible: boolean; repoPath: string }>();
 const emit = defineEmits<{ (e: "update:visible", v: boolean): void }>();
@@ -27,6 +28,8 @@ const editingHook = ref<string | null>(null);
 const editContent = ref("");
 const editBusy = ref(false);
 const editError = ref<string | null>(null);
+let reloadSeq = 0;
+let editLoadSeq = 0;
 
 const DEFAULT_TEMPLATE =
   "#!/bin/sh\n# Git Manager 创建的 hook\n# 退出码非 0 会中止对应的 git 操作\n\nexit 0\n";
@@ -40,14 +43,17 @@ const STATE_LABEL: Record<HookInfo["state"], string> = {
 
 async function reload() {
   if (!props.visible || !props.repoPath) return;
+  const repoPath = props.repoPath;
+  const seq = ++reloadSeq;
   loading.value = true;
   error.value = null;
   try {
-    list.value = await commands.listHooks(props.repoPath);
+    const next = await commands.listHooks(repoPath);
+    if (seq === reloadSeq && props.visible && props.repoPath === repoPath) list.value = next;
   } catch (e) {
-    error.value = errText(e);
+    if (seq === reloadSeq) error.value = errText(e);
   } finally {
-    loading.value = false;
+    if (seq === reloadSeq) loading.value = false;
   }
 }
 
@@ -70,6 +76,9 @@ async function handleDisable(h: HookInfo) {
 }
 
 async function openEditor(h: HookInfo) {
+  const repoPath = props.repoPath;
+  const seq = ++editLoadSeq;
+  editBusy.value = false;
   editingHook.value = h.name;
   editError.value = null;
   if (h.state === "missing") {
@@ -79,17 +88,27 @@ async function openEditor(h: HookInfo) {
   editBusy.value = true;
   editContent.value = "";
   try {
-    editContent.value = await commands.readHookContent(props.repoPath, h.name);
+    const content = await commands.readHookContent(repoPath, h.name);
+    if (
+      seq === editLoadSeq &&
+      props.repoPath === repoPath &&
+      editingHook.value === h.name
+    ) {
+      editContent.value = content;
+    }
   } catch (e) {
-    editError.value = errText(e);
-    editContent.value = DEFAULT_TEMPLATE;
+    if (seq === editLoadSeq) {
+      editError.value = errText(e);
+      editContent.value = DEFAULT_TEMPLATE;
+    }
   } finally {
-    editBusy.value = false;
+    if (seq === editLoadSeq) editBusy.value = false;
   }
 }
 
 async function saveEditor() {
   if (!editingHook.value) return;
+  editLoadSeq += 1;
   editBusy.value = true;
   editError.value = null;
   try {
@@ -104,7 +123,9 @@ async function saveEditor() {
 }
 
 function cancelEditor() {
+  editLoadSeq += 1;
   editingHook.value = null;
+  editBusy.value = false;
   editError.value = null;
 }
 
@@ -132,6 +153,31 @@ watch(
   },
   { immediate: true }
 );
+
+watch(
+  () => props.repoPath,
+  () => {
+    reloadSeq += 1;
+    editLoadSeq += 1;
+    list.value = [];
+    loading.value = false;
+    error.value = null;
+    editingHook.value = null;
+    editContent.value = "";
+    editError.value = null;
+    if (props.visible) void reload();
+  }
+);
+
+useRepoChangeEvents({
+  repoPath: () => props.repoPath,
+  kinds: ["config", "hooks"],
+  onEvent: () => {
+    if (!props.visible) return;
+    // 只刷新列表，不覆盖正在编辑的 editContent。
+    void reload();
+  },
+});
 
 onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 
@@ -235,11 +281,11 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
 .hk-dialog {
   width: min(820px, 94vw);
   max-height: 88vh;
-  background: var(--color-surface);
+  background: var(--color-surface-raised);
   color: var(--color-foreground);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-lg, 10px);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-overlay);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -250,8 +296,7 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
   align-items: center;
   justify-content: space-between;
   padding: 12px 18px;
-  background: var(--color-background);
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-emphasis);
 }
 
 .hk-title {
@@ -341,7 +386,7 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
 }
 
 .hk-table thead {
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-divider);
 }
 
 .hk-table th {
@@ -356,7 +401,14 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
 
 .hk-table td {
   padding: 7px 6px;
-  border-bottom: 1px solid var(--color-border);
+}
+
+.hk-table tbody tr {
+  transition: background var(--transition-fast);
+}
+
+.hk-table tbody tr:hover {
+  background: var(--color-surface-hover);
 }
 
 .hk-name {
@@ -406,8 +458,8 @@ const empty = computed(() => !loading.value && list.value.length === 0 && !error
 }
 
 .hk-editor {
-  border-top: 1px solid var(--color-border);
-  background: var(--color-background);
+  border-top: 1px solid var(--color-divider);
+  background: var(--color-surface-muted);
   padding: 12px 18px;
   display: flex;
   flex-direction: column;

@@ -17,24 +17,24 @@
  */
 import { Router, Request, Response } from "express";
 import { watch, FSWatcher } from "chokidar";
-import * as path from "node:path";
-import { makeIgnoredPredicate } from "../shared/repo-watcher-ignored.js";
+import { type RepoWatcherEventKind } from "../shared/repo-watcher-types.js";
 import {
-  classifyRepoWatcherPath,
-  type RepoWatcherEventKind,
-} from "../shared/repo-watcher-types.js";
+  classifyRepoWatchFile,
+  createRepoWatchIgnoredPredicate,
+  repoWatchFileRequiresContextRefresh,
+  resolveRepoWatchContext,
+} from "./services/_helpers.js";
 
 const router = Router();
 
 const DEBOUNCE_MS = 500;
-const IGNORED_PREDICATE = makeIgnoredPredicate();
 
 function writeSseEvent(res: Response, event: string, data: unknown): void {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
-router.get("/repo/events", (req: Request, res: Response) => {
+router.get("/repo/events", async (req: Request, res: Response) => {
   const repoPath = typeof req.query.repoPath === "string" ? req.query.repoPath : "";
   if (!repoPath) {
     res.status(400).json({ error: "MISSING_REPO_PATH" });
@@ -48,57 +48,25 @@ router.get("/repo/events", (req: Request, res: Response) => {
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders?.();
 
-  writeSseEvent(res, "ready", { repoPath, at: Date.now() });
-
   let watcher: FSWatcher | null = null;
+  let keepAlive: ReturnType<typeof setInterval> | null = null;
+  let settleReadyWait: (() => void) | null = null;
+  let closed = false;
   const debounceTimers = new Map<RepoWatcherEventKind, NodeJS.Timeout>();
-
-  const scheduleEmit = (kind: RepoWatcherEventKind) => {
-    const existing = debounceTimers.get(kind);
-    if (existing) clearTimeout(existing);
-    const timer = setTimeout(() => {
-      debounceTimers.delete(kind);
-      if (res.writableEnded) return;
-      writeSseEvent(res, "repo-changed", { repoPath, at: Date.now(), kind });
-    }, DEBOUNCE_MS);
-    debounceTimers.set(kind, timer);
-  };
-
-  try {
-    watcher = watch(repoPath, {
-      ignored: IGNORED_PREDICATE,
-      ignoreInitial: true,
-      persistent: true,
-      awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
-    });
-
-    watcher.on("all", (_event: string, filePath: string) => {
-      scheduleEmit(classifyRepoWatcherPath(path.relative(repoPath, filePath)));
-    });
-
-    watcher.on("error", (err: unknown) => {
-      console.warn(`[sse] watcher error on ${repoPath}:`, err);
-      if (!res.writableEnded) {
-        writeSseEvent(res, "error", { message: err instanceof Error ? err.message : String(err) });
-      }
-    });
-  } catch (e) {
-    console.error(`[sse] failed to watch ${repoPath}:`, e);
-    writeSseEvent(res, "error", { message: e instanceof Error ? e.message : String(e) });
-    res.end();
-    return;
-  }
-
-  // 保活 ping，避免某些代理 60s 超时
-  const keepAlive = setInterval(() => {
-    if (res.writableEnded) return;
-    res.write(": keep-alive\n\n");
-  }, 30_000);
+  const contextRefreshKinds = new Set<RepoWatcherEventKind>();
 
   const cleanup = () => {
-    clearInterval(keepAlive);
+    if (closed) return;
+    closed = true;
+    if (keepAlive) {
+      clearInterval(keepAlive);
+      keepAlive = null;
+    }
     for (const t of debounceTimers.values()) clearTimeout(t);
     debounceTimers.clear();
+    contextRefreshKinds.clear();
+    settleReadyWait?.();
+    settleReadyWait = null;
     if (watcher) {
       void watcher.close().catch(() => {});
       watcher = null;
@@ -108,6 +76,77 @@ router.get("/repo/events", (req: Request, res: Response) => {
   req.on("close", cleanup);
   req.on("aborted", cleanup);
   res.on("close", cleanup);
+
+  const scheduleEmit = (kind: RepoWatcherEventKind, requiresContextRefresh = false) => {
+    if (closed) return;
+    if (requiresContextRefresh) contextRefreshKinds.add(kind);
+    const existing = debounceTimers.get(kind);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      debounceTimers.delete(kind);
+      if (closed || res.writableEnded) return;
+      writeSseEvent(res, "repo-changed", {
+        repoPath,
+        at: Date.now(),
+        kind,
+        ...(contextRefreshKinds.delete(kind) ? { requiresContextRefresh: true } : {}),
+      });
+    }, DEBOUNCE_MS);
+    debounceTimers.set(kind, timer);
+  };
+
+  try {
+    const context = await resolveRepoWatchContext(repoPath);
+    if (closed) return;
+
+    watcher = watch(context.watchPaths, {
+      ignored: createRepoWatchIgnoredPredicate(context),
+      ignoreInitial: true,
+      persistent: true,
+      awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
+    });
+
+    watcher.on("all", (_event: string, filePath: string) => {
+      scheduleEmit(
+        classifyRepoWatchFile(context, filePath),
+        repoWatchFileRequiresContextRefresh(context, filePath)
+      );
+    });
+
+    watcher.on("error", (err: unknown) => {
+      console.warn(`[sse] watcher error on ${repoPath}:`, err);
+      if (!closed && !res.writableEnded) {
+        writeSseEvent(res, "error", { message: err instanceof Error ? err.message : String(err) });
+      }
+    });
+
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const settle = () => {
+        if (settled) return;
+        settled = true;
+        watcher?.off("ready", settle);
+        if (settleReadyWait === settle) settleReadyWait = null;
+        resolve();
+      };
+      settleReadyWait = settle;
+      watcher!.once("ready", settle);
+    });
+    if (closed || res.writableEnded) return;
+    writeSseEvent(res, "ready", { repoPath, at: Date.now() });
+  } catch (e) {
+    if (closed) return;
+    console.error(`[sse] failed to watch ${repoPath}:`, e);
+    writeSseEvent(res, "error", { message: e instanceof Error ? e.message : String(e) });
+    res.end();
+    return;
+  }
+
+  // 保活 ping，避免某些代理 60s 超时
+  keepAlive = setInterval(() => {
+    if (closed || res.writableEnded) return;
+    res.write(": keep-alive\n\n");
+  }, 30_000);
 });
 
 export default router;

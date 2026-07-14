@@ -1,5 +1,5 @@
 /**
- * Git Hooks Service · 列出 / 读取 / 写入 .git/hooks/ 目录
+ * Git Hooks Service · 列出 / 读取 / 写入 Git 实际 hooks 目录
  *
  * Git 内置 hook 类型（按 git man page 列举的常用）：
  *   pre-commit, prepare-commit-msg, commit-msg, post-commit,
@@ -8,38 +8,15 @@
  *   pre-applypatch, applypatch-msg, post-applypatch, sendemail-validate
  *
  * 启用约定：
- *   - 存在 `.git/hooks/<name>` 文件 → 启用
- *   - 存在 `.git/hooks/<name>.sample` → 模板，未启用
- *   - 存在 `.git/hooks/<name>.disabled` → 用户禁用（重命名而非删除，便于恢复）
+ *   - 存在 `<hooks-dir>/<name>` 文件 → 启用
+ *   - 存在 `<hooks-dir>/<name>.sample` → 模板，未启用
+ *   - 存在 `<hooks-dir>/<name>.disabled` → 用户禁用（重命名而非删除，便于恢复）
  *
  * 不实现：实时验证 hook script 语法 / shell 兼容性 / GPG 签名钩子等高级 case。
  */
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
-
-const KNOWN_HOOKS = [
-  "applypatch-msg",
-  "pre-applypatch",
-  "post-applypatch",
-  "pre-commit",
-  "pre-merge-commit",
-  "prepare-commit-msg",
-  "commit-msg",
-  "post-commit",
-  "pre-rebase",
-  "post-checkout",
-  "post-merge",
-  "pre-push",
-  "pre-receive",
-  "update",
-  "post-receive",
-  "post-update",
-  "push-to-checkout",
-  "pre-auto-gc",
-  "post-rewrite",
-  "sendemail-validate",
-  "fsmonitor-watchman",
-] as const;
+import { getGit, KNOWN_GIT_HOOKS } from "./_helpers.js";
 
 export interface HookInfo {
   /** Hook 名（不含路径与后缀）。 */
@@ -52,9 +29,26 @@ export interface HookInfo {
   size: number | null;
 }
 
+async function resolveHooksDir(repoPath: string): Promise<string> {
+  try {
+    const raw = await getGit(repoPath).raw(["rev-parse", "--git-path", "hooks"]);
+    return path.resolve(repoPath, raw.trim());
+  } catch (error) {
+    // 兼容测试/迁移期仅创建了实体 `.git/` 目录的最小仓库；linked worktree 的
+    // `.git` 是文件，解析失败时不能错误地把 `<worktree>/.git/hooks` 当目录。
+    try {
+      const stat = await fs.stat(path.join(repoPath, ".git"));
+      if (stat.isDirectory()) return path.join(repoPath, ".git", "hooks");
+    } catch {
+      // 继续抛出原始 Git 错误
+    }
+    throw error;
+  }
+}
+
 export const hooksService = {
   async listHooks(repoPath: string): Promise<HookInfo[]> {
-    const hooksDir = path.join(repoPath, ".git", "hooks");
+    const hooksDir = await resolveHooksDir(repoPath);
     const out: HookInfo[] = [];
     let entries: string[];
     try {
@@ -64,7 +58,7 @@ export const hooksService = {
     }
     const fileSet = new Set(entries);
 
-    for (const name of KNOWN_HOOKS) {
+    for (const name of KNOWN_GIT_HOOKS) {
       const enabledFile = path.join(hooksDir, name);
       const sampleFile = enabledFile + ".sample";
       const disabledFile = enabledFile + ".disabled";
@@ -99,10 +93,10 @@ export const hooksService = {
   },
 
   async readHookContent(repoPath: string, hookName: string): Promise<string> {
-    if (!KNOWN_HOOKS.includes(hookName as (typeof KNOWN_HOOKS)[number])) {
+    if (!KNOWN_GIT_HOOKS.includes(hookName as (typeof KNOWN_GIT_HOOKS)[number])) {
       throw new Error(`UNKNOWN_HOOK: ${hookName}`);
     }
-    const hooksDir = path.join(repoPath, ".git", "hooks");
+    const hooksDir = await resolveHooksDir(repoPath);
     const candidates = [
       path.join(hooksDir, hookName),
       path.join(hooksDir, `${hookName}.disabled`),
@@ -120,14 +114,14 @@ export const hooksService = {
 
   /**
    * 写入 hook 内容并设为 enabled 状态。
-   * 自动创建 .git/hooks 目录与可执行权限（POSIX：mode 0o755；Windows 平台 mode 被忽略，
+   * 自动创建实际 hooks 目录与可执行权限（POSIX：mode 0o755；Windows 平台 mode 被忽略，
    * git for Windows 会按 .gitattributes filemode 与 sh.exe 解析 shebang 行）。
    */
   async writeHookContent(repoPath: string, hookName: string, content: string): Promise<void> {
-    if (!KNOWN_HOOKS.includes(hookName as (typeof KNOWN_HOOKS)[number])) {
+    if (!KNOWN_GIT_HOOKS.includes(hookName as (typeof KNOWN_GIT_HOOKS)[number])) {
       throw new Error(`UNKNOWN_HOOK: ${hookName}`);
     }
-    const hooksDir = path.join(repoPath, ".git", "hooks");
+    const hooksDir = await resolveHooksDir(repoPath);
     await fs.mkdir(hooksDir, { recursive: true });
     const target = path.join(hooksDir, hookName);
     const disabled = `${target}.disabled`;
@@ -142,7 +136,7 @@ export const hooksService = {
 
   /** 启用 hook：把 .disabled 重命名回原名。若已是 enabled 则 no-op。 */
   async enableHook(repoPath: string, hookName: string): Promise<void> {
-    const hooksDir = path.join(repoPath, ".git", "hooks");
+    const hooksDir = await resolveHooksDir(repoPath);
     const target = path.join(hooksDir, hookName);
     const disabled = `${target}.disabled`;
     try {
@@ -155,7 +149,7 @@ export const hooksService = {
 
   /** 禁用 hook：把启用文件重命名为 <name>.disabled，便于恢复。 */
   async disableHook(repoPath: string, hookName: string): Promise<void> {
-    const hooksDir = path.join(repoPath, ".git", "hooks");
+    const hooksDir = await resolveHooksDir(repoPath);
     const target = path.join(hooksDir, hookName);
     const disabled = `${target}.disabled`;
     try {

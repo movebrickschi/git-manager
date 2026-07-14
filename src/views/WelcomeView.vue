@@ -257,20 +257,22 @@ async function cloneRepo() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 32px;
-  max-width: 480px;
+  gap: 24px;
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
 }
 
 .welcome-header {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .welcome-header h1 {
-  font-size: 28px;
-  font-weight: 300;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   color: var(--color-foreground-bright);
 }
 
@@ -281,7 +283,7 @@ async function cloneRepo() {
 
 .welcome-actions {
   display: flex;
-  gap: 16px;
+  gap: 8px;
 }
 
 .action-btn {
@@ -289,18 +291,19 @@ async function cloneRepo() {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 24px;
-  background: var(--color-surface);
+  min-height: 36px;
+  padding: 7px 18px;
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  font-size: 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-size: 13px;
   transition: all 0.15s;
 }
 
-.action-btn:hover {
+.action-btn:hover:not(:disabled) {
   background: var(--color-surface-hover);
-  border-color: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
 }
 
 .action-btn.primary {
@@ -313,10 +316,17 @@ async function cloneRepo() {
   background: var(--color-primary-hover);
 }
 
+.action-btn:focus-visible,
+.recent-repo-item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 .recent-repos {
   width: 100%;
   max-height: 260px;
   overflow: auto;
+  padding: 2px;
 }
 
 .recent-repos h3 {
@@ -329,8 +339,9 @@ async function cloneRepo() {
 .recent-repo-empty {
   -webkit-app-region: no-drag;
   padding: 14px 12px;
-  border: 1px dashed var(--color-border);
-  border-radius: 6px;
+  background: var(--color-surface-muted);
+  border: 1px dashed var(--color-divider);
+  border-radius: var(--radius-md);
   color: var(--color-foreground-muted);
   font-size: 12px;
   text-align: center;
@@ -342,9 +353,11 @@ async function cloneRepo() {
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 9px 12px;
+  min-height: 48px;
+  padding: 6px 10px;
   background: transparent;
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   cursor: pointer;
   color: var(--color-foreground);
   font-size: 13px;
@@ -353,6 +366,7 @@ async function cloneRepo() {
 
 .recent-repo-item:hover {
   background: var(--color-surface-hover);
+  border-color: var(--color-divider);
 }
 
 .recent-repo-item:disabled {
@@ -402,7 +416,7 @@ async function cloneRepo() {
   -webkit-app-region: no-drag;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--color-overlay-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -410,14 +424,15 @@ async function cloneRepo() {
 }
 
 .dialog {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 24px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
   min-width: 400px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+  box-shadow: var(--shadow-overlay);
 }
 
 .dialog h3 {
@@ -437,8 +452,11 @@ async function cloneRepo() {
 }
 
 .dialog-field input {
-  padding: 6px 8px;
-  border-radius: 4px;
+  min-height: var(--control-height-regular);
+  padding: 4px 8px;
+  background: var(--color-surface-emphasis);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
 }
 
 .dialog-actions {
@@ -448,11 +466,13 @@ async function cloneRepo() {
 }
 
 .btn {
-  padding: 6px 16px;
-  background: var(--color-surface-hover);
+  min-height: var(--control-height-regular);
+  padding: 4px 16px;
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
-  border-radius: 4px;
-  font-size: 13px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 12px;
 }
 
 .btn:hover {
@@ -469,7 +489,7 @@ async function cloneRepo() {
 }
 
 .error-msg {
-  color: #e06c75;
+  color: var(--color-error);
   font-size: 12px;
   padding: 4px 0;
 }
@@ -480,9 +500,9 @@ async function cloneRepo() {
   gap: 8px;
   padding: 8px 12px;
   background: var(--color-surface-error, rgba(224, 82, 82, 0.12));
-  border: 1px solid var(--color-error, #e05252);
-  color: var(--color-error, #e05252);
-  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--color-error) 48%, transparent);
+  color: var(--color-error);
+  border-radius: var(--radius-md);
   font-size: 13px;
   width: 100%;
   max-width: 480px;
@@ -501,12 +521,12 @@ async function cloneRepo() {
 
 .welcome-error__close {
   background: none;
-  border: none;
+  border: 1px solid transparent;
   color: inherit;
   cursor: pointer;
   font-size: 12px;
   padding: 2px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   opacity: 0.7;
 }
 

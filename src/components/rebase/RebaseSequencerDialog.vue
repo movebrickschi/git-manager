@@ -218,7 +218,7 @@ function effectiveCount(): number {
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-emphasis);
   font-size: 13px;
   color: var(--color-foreground);
 }

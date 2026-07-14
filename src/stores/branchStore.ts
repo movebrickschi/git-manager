@@ -58,6 +58,7 @@ export const useBranchStore = defineStore("branch", () => {
   const repoStore = useRepoStore();
 
   const branchCache = new Map<string, { local: BranchInfo[]; remote: BranchInfo[]; tags: string[] }>();
+  let submodulesLoadSeq = 0;
 
   // 切仓库时清掉跨仓库会污染/误操作的状态：
   // - searchQuery：A 的分支搜索文字带到 B 是 UX bug
@@ -66,6 +67,7 @@ export const useBranchStore = defineStore("branch", () => {
   watch(
     () => repoStore.activeRepo?.path,
     (newPath) => {
+      submodulesLoadSeq += 1;
       searchQuery.value = "";
       submodules.value = [];
       submodulesLoading.value = false;
@@ -324,14 +326,15 @@ export const useBranchStore = defineStore("branch", () => {
   async function loadSubmodules() {
     if (!repoStore.activeRepo) return;
     const repoPath = repoStore.activeRepo.path;
+    const seq = ++submodulesLoadSeq;
     submodulesLoading.value = true;
     try {
       const result = await commands.getSubmodules(repoPath);
-      // 竞态守卫：await 期间用户可能已切到别的仓库，旧仓库 submodule 结果不应覆盖当前显示。
-      if (repoStore.activeRepo?.path !== repoPath) return;
+      // 仓库切换或同仓库的新一轮刷新开始后，旧请求不应覆盖最新子模块状态。
+      if (seq !== submodulesLoadSeq || repoStore.activeRepo?.path !== repoPath) return;
       submodules.value = result;
     } finally {
-      if (repoStore.activeRepo?.path === repoPath) {
+      if (seq === submodulesLoadSeq && repoStore.activeRepo?.path === repoPath) {
         submodulesLoading.value = false;
       }
     }

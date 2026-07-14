@@ -22,6 +22,7 @@ import { useConfirmDialog } from "@/composables/useConfirmDialog";
 import { useFilterRules } from "@/composables/useFilterRules";
 import { useMergeState } from "@/composables/useMergeState";
 import { useMultiSelect } from "@/composables/useMultiSelect";
+import { useRepoChangeEvents } from "@/composables/useRepoWatcher";
 import { useStatusPolling } from "@/composables/useStatusPolling";
 import { useToast } from "@/composables/useToast";
 import type { AiErrorCode } from "../../../shared/ai/types";
@@ -859,6 +860,14 @@ useStatusPolling(async () => {
   await refreshMergeState();
 });
 
+useRepoChangeEvents({
+  repoPath: () => repoStore.activeRepo?.path,
+  kinds: ["merge"],
+  onEvent: () => {
+    void refreshMergeState();
+  },
+});
+
 onMounted(async () => {
   if (!repoStore.activeRepo) return;
   loading.value = true;
@@ -1282,7 +1291,7 @@ watch(
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--color-surface);
+  background: var(--color-background);
 }
 
 .file-panel {
@@ -1290,13 +1299,13 @@ watch(
   display: flex;
   flex-direction: column;
   background: var(--color-surface);
-  border-right: 1px solid var(--color-border);
 }
 
 .file-list {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  padding-bottom: 4px;
 }
 
 .error-message {
@@ -1321,20 +1330,20 @@ watch(
 }
 
 .conflict-section {
-  border-bottom: 1px solid var(--color-border);
-  background: rgba(220, 50, 50, 0.06);
+  margin-bottom: 4px;
+  background: var(--color-surface-error);
 }
 
 .conflict-header {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 8px;
+  min-height: 26px;
+  padding: 3px 8px;
   font-size: 11px;
   font-weight: 600;
-  color: #c04040;
-  background: rgba(220, 50, 50, 0.1);
-  border-bottom: 1px solid rgba(220, 50, 50, 0.25);
+  color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 8%, var(--color-surface-error));
   position: sticky;
   top: 0;
   z-index: 1;
@@ -1351,26 +1360,27 @@ watch(
 .conflict-count {
   font-size: 10px;
   font-weight: 400;
-  background: rgba(220, 50, 50, 0.18);
-  color: #c04040;
+  background: color-mix(in srgb, var(--color-error) 16%, transparent);
+  color: var(--color-error);
   padding: 0 5px;
   border-radius: 8px;
 }
 
 .conflict-resolve-btn {
-  border: 1px solid #c04040;
+  min-height: 22px;
+  border: 1px solid color-mix(in srgb, var(--color-error) 55%, transparent);
   background: transparent;
-  color: #c04040;
+  color: var(--color-error);
   font-size: 11px;
   font-weight: 600;
   padding: 2px 10px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   line-height: 1.4;
 }
 
 .conflict-resolve-btn:hover {
-  background: #c04040;
+  background: var(--color-error);
   color: #fff;
 }
 
@@ -1378,7 +1388,10 @@ watch(
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px 4px 22px;
+  min-height: 26px;
+  margin: 0 4px;
+  padding: 3px 10px 3px 18px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 12px;
   color: var(--color-foreground);
@@ -1388,7 +1401,7 @@ watch(
 }
 
 .conflict-file-item:hover {
-  background: rgba(220, 50, 50, 0.12);
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
 }
 
 .conflict-file-path {
@@ -1400,7 +1413,7 @@ watch(
 
 .conflict-file-action {
   font-size: 11px;
-  color: #c04040;
+  color: var(--color-error);
   text-decoration: underline;
   opacity: 0;
   transition: opacity 0.12s;
@@ -1417,6 +1430,8 @@ watch(
   flex-direction: column;
   gap: 6px;
   position: relative;
+  background: var(--color-surface-muted);
+  border-top: 1px solid var(--color-divider);
 }
 
 .commit-textarea {
@@ -1425,17 +1440,20 @@ watch(
   padding: 6px 8px;
   font-size: 12px;
   font-family: var(--font-sans);
-  border-radius: 3px;
-  background: var(--color-surface-active);
-  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-emphasis);
+  border: 1px solid var(--color-border-strong);
   color: var(--color-foreground);
   box-sizing: border-box;
-  transition: border-color 0.15s;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
 .commit-textarea:focus {
   outline: none;
   border-color: var(--color-primary);
+  box-shadow: var(--focus-ring);
 }
 
 /* Invisible hit strip sitting on top of the textarea's top edge.
@@ -1493,10 +1511,12 @@ watch(
 
 .commit-btn {
   flex: 1;
-  padding: 5px 8px;
+  min-height: var(--control-height-regular);
+  padding: 4px 8px;
   background: var(--color-primary);
   color: white;
-  border-radius: 3px;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
@@ -1513,8 +1533,9 @@ watch(
 }
 
 .push-btn {
-  background: var(--color-surface-active);
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
+  border-color: var(--color-border);
 }
 
 .push-btn:hover:not(:disabled) {
@@ -1525,14 +1546,17 @@ watch(
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--color-surface);
+  background: var(--color-background);
 }
 
 .diff-header {
-  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  min-height: var(--panel-header-height);
+  padding: 0 10px;
   font-size: 11px;
   color: var(--color-foreground-muted);
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-emphasis);
   flex-shrink: 0;
 }
 
@@ -1559,7 +1583,7 @@ watch(
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--color-overlay-backdrop);
   z-index: 9000;
   display: flex;
   align-items: center;
@@ -1567,12 +1591,12 @@ watch(
 }
 
 .modal-dialog {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-overlay);
   overflow: hidden;
 }
 
@@ -1601,8 +1625,9 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--color-border);
+  min-height: var(--panel-header-height);
+  padding: 4px 14px;
+  background: var(--color-surface-emphasis);
   flex-shrink: 0;
 }
 
@@ -1618,12 +1643,12 @@ watch(
 
 .modal-close {
   background: none;
-  border: none;
+  border: 1px solid transparent;
   color: var(--color-foreground-muted);
   cursor: pointer;
   font-size: 14px;
   padding: 2px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   line-height: 1;
 }
 
@@ -1659,9 +1684,9 @@ watch(
   padding: 10px 12px;
   font-size: 12px;
   font-family: var(--font-sans);
-  border-radius: 4px;
-  background: var(--color-surface-active);
-  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-emphasis);
+  border: 1px solid var(--color-border-strong);
   color: var(--color-foreground);
   resize: vertical;
   box-sizing: border-box;
@@ -1670,6 +1695,7 @@ watch(
 .modal-textarea:focus {
   outline: none;
   border-color: var(--color-primary);
+  box-shadow: var(--focus-ring);
 }
 
 .modal-hint {
@@ -1683,16 +1709,18 @@ watch(
   justify-content: flex-end;
   gap: 8px;
   padding: 10px 14px;
-  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  border-top: 1px solid var(--color-divider);
   flex-shrink: 0;
 }
 
 .modal-btn {
-  padding: 5px 14px;
+  min-height: var(--control-height-regular);
+  padding: 4px 14px;
   font-size: 12px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  background: var(--color-surface-active);
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
   border: 1px solid var(--color-border);
 }
@@ -1722,13 +1750,13 @@ watch(
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--color-surface-active);
-  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
   color: var(--color-foreground);
   font-size: 12px;
   padding: 7px 16px;
-  border-radius: 4px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-overlay);
   z-index: 9999;
   pointer-events: none;
   white-space: nowrap;
@@ -1759,13 +1787,13 @@ watch(
   min-height: 400px;
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 60px);
-  background: var(--color-surface);
-  border-radius: 8px;
+  background: var(--color-surface-raised);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--color-border);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--color-border-strong);
+  box-shadow: var(--shadow-overlay);
   resize: both;
 }
 
@@ -1773,10 +1801,11 @@ watch(
   position: relative;
   display: flex;
   align-items: center;
-  padding: 8px 14px;
+  min-height: var(--panel-header-height);
+  padding: 4px 14px;
   padding-right: 44px;
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-emphasis);
+  border-bottom: 1px solid var(--color-divider);
   font-size: 13px;
   font-weight: 500;
   flex-shrink: 0;
@@ -1799,20 +1828,20 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-surface-hover);
-  border: 1px solid var(--color-border);
+  background: transparent;
+  border: 1px solid transparent;
   color: var(--color-foreground);
   font-size: 13px;
   padding: 0;
   line-height: 1;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 
 .merge-dialog-header .modal-close:hover {
-  background: #c04040;
+  background: var(--color-error);
   color: #fff;
-  border-color: #c04040;
+  border-color: var(--color-error);
 }
 
 .merge-dialog-body {
@@ -1832,11 +1861,12 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 5px 8px;
-  background: var(--color-surface-active);
+  min-height: var(--control-height-regular);
+  padding: 4px 8px;
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
   border: 1px solid var(--color-border);
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
@@ -1904,10 +1934,10 @@ watch(
   left: 0;
   min-width: 200px;
   max-width: 320px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-overlay);
   padding: 4px 0;
   z-index: 50;
 }
@@ -1935,7 +1965,7 @@ watch(
 
 .ai-menu-divider {
   height: 1px;
-  background: var(--color-border);
+  background: var(--color-divider);
   margin: 4px 0;
 }
 
@@ -1960,10 +1990,10 @@ watch(
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
-  background: var(--color-surface-active);
-  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface-emphasis));
+  border: 1px solid color-mix(in srgb, var(--color-primary) 24%, var(--color-border));
   border-left: 3px solid var(--color-primary);
-  border-radius: 3px;
+  border-radius: var(--radius-md);
 }
 
 .ai-confirm-text {
@@ -1973,12 +2003,13 @@ watch(
 }
 
 .ai-confirm-btn {
-  padding: 4px 10px;
+  min-height: var(--control-height-compact);
+  padding: 3px 10px;
   font-size: 11px;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   border: 1px solid var(--color-border);
-  background: var(--color-surface);
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
 }
 

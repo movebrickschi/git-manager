@@ -50,7 +50,7 @@ defineEmits<{
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--color-overlay-backdrop);
   z-index: 9000;
   display: flex;
   align-items: center;
@@ -58,25 +58,27 @@ defineEmits<{
 }
 
 .modal-dialog {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-overlay);
   overflow: hidden;
 }
 
 .confirm-modal {
   width: 400px;
+  max-width: calc(100vw - 32px);
 }
 
 .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--color-border);
+  min-height: var(--panel-header-height);
+  padding: 4px 14px;
+  background: var(--color-surface-emphasis);
   flex-shrink: 0;
 }
 
@@ -104,7 +106,7 @@ defineEmits<{
   line-height: 1.5;
   margin: 0;
   white-space: pre-wrap;
-  word-break: break-all;
+  word-break: break-word;
   max-height: 50vh;
   overflow-y: auto;
 }
@@ -114,16 +116,18 @@ defineEmits<{
   justify-content: flex-end;
   gap: 8px;
   padding: 10px 14px;
-  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  border-top: 1px solid var(--color-divider);
   flex-shrink: 0;
 }
 
 .modal-btn {
-  padding: 5px 14px;
+  min-height: var(--control-height-regular);
+  padding: 4px 14px;
   font-size: 12px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  background: var(--color-surface-active);
+  background: var(--color-surface-emphasis);
   color: var(--color-foreground);
   border: 1px solid var(--color-border);
 }
@@ -143,9 +147,9 @@ defineEmits<{
 }
 
 .modal-btn.danger {
-  background: var(--color-error, #e05252);
+  background: var(--color-error);
   color: white;
-  border-color: transparent;
+  border-color: var(--color-error);
 }
 
 .modal-btn.danger:hover {

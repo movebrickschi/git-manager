@@ -70,7 +70,7 @@ function onCheckboxClick(path: string): void {
 </script>
 
 <template>
-  <div v-if="section.files.length > 0 || section.hiddenCount > 0">
+  <div v-if="section.files.length > 0 || section.hiddenCount > 0" class="file-section">
     <div class="section-header">
       <input
         ref="headerCheckboxRef"
@@ -121,28 +121,35 @@ function onCheckboxClick(path: string): void {
 </template>
 
 <style scoped>
+.file-section + .file-section {
+  margin-top: 4px;
+}
+
 .section-header {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
+  min-height: 24px;
+  padding: 2px 8px;
   font-size: 11px;
   font-weight: 600;
   color: var(--color-foreground-muted);
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
   position: sticky;
   top: 0;
   z-index: 1;
 }
 
 .section-count {
+  min-width: 16px;
   font-size: 10px;
   color: var(--color-foreground-muted);
-  background: var(--color-surface-active);
+  background: var(--color-surface-emphasis);
   padding: 0 5px;
-  border-radius: 8px;
+  border-radius: 999px;
   font-weight: 400;
+  text-align: center;
+  font-feature-settings: "tnum";
 }
 
 .section-hidden {
@@ -155,7 +162,10 @@ function onCheckboxClick(path: string): void {
 .file-item {
   display: flex;
   align-items: center;
-  padding: 3px 8px;
+  min-height: 26px;
+  margin: 0 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   gap: 6px;
   font-size: 12px;
@@ -163,7 +173,7 @@ function onCheckboxClick(path: string): void {
      消除几百上千变更时的滚动/刷新卡顿；DOM 仍在，交互与 sticky header 不受影响。
      contain-intrinsic-size 的 auto 让浏览器渲染过一次后记住真实高度，避免滚动条跳动。 */
   content-visibility: auto;
-  contain-intrinsic-size: auto 22px;
+  contain-intrinsic-size: auto 26px;
 }
 
 .file-item:hover {
@@ -171,11 +181,12 @@ function onCheckboxClick(path: string): void {
 }
 
 .file-item.selected {
-  background: var(--color-surface-active);
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
+  box-shadow: inset 2px 0 0 var(--color-primary);
 }
 
 .file-item.checked {
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
 }
 
 .file-item.checked:hover {
@@ -183,7 +194,8 @@ function onCheckboxClick(path: string): void {
 }
 
 .file-item.checked.selected {
-  background: color-mix(in srgb, var(--color-primary) 22%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 18%, var(--color-surface));
+  box-shadow: inset 2px 0 0 var(--color-primary);
 }
 
 .row-checkbox {

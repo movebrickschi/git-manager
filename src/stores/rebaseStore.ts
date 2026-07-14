@@ -16,6 +16,7 @@ import { useRepoStore } from "./repoStore";
 import { useBranchStore } from "./branchStore";
 import { commands } from "@/utils/commands";
 import { refreshGit } from "@/composables/useGitRefresh";
+import { useRepoChangeEvents } from "@/composables/useRepoWatcher";
 import { errText } from "@/utils/error";
 import { translateGitError } from "@/utils/git-error";
 import type {
@@ -62,6 +63,7 @@ export const useRebaseStore = defineStore("rebase", () => {
   });
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let statusRefreshSeq = 0;
 
   /**
    * Continue / Abort 是否正在执行中。
@@ -189,6 +191,7 @@ export const useRebaseStore = defineStore("rebase", () => {
   }
 
   async function refreshStatus(): Promise<void> {
+    const seq = ++statusRefreshSeq;
     if (!repoStore.activeRepo) {
       status.value = {
         inProgress: false,
@@ -205,7 +208,7 @@ export const useRebaseStore = defineStore("rebase", () => {
       const next = await commands.getRebaseStatus(repoPath);
       // 竞态守卫：2s 轮询与切仓库 watch 会并发触发；await 期间若已切到别的仓库，
       // 旧仓库的 rebase 进度不能覆盖当前仓库的状态栏。
-      if (repoStore.activeRepo?.path !== repoPath) return;
+      if (seq !== statusRefreshSeq || repoStore.activeRepo?.path !== repoPath) return;
       status.value = next;
     } catch {
       // 状态查询失败时保留旧值，避免 UI 抖动
@@ -245,6 +248,14 @@ export const useRebaseStore = defineStore("rebase", () => {
       void refreshStatus();
     }
   );
+
+  useRepoChangeEvents({
+    repoPath: () => repoStore.activeRepo?.path,
+    kinds: ["merge"],
+    onEvent: () => {
+      void refreshStatus();
+    },
+  });
 
   async function continueRebase(): Promise<void> {
     if (!repoStore.activeRepo) return;

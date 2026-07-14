@@ -127,8 +127,9 @@ defineEmits<{
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--color-border);
+  min-height: var(--panel-header-height);
+  padding: 2px 8px;
+  background: var(--color-surface-muted);
   flex-shrink: 0;
 }
 
@@ -139,19 +140,22 @@ defineEmits<{
 }
 
 .panel-count {
+  min-width: 16px;
   font-size: 10px;
   color: var(--color-foreground-muted);
-  background: var(--color-surface-active);
+  background: var(--color-surface-emphasis);
   padding: 0 6px;
-  border-radius: 8px;
+  border-radius: 999px;
+  text-align: center;
+  font-feature-settings: "tnum";
 }
 
 .panel-hidden-count {
   font-size: 10px;
   color: var(--color-foreground-muted);
-  background: var(--color-surface-active);
+  background: var(--color-surface-emphasis);
   padding: 0 5px;
-  border-radius: 8px;
+  border-radius: 999px;
   font-style: italic;
 }
 
@@ -166,17 +170,20 @@ defineEmits<{
   display: flex;
   align-items: center;
   justify-content: center;
-  background: none;
+  width: 24px;
+  height: 24px;
+  background: transparent;
   color: var(--color-foreground-muted);
-  padding: 3px;
-  border-radius: 3px;
+  padding: 0;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  border: none;
+  border: 1px solid transparent;
 }
 
 .action-btn:hover:not(:disabled) {
   background: var(--color-surface-hover);
   color: var(--color-foreground);
+  border-color: var(--color-divider);
 }
 
 .action-btn.has-rules {
@@ -184,7 +191,7 @@ defineEmits<{
 }
 
 .action-btn.active {
-  background: var(--color-surface-active);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface-emphasis));
   color: var(--color-primary);
 }
 

@@ -4,6 +4,7 @@ import { Splitpanes, Pane } from "splitpanes";
 import "splitpanes/dist/splitpanes.css";
 import { useRepoStore } from "@/stores/repoStore";
 import { commands } from "@/utils/commands";
+import { clampScrollPosition, mapScrollPosition } from "@/utils/merge-scroll-map";
 import type * as MonacoNS from "monaco-editor";
 
 let monaco: typeof MonacoNS | null = null;
@@ -143,8 +144,17 @@ const connectorOverlay = ref({
   leftPath: "",
   rightPath: "",
 });
+type SidePanelName = "left" | "right";
+type MergeScrollSource = "editor" | SidePanelName;
+
 let scrollSyncRaf = 0;
 let connectorRaf = 0;
+let pendingScrollSource: MergeScrollSource | null = null;
+let expectedEditorScrollTop: number | null = null;
+const expectedSideScrollTops: Record<SidePanelName, number | null> = {
+  left: null,
+  right: null,
+};
 
 const MERGE_LINE_HEIGHT = 20;
 
@@ -531,7 +541,8 @@ async function initMonaco() {
 
   monacoDisposables.push(monacoEditor.onDidScrollChange((e) => {
     if (e.scrollTopChanged || e.scrollHeightChanged) {
-      scheduleEditorScrollSync();
+      if (consumeExpectedEditorScroll()) scheduleConnectorUpdate();
+      else scheduleEditorScrollSync();
     } else if (e.scrollLeftChanged) {
       scheduleConnectorUpdate();
     }
@@ -639,7 +650,11 @@ function findHunkLineInResult(targetIndex: number): number | null {
 // Returns true when the hunk node was found and the scroll was applied —
 // caller uses this to retry on the next animation frame when the v-for
 // hasn't rendered the row yet (large files only).
-function scrollSidePanelToHunk(panel: HTMLElement | null, index: number): boolean {
+function scrollSidePanelToHunk(
+  side: SidePanelName,
+  panel: HTMLElement | null,
+  index: number
+): boolean {
   if (!panel) return false;
   const node = panel.querySelector<HTMLElement>(`[data-hunk-index="${index}"]`);
   if (!node) return false;
@@ -648,13 +663,56 @@ function scrollSidePanelToHunk(panel: HTMLElement | null, index: number): boolea
   const top = panel.scrollTop + (nodeRect.top - panelRect.top) - 12;
   // Instant scroll keeps left/right in lockstep with Monaco's revealLineInCenter
   // (Monaco does not animate). Smooth here desyncs the three panes visually.
-  panel.scrollTop = Math.max(0, top);
+  setSidePanelScrollTop(side, panel, top);
   return true;
 }
 
-function clampScrollTop(panel: HTMLElement, value: number): number {
-  const max = Math.max(0, panel.scrollHeight - panel.clientHeight);
-  return Math.min(max, Math.max(0, value));
+function panelForSide(side: SidePanelName): HTMLElement | null {
+  return side === "left" ? leftPanel.value : rightPanel.value;
+}
+
+function setSidePanelScrollTop(
+  side: SidePanelName,
+  panel: HTMLElement,
+  value: number
+): void {
+  const top = clampScrollPosition(value, panel.scrollHeight, panel.clientHeight);
+  if (Math.abs(panel.scrollTop - top) < 0.5) return;
+  expectedSideScrollTops[side] = top;
+  panel.scrollTop = top;
+}
+
+function setEditorScrollTop(value: number): void {
+  if (!monacoEditor) return;
+  const top = clampScrollPosition(
+    value,
+    monacoEditor.getScrollHeight(),
+    monacoEditor.getLayoutInfo().height
+  );
+  if (Math.abs(monacoEditor.getScrollTop() - top) < 0.5) return;
+  expectedEditorScrollTop = top;
+  monacoEditor.setScrollTop(top);
+}
+
+function consumeExpectedEditorScroll(): boolean {
+  if (!monacoEditor || expectedEditorScrollTop == null) return false;
+  const expected = expectedEditorScrollTop;
+  expectedEditorScrollTop = null;
+  return Math.abs(monacoEditor.getScrollTop() - expected) < 0.5;
+}
+
+function onSidePanelScroll(side: SidePanelName): void {
+  const panel = panelForSide(side);
+  if (!panel) return;
+
+  const expected = expectedSideScrollTops[side];
+  expectedSideScrollTops[side] = null;
+  if (expected != null && Math.abs(panel.scrollTop - expected) < 0.5) {
+    scheduleConnectorUpdate();
+    return;
+  }
+
+  scheduleScrollSync(side);
 }
 
 function sideHunkTop(panel: HTMLElement, index: number): number | null {
@@ -667,17 +725,6 @@ function sideHunkTop(panel: HTMLElement, index: number): number | null {
 
 function resultHunkLineStarts(): number[] {
   return hunks.value.map((h) => findHunkLineInResult(h.index) ?? h.resultStartLine);
-}
-
-function hunkIndexForResultLine(line: number): number | null {
-  const starts = resultHunkLineStarts();
-  if (starts.length === 0) return null;
-  let best = 0;
-  for (let i = 0; i < starts.length; i++) {
-    if (starts[i]! <= line) best = i;
-    else break;
-  }
-  return best;
 }
 
 function nearestHunkIndexForResultLine(line: number): number | null {
@@ -695,52 +742,60 @@ function nearestHunkIndexForResultLine(line: number): number | null {
   return best;
 }
 
-function syncSidePanelToResultLine(panel: HTMLElement | null, resultLine: number): void {
-  if (!panel || hunks.value.length === 0) return;
-  const starts = resultHunkLineStarts();
-  const firstLine = starts[0] ?? 1;
+function scrollAnchors(panel: HTMLElement): {
+  editor: number[];
+  side: number[];
+} {
+  const resultStarts = resultHunkLineStarts();
+  const editor: number[] = [];
+  const side: number[] = [];
 
-  if (resultLine < firstLine) {
-    panel.scrollTop = clampScrollTop(panel, (resultLine - 1) * MERGE_LINE_HEIGHT);
-    return;
+  for (let index = 0; index < resultStarts.length; index++) {
+    const sideTop = sideHunkTop(panel, index);
+    if (sideTop == null) continue;
+    editor.push(Math.max(0, (resultStarts[index]! - 1) * MERGE_LINE_HEIGHT));
+    side.push(Math.max(0, sideTop - 12));
   }
 
-  const beforeIdx = hunkIndexForResultLine(resultLine);
-  if (beforeIdx == null) return;
+  return { editor, side };
+}
 
-  const beforeLine = starts[beforeIdx]!;
-  const beforeTop = sideHunkTop(panel, beforeIdx);
-  if (beforeTop == null) return;
-
-  const afterIdx = beforeIdx + 1;
-  const afterLine = starts[afterIdx];
-  const afterTop = afterLine == null ? null : sideHunkTop(panel, afterIdx);
-
-  let targetTop: number;
-  if (afterLine != null && afterTop != null && afterLine > beforeLine) {
-    const ratio = (resultLine - beforeLine) / (afterLine - beforeLine);
-    targetTop = beforeTop + (afterTop - beforeTop) * ratio;
-  } else {
-    targetTop = beforeTop + (resultLine - beforeLine) * MERGE_LINE_HEIGHT;
-  }
-
-  panel.scrollTop = clampScrollTop(panel, targetTop - 12);
+function syncSidePanelToEditorTop(
+  side: SidePanelName,
+  editorTop: number
+): void {
+  const panel = panelForSide(side);
+  if (!panel) return;
+  const anchors = scrollAnchors(panel);
+  const targetTop = mapScrollPosition(editorTop, anchors.editor, anchors.side);
+  setSidePanelScrollTop(side, panel, targetTop);
 }
 
 function syncSidePanelsToEditorScroll(): void {
   if (!monacoEditor) return;
+  const editorTop = monacoEditor.getScrollTop();
+  syncSidePanelToEditorTop("left", editorTop);
+  syncSidePanelToEditorTop("right", editorTop);
+
   const topLine = Math.max(
     1,
-    Math.floor(monacoEditor.getScrollTop() / MERGE_LINE_HEIGHT) + 1
+    Math.floor(editorTop / MERGE_LINE_HEIGHT) + 1
   );
-  syncSidePanelToResultLine(leftPanel.value, topLine);
-  syncSidePanelToResultLine(rightPanel.value, topLine);
 
   const visibleLines = Math.max(1, Math.floor(monacoEditor.getLayoutInfo().height / MERGE_LINE_HEIGHT));
   const activeIndex = nearestHunkIndexForResultLine(topLine + Math.floor(visibleLines * 0.35));
   if (activeIndex != null && activeIndex !== currentHunkIndex.value) {
     currentHunkIndex.value = activeIndex;
   }
+}
+
+function syncFromSidePanel(side: SidePanelName): void {
+  const panel = panelForSide(side);
+  if (!panel || !monacoEditor) return;
+  const anchors = scrollAnchors(panel);
+  const editorTop = mapScrollPosition(panel.scrollTop, anchors.side, anchors.editor);
+  setEditorScrollTop(editorTop);
+  syncSidePanelsToEditorScroll();
 }
 
 function curvePath(x1: number, y1: number, x2: number, y2: number): string {
@@ -819,13 +874,24 @@ function scheduleConnectorUpdate(): void {
   });
 }
 
-function scheduleEditorScrollSync(): void {
+function scheduleScrollSync(source: MergeScrollSource): void {
+  pendingScrollSource = source;
   if (scrollSyncRaf) return;
   scrollSyncRaf = requestAnimationFrame(() => {
     scrollSyncRaf = 0;
-    syncSidePanelsToEditorScroll();
+    const nextSource = pendingScrollSource;
+    pendingScrollSource = null;
+    if (nextSource === "left" || nextSource === "right") {
+      syncFromSidePanel(nextSource);
+    } else {
+      syncSidePanelsToEditorScroll();
+    }
     updateConnectorOverlay();
   });
+}
+
+function scheduleEditorScrollSync(): void {
+  scheduleScrollSync("editor");
 }
 
 // IDEA-style synchronized navigation: clicking prev/next moves left, center,
@@ -844,8 +910,8 @@ function scrollEditorToHunk(index: number) {
   }
   // First attempt synchronously — fast path for files small enough that the
   // v-for has already laid out by the time the user clicks prev/next.
-  const leftOk = scrollSidePanelToHunk(leftPanel.value, index);
-  const rightOk = scrollSidePanelToHunk(rightPanel.value, index);
+  const leftOk = scrollSidePanelToHunk("left", leftPanel.value, index);
+  const rightOk = scrollSidePanelToHunk("right", rightPanel.value, index);
   if (leftOk && rightOk) {
     scheduleConnectorUpdate();
     return;
@@ -854,8 +920,8 @@ function scrollEditorToHunk(index: number) {
   // very first call right after loadFile completes on a 10k-line file).
   if (typeof requestAnimationFrame !== "function") return;
   requestAnimationFrame(() => {
-    scrollSidePanelToHunk(leftPanel.value, index);
-    scrollSidePanelToHunk(rightPanel.value, index);
+    scrollSidePanelToHunk("left", leftPanel.value, index);
+    scrollSidePanelToHunk("right", rightPanel.value, index);
     updateConnectorOverlay();
   });
   scheduleConnectorUpdate();
@@ -1236,7 +1302,7 @@ onBeforeUnmount(() => {
               >你的代码</span>
               <span class="head-lines">{{ hunks.length }} 处冲突</span>
             </div>
-            <div ref="leftPanel" class="side-panel" @scroll="scheduleConnectorUpdate">
+            <div ref="leftPanel" class="side-panel" @scroll="onSidePanelScroll('left')">
             <div class="side-panel-inner">
             <template
               v-for="seg in segments"
@@ -1333,7 +1399,7 @@ onBeforeUnmount(() => {
               >你的代码</span>
               <span class="head-lines">{{ hunks.length }} 处冲突</span>
             </div>
-            <div ref="rightPanel" class="side-panel" @scroll="scheduleConnectorUpdate">
+            <div ref="rightPanel" class="side-panel" @scroll="onSidePanelScroll('right')">
             <div class="side-panel-inner">
             <template
               v-for="seg in segments"
@@ -1495,8 +1561,8 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: var(--color-surface);
-  border-right: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  border-right: 1px solid var(--color-divider);
   overflow-y: auto;
 }
 
@@ -1505,7 +1571,7 @@ onBeforeUnmount(() => {
   font-size: 11px;
   font-weight: 600;
   color: var(--color-foreground-muted);
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-emphasis);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -1518,7 +1584,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
   font-size: 12px;
   color: var(--color-foreground);
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+  transition: background var(--transition-fast);
 }
 
 .sidebar-file:hover {
@@ -1580,7 +1646,6 @@ onBeforeUnmount(() => {
   gap: 10px;
   padding: 6px 12px;
   font-size: 12px;
-  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
@@ -1632,8 +1697,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 4px;
   padding: 5px 10px;
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
   flex-shrink: 0;
   flex-wrap: wrap;
   min-height: 34px;
@@ -1652,7 +1716,7 @@ onBeforeUnmount(() => {
 .toolbar-sep {
   width: 1px;
   height: 16px;
-  background: var(--color-border);
+  background: var(--color-divider);
   margin: 0 3px;
   flex-shrink: 0;
 }
@@ -1753,7 +1817,6 @@ onBeforeUnmount(() => {
   padding: 4px 10px;
   font-size: 11px;
   font-weight: 600;
-  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
@@ -1904,8 +1967,7 @@ onBeforeUnmount(() => {
   gap: 4px;
   padding: 2px 6px;
   height: 22px;
-  border-top: 1px solid var(--color-border);
-  border-bottom: 1px solid var(--color-border);
+  border-top: 1px solid var(--color-divider);
   flex-shrink: 0;
 }
 

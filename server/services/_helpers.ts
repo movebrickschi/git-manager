@@ -4,6 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { simpleGit, type SimpleGit } from "simple-git";
+import { makeIgnoredPredicate } from "../../shared/repo-watcher-ignored.js";
+import {
+  classifyGitMetadataPath,
+  classifyRepoWatcherPath,
+  type RepoWatcherEventKind,
+} from "../../shared/repo-watcher-types.js";
 
 const execFile = promisify(execFileCb);
 import type {
@@ -264,6 +270,277 @@ export function getGit(repoPath: string): SimpleGit {
  */
 export function getRemoteGit(repoPath: string): SimpleGit {
   return getOrCreateGit(repoPath);
+}
+
+export interface RepoWatchContext {
+  repoPath: string;
+  gitDir: string;
+  commonDir: string;
+  hooksDir?: string;
+  submoduleRoots: string[];
+  /** 已去重的 chokidar 入口；被忽略父目录遮挡的 hooks/submodule 会保留显式入口。 */
+  watchPaths: string[];
+}
+
+export const KNOWN_GIT_HOOKS = [
+  "applypatch-msg",
+  "pre-applypatch",
+  "post-applypatch",
+  "pre-commit",
+  "pre-merge-commit",
+  "prepare-commit-msg",
+  "commit-msg",
+  "post-commit",
+  "pre-rebase",
+  "post-checkout",
+  "post-merge",
+  "pre-push",
+  "pre-receive",
+  "update",
+  "post-receive",
+  "post-update",
+  "push-to-checkout",
+  "pre-auto-gc",
+  "post-rewrite",
+  "sendemail-validate",
+  "fsmonitor-watchman",
+] as const;
+
+const KNOWN_GIT_HOOK_SET = new Set<string>(KNOWN_GIT_HOOKS);
+
+function repoWatchPathKey(input: string): string {
+  const resolved = path.resolve(input);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+function isRepoWatchPathWithin(parent: string, candidate: string): boolean {
+  const relative = path.relative(parent, candidate);
+  return (
+    relative === "" ||
+    (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))
+  );
+}
+
+/** 去掉相同路径与被另一个入口覆盖的子路径，避免 chokidar 重复监听/重复发事件。 */
+export function dedupeRepoWatchPaths(paths: string[]): string[] {
+  const unique = new Map<string, string>();
+  for (const input of paths) {
+    const resolved = path.resolve(input);
+    unique.set(repoWatchPathKey(resolved), resolved);
+  }
+
+  const candidates = [...unique.values()].sort((a, b) => a.length - b.length);
+  const result: string[] = [];
+  for (const candidate of candidates) {
+    if (result.some((parent) => isRepoWatchPathWithin(parent, candidate))) continue;
+    result.push(candidate);
+  }
+  return result;
+}
+
+function hasIgnoredAncestor(
+  watchedRoot: string,
+  target: string,
+  ignored: (filePath: string) => boolean
+): boolean {
+  let current = path.dirname(target);
+  while (repoWatchPathKey(current) !== repoWatchPathKey(watchedRoot)) {
+    if (!isRepoWatchPathWithin(watchedRoot, current)) return false;
+    if (ignored(current)) return true;
+    const parent = path.dirname(current);
+    if (parent === current) return false;
+    current = parent;
+  }
+  return false;
+}
+
+function buildRepoWatchPaths(basePaths: string[], explicitPaths: string[]): string[] {
+  const watchPaths = dedupeRepoWatchPaths(basePaths);
+  const defaultIgnored = makeIgnoredPredicate();
+
+  for (const input of explicitPaths) {
+    const target = path.resolve(input);
+    const coveringRoots = watchPaths.filter((root) => isRepoWatchPathWithin(root, target));
+    const hasUsableCoveringRoot = coveringRoots.some(
+      (root) => !hasIgnoredAncestor(root, target, defaultIgnored)
+    );
+    if (hasUsableCoveringRoot) continue;
+    if (watchPaths.some((entry) => repoWatchPathKey(entry) === repoWatchPathKey(target))) continue;
+    watchPaths.push(target);
+  }
+
+  return watchPaths;
+}
+
+function isKnownHookWatchPath(hooksDir: string | undefined, filePath: string): boolean {
+  if (!hooksDir || !isRepoWatchPathWithin(hooksDir, filePath)) return false;
+  const relative = path.relative(hooksDir, filePath).replace(/\\/g, "/");
+  if (relative === "") return true;
+  if (relative.includes("/")) return false;
+  const hookName = relative.replace(/\.(?:sample|disabled)$/, "");
+  return KNOWN_GIT_HOOK_SET.has(hookName);
+}
+
+async function resolveSubmoduleRoots(repoPath: string): Promise<string[]> {
+  const git = getGit(repoPath);
+  try {
+    const raw = await git.raw([
+      "config",
+      "--file",
+      ".gitmodules",
+      "--get-regexp",
+      "^submodule\\..*\\.path$",
+    ]);
+    const roots = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const separator = line.search(/\s/);
+        return separator < 0 ? "" : line.slice(separator).trim();
+      })
+      .filter(Boolean)
+      .map((submodulePath) => path.resolve(repoPath, submodulePath))
+      .filter(
+        (root) =>
+          root !== path.resolve(repoPath) && isRepoWatchPathWithin(repoPath, root)
+      );
+    return dedupeRepoWatchPaths(roots);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 只用统一 simple-git 实例解析工作区、实际 git-dir/common-dir 与 hooks 目录。
+ * linked worktree 的 `.git` 是文本指针，rev-parse 会返回主仓库中的真实元数据目录。
+ */
+export async function resolveRepoWatchContext(repoPath: string): Promise<RepoWatchContext> {
+  const resolvedRepoPath = path.resolve(repoPath);
+  const git = getGit(resolvedRepoPath);
+  const raw = await git.raw([
+    "rev-parse",
+    "--git-dir",
+    "--git-common-dir",
+    "--git-path",
+    "hooks",
+  ]);
+  const values = raw
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (values.length < 2) {
+    throw new Error(`Unable to resolve Git metadata directories for ${resolvedRepoPath}`);
+  }
+
+  const gitDir = path.resolve(resolvedRepoPath, values[0]!);
+  const commonDir = path.resolve(resolvedRepoPath, values[1]!);
+  const hooksDir = path.resolve(resolvedRepoPath, values[2] ?? path.join(commonDir, "hooks"));
+  const submoduleRoots = await resolveSubmoduleRoots(resolvedRepoPath);
+  const watchPaths = buildRepoWatchPaths(
+    [resolvedRepoPath, gitDir, commonDir],
+    [hooksDir, ...submoduleRoots]
+  );
+  return {
+    repoPath: resolvedRepoPath,
+    gitDir,
+    commonDir,
+    hooksDir,
+    submoduleRoots,
+    watchPaths,
+  };
+}
+
+/** 将 chokidar 的绝对事件路径映射到统一事件类型。 */
+export function classifyRepoWatchFile(
+  context: RepoWatchContext,
+  filePath: string
+): RepoWatcherEventKind {
+  const absolute = path.resolve(filePath);
+  if (isKnownHookWatchPath(context.hooksDir, absolute)) return "hooks";
+  const metadataRoots = [...new Set([context.gitDir, context.commonDir])].sort(
+    (a, b) => b.length - a.length
+  );
+  const isPrimaryRoot = [context.repoPath, ...metadataRoots].some(
+    (root) => repoWatchPathKey(root) === repoWatchPathKey(absolute)
+  );
+  if (!isPrimaryRoot) {
+    if (context.hooksDir && isRepoWatchPathWithin(absolute, context.hooksDir)) return "hooks";
+    if (context.submoduleRoots.some((root) => isRepoWatchPathWithin(absolute, root))) {
+      return "submodule";
+    }
+  }
+
+  for (const root of metadataRoots) {
+    if (isRepoWatchPathWithin(root, absolute)) {
+      return classifyGitMetadataPath(path.relative(root, absolute));
+    }
+  }
+  for (const root of context.submoduleRoots) {
+    if (isRepoWatchPathWithin(root, absolute)) return "submodule";
+  }
+  if (isRepoWatchPathWithin(context.repoPath, absolute)) {
+    return classifyRepoWatcherPath(path.relative(context.repoPath, absolute));
+  }
+  return "work";
+}
+
+/** `.gitmodules` 会改变需要显式监听的子模块工作树入口，事件发出后必须重建 context。 */
+export function repoWatchFileRequiresContextRefresh(
+  context: RepoWatchContext,
+  filePath: string
+): boolean {
+  const absolute = path.resolve(filePath);
+  if (!isRepoWatchPathWithin(context.repoPath, absolute)) return false;
+  const relative = path.relative(context.repoPath, absolute).replace(/\\/g, "/");
+  return relative === ".gitmodules" || relative === ".gitmodules.lock";
+}
+
+/**
+ * 按真实 metadata root 排除对象库与无关 logs，同时开放当前 HEAD/refs reflog。
+ * 不能只匹配字面 `.git`：linked worktree 的 git-dir 可指向任意目录名。
+ */
+export function createRepoWatchIgnoredPredicate(
+  context: RepoWatchContext
+): (filePath: string) => boolean {
+  const defaultIgnored = makeIgnoredPredicate();
+  const metadataRoots = [...new Set([context.gitDir, context.commonDir])].sort(
+    (a, b) => b.length - a.length
+  );
+  const explicitTargets = [context.hooksDir, ...context.submoduleRoots].filter(
+    (target): target is string => Boolean(target)
+  );
+
+  return (filePath: string): boolean => {
+    const absolute = path.resolve(filePath);
+    if (explicitTargets.some((target) => isRepoWatchPathWithin(absolute, target))) return false;
+    if (isKnownHookWatchPath(context.hooksDir, absolute)) return false;
+    for (const root of metadataRoots) {
+      if (!isRepoWatchPathWithin(root, absolute)) continue;
+      const rel = path.relative(root, absolute).replace(/\\/g, "/");
+      if (rel === "hooks" || rel.startsWith("hooks/")) return false;
+      if (
+        rel === "logs" ||
+        rel === "logs/HEAD" ||
+        rel === "logs/refs" ||
+        rel.startsWith("logs/refs/")
+      ) {
+        return false;
+      }
+      if (rel === "objects" || rel.startsWith("objects/")) return true;
+      if (/^modules\/.*\/objects(?:\/|$)/.test(rel)) return true;
+      if (/^modules\/.*\/logs(?:\/|$)/.test(rel)) return true;
+      if (/^worktrees\/[^/]+\/logs(?:\/|$)/.test(rel)) return true;
+      if (rel.startsWith("logs/")) return true;
+      break;
+    }
+    for (const root of context.submoduleRoots) {
+      if (!isRepoWatchPathWithin(root, absolute)) continue;
+      return defaultIgnored(path.relative(root, absolute));
+    }
+    return defaultIgnored(filePath);
+  };
 }
 
 /**
