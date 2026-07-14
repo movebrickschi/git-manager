@@ -29,6 +29,7 @@ const showAiMenu = ref(false);
 const showAiSettings = ref(false);
 const showAiOverwriteConfirm = ref(false);
 const aiGroupRef = ref<HTMLElement | null>(null);
+const committingAction = ref<"commit" | "commit-push" | null>(null);
 
 onClickOutside(aiGroupRef, () => {
   showAiMenu.value = false;
@@ -125,21 +126,29 @@ function onSelectFile(file: FileStatus) {
 }
 
 async function handleCommit() {
+  if (committingAction.value) return;
+  committingAction.value = "commit";
   try {
     await commitStore.commit();
     await commitStore.loadStatus();
   } catch (e: any) {
     console.error("Commit failed:", e);
+  } finally {
+    committingAction.value = null;
   }
 }
 
 async function handleCommitAndPush() {
+  if (committingAction.value) return;
+  committingAction.value = "commit-push";
   try {
     await commitStore.commit();
     await commitStore.loadStatus();
     showPushDialog.value = true;
   } catch (e: any) {
     console.error("Commit failed:", e);
+  } finally {
+    committingAction.value = null;
   }
 }
 
@@ -354,17 +363,27 @@ function onPushCancelled() {
         </div>
         <button
           class="commit-btn"
-          :disabled="!commitStore.commitMessage.trim() || commitStore.stagedFiles.length === 0"
+          :disabled="
+            !!committingAction ||
+            !commitStore.commitMessage.trim() ||
+            commitStore.stagedFiles.length === 0
+          "
           @click="handleCommit"
         >
-          提交
+          <span v-if="committingAction === 'commit'" class="commit-spinner" />
+          <span>{{ committingAction === "commit" ? "提交中..." : "提交" }}</span>
         </button>
         <button
           class="commit-btn push"
-          :disabled="!commitStore.commitMessage.trim() || commitStore.stagedFiles.length === 0"
+          :disabled="
+            !!committingAction ||
+            !commitStore.commitMessage.trim() ||
+            commitStore.stagedFiles.length === 0
+          "
           @click="handleCommitAndPush"
         >
-          提交并推送
+          <span v-if="committingAction === 'commit-push'" class="commit-spinner" />
+          <span>{{ committingAction === "commit-push" ? "提交中..." : "提交并推送" }}</span>
         </button>
       </div>
       <div v-if="toastVisible" class="ai-toast" role="status">{{ toastMessage }}</div>
@@ -524,6 +543,10 @@ function onPushCancelled() {
 
 .commit-btn {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   padding: 6px 12px;
   background: var(--color-primary);
   color: white;
@@ -548,6 +571,16 @@ function onPushCancelled() {
 
 .commit-btn.push:hover:not(:disabled) {
   background: var(--color-surface-hover);
+}
+
+.commit-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: ai-spin 0.8s linear infinite;
 }
 
 .ai-btn-group {
