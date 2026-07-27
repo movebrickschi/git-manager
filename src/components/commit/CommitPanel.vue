@@ -6,6 +6,7 @@ import { useCommitStore } from "@/stores/commitStore";
 import { useRepoStore } from "@/stores/repoStore";
 import { useToast } from "@/composables/useToast";
 import { refreshGit } from "@/composables/useGitRefresh";
+import { errText } from "@/utils/error";
 import Toolbar from "@/components/common/Toolbar.vue";
 import ToolbarButton from "@/components/common/ToolbarButton.vue";
 import PushDialog from "@/components/common/PushDialog.vue";
@@ -131,8 +132,11 @@ async function handleCommit() {
   try {
     await commitStore.commit();
     await commitStore.loadStatus();
-  } catch (e: any) {
-    console.error("Commit failed:", e);
+    showToast("提交成功");
+  } catch (e: unknown) {
+    // 只 console.error 的话，git 侧任何失败（nothing to commit / hook 拒绝 / index.lock）
+    // 在界面上都表现为「点击提交没反应」。
+    showToast(`提交失败：${errText(e)}`);
   } finally {
     committingAction.value = null;
   }
@@ -145,8 +149,8 @@ async function handleCommitAndPush() {
     await commitStore.commit();
     await commitStore.loadStatus();
     showPushDialog.value = true;
-  } catch (e: any) {
-    console.error("Commit failed:", e);
+  } catch (e: unknown) {
+    showToast(`提交失败：${errText(e)}`);
   } finally {
     committingAction.value = null;
   }

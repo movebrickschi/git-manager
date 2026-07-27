@@ -50,6 +50,14 @@ const selectedSection = ref<SectionKey>("unstaged");
 const diffResult = ref<DiffResult | null>(null);
 const loading = ref(false);
 const errorMessage = ref<string | null>(null);
+/**
+ * 提交按钮的在途状态。为空表示空闲。
+ *
+ * 必须有这个状态：后端同一仓库的 git 命令是一条串行队列（见 server/services/_helpers.ts
+ * getOrCreateGit），前面若压着一条联网命令（fetch/pull/push，block 超时 120s），
+ * `git commit` 会排队等待——按钮没有任何反馈时体感就是「点了提交没反应」。
+ */
+const committingAction = ref<"commit" | "commit-push" | null>(null);
 
 const { toastMessage, toastVisible, show: showToast } = useToast();
 const confirmDialog = useConfirmDialog();
@@ -420,12 +428,31 @@ function onContextMenu(event: MouseEvent, file: FileStatus, section: SectionData
   contextMenuRef.value?.show(event);
 }
 
+async function handleCommit(): Promise<void> {
+  if (committingAction.value) return;
+  committingAction.value = "commit";
+  try {
+    await commitStore.commit();
+    showToast("提交成功");
+  } catch (e: unknown) {
+    // 过去这里没有任何 catch（模板直接 @click="commitStore.commit()"），git 报错只会变成
+    // 一条 unhandled rejection，用户看到的就是「点击提交没反应」。必须弹 toast。
+    showToast(`提交失败：${errText(e)}`);
+  } finally {
+    committingAction.value = null;
+  }
+}
+
 async function handleCommitAndPush(): Promise<void> {
+  if (committingAction.value) return;
+  committingAction.value = "commit-push";
   try {
     await commitStore.commit();
     showPushDialog.value = true;
   } catch (e: unknown) {
-    console.error("Commit failed:", e);
+    showToast(`提交失败：${errText(e)}`);
+  } finally {
+    committingAction.value = null;
   }
 }
 
@@ -1108,20 +1135,26 @@ watch(
                 <button
                   class="commit-btn"
                   :disabled="
-                    !commitStore.commitMessage.trim() || commitStore.stagedFiles.length === 0
+                    !!committingAction ||
+                    !commitStore.commitMessage.trim() ||
+                    commitStore.stagedFiles.length === 0
                   "
-                  @click="commitStore.commit()"
+                  @click="handleCommit()"
                 >
-                  提交
+                  <span v-if="committingAction === 'commit'" class="commit-spinner" />
+                  <span>{{ committingAction === "commit" ? "提交中..." : "提交" }}</span>
                 </button>
                 <button
                   class="commit-btn push-btn"
                   :disabled="
-                    !commitStore.commitMessage.trim() || commitStore.stagedFiles.length === 0
+                    !!committingAction ||
+                    !commitStore.commitMessage.trim() ||
+                    commitStore.stagedFiles.length === 0
                   "
                   @click="handleCommitAndPush()"
                 >
-                  提交并推送
+                  <span v-if="committingAction === 'commit-push'" class="commit-spinner" />
+                  <span>{{ committingAction === "commit-push" ? "提交中..." : "提交并推送" }}</span>
                 </button>
               </div>
             </div>
@@ -1511,6 +1544,10 @@ watch(
 
 .commit-btn {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-height: var(--control-height-regular);
   padding: 4px 8px;
   background: var(--color-primary);
@@ -1521,6 +1558,17 @@ watch(
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.commit-spinner {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: ai-spin 0.8s linear infinite;
+  flex-shrink: 0;
 }
 
 .commit-btn:hover:not(:disabled) {
