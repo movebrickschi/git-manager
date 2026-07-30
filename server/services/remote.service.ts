@@ -540,8 +540,9 @@ export const remoteService = {
     }
     if (raw === null) return [];
 
-    const branchSummary = await git.branch();
-    const headBranch = branchSummary.current;
+    // parseRefs 只需当前 HEAD 分支名；git.branch() 会枚举所有本地 + 远程分支，
+    // 在这条「查未推送提交」的路径上纯属浪费（同 log.service 的处理）。
+    const headBranch = (await git.revparse(["--abbrev-ref", "HEAD"]).catch(() => "")).trim();
     const commits: CommitInfo[] = [];
     const entries = raw
       .split("\x01")

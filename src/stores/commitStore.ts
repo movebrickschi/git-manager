@@ -18,6 +18,19 @@ function isAbortError(e: unknown): boolean {
   );
 }
 
+/**
+ * 文件列表指纹。用于跳过「内容完全没变」的 ref 赋值。
+ *
+ * 10s 轮询 + 文件监听事件在绝大多数 tick 上拿到的都是与当前完全一致的列表，若照旧
+ * 整体替换三个数组，Vue 会把整份文件列表重新 diff/patch，并连带重算多选勾选、过滤
+ * 分组等一串 computed——文件数量一多就是可感知的周期性卡顿。指纹一致就直接不写 ref。
+ */
+function fileListSignature(files: FileStatus[]): string {
+  let sig = `${files.length}`;
+  for (const f of files) sig += `\u0001${f.status}\u0002${f.path}\u0002${f.oldPath ?? ""}`;
+  return sig;
+}
+
 export const useCommitStore = defineStore("commit", () => {
   const stagedFiles = ref<FileStatus[]>([]);
   const unstagedFiles = ref<FileStatus[]>([]);
@@ -31,6 +44,27 @@ export const useCommitStore = defineStore("commit", () => {
 
   const repoStore = useRepoStore();
 
+  /**
+   * 每仓库的状态结果缓存，支撑切回已访问仓库时的 stale-while-revalidate：
+   * 先把上次的列表立即回填（0 延迟出内容，不再闪一屏「加载中…」），随后的
+   * loadStatus 拿到新结果再整体替换。与 logStore 的日志缓存同一套思路。
+   */
+  const statusCache = new Map<string, StatusResult>();
+
+  /**
+   * 同仓库并发 loadStatus 的归并槽。
+   *
+   * 首屏与切仓库时有 4 个视图各自调一次 loadStatus（LocalChangesView / CommitPanel /
+   * ChangedFilesPane / GitLogView），再叠上 10s 轮询、watcher 事件与写后 refreshGit。
+   * 过去每次都发一条 IPC，后端串行队列上就排起 N 个 git status 进程，首屏耗时 =
+   * N × 单次耗时；useAbortable 只是丢弃迟到的结果，并不能阻止进程已被 spawn。
+   * 归并后同一仓库同一时刻只有一次在途请求，其余调用方共享它。
+   */
+  let inFlight: { repoPath: string; task: Promise<StatusResult> } | null = null;
+
+  /** 已落库的三组列表指纹，用于 O(n) 判定「本次结果与当前显示完全一致」。 */
+  let appliedSig = { staged: "", unstaged: "", untracked: "" };
+
   const { run: runFetchStatus, cancel: cancelFetchStatus } = useAbortable(
     async (signal: AbortSignal, repoPath: string): Promise<StatusResult> => {
       const result = await commands.getStatus(repoPath);
@@ -41,19 +75,66 @@ export const useCommitStore = defineStore("commit", () => {
     }
   );
 
+  /** 无条件替换三组列表并重置指纹（切仓库回填 / 清空时用）。 */
+  function setLists(result: StatusResult | null): void {
+    const next = result ?? { staged: [], unstaged: [], untracked: [] };
+    stagedFiles.value = next.staged.slice();
+    unstagedFiles.value = next.unstaged.slice();
+    untrackedFiles.value = next.untracked.slice();
+    appliedSig = {
+      staged: fileListSignature(next.staged),
+      unstaged: fileListSignature(next.unstaged),
+      untracked: fileListSignature(next.untracked),
+    };
+  }
+
+  /** 按指纹逐组增量落库：只有真正变化的那一组才写 ref，避免无谓的整表 re-render。 */
+  function applyStatus(repoPath: string, result: StatusResult): void {
+    statusCache.set(repoPath, {
+      staged: result.staged.slice(),
+      unstaged: result.unstaged.slice(),
+      untracked: result.untracked.slice(),
+    });
+    const nextSig = {
+      staged: fileListSignature(result.staged),
+      unstaged: fileListSignature(result.unstaged),
+      untracked: fileListSignature(result.untracked),
+    };
+    if (nextSig.staged !== appliedSig.staged) stagedFiles.value = result.staged;
+    if (nextSig.unstaged !== appliedSig.unstaged) unstagedFiles.value = result.unstaged;
+    if (nextSig.untracked !== appliedSig.untracked) untrackedFiles.value = result.untracked;
+    appliedSig = nextSig;
+  }
+
   async function loadStatus(): Promise<void> {
-    if (!repoStore.activeRepo) return;
+    const repoPath = repoStore.activeRepo?.path;
+    if (!repoPath) return;
+
+    // 已有同仓库请求在途 → 直接搭车，不再 spawn 第二个 git status。
+    // 结果由发起方负责落库，这里只需等它完成，保持 await loadStatus() 的语义。
+    if (inFlight && inFlight.repoPath === repoPath) {
+      try {
+        await inFlight.task;
+      } catch (error) {
+        if (isAbortError(error)) return;
+        throw error;
+      }
+      return;
+    }
+
     loading.value = true;
+    const task = runFetchStatus(repoPath);
+    inFlight = { repoPath, task };
     try {
-      const result = await runFetchStatus(repoStore.activeRepo.path);
-      stagedFiles.value = result.staged;
-      unstagedFiles.value = result.unstaged;
-      untrackedFiles.value = result.untracked;
+      const result = await task;
+      if (repoStore.activeRepo?.path !== repoPath) return; // 切仓库后迟到的结果不落库
+      applyStatus(repoPath, result);
     } catch (error) {
       if (isAbortError(error)) return; // 仓库切换 / 新 loadStatus 顶替时安静退出
       console.error("[commitStore] loadStatus failed:", errMsg(error));
       throw error;
     } finally {
+      if (inFlight?.task === task) inFlight = null;
       loading.value = false;
     }
   }
@@ -62,16 +143,19 @@ export const useCommitStore = defineStore("commit", () => {
   // 保留：messageHistory（跨项目复用 commit 习惯）；不在此处 loadStatus，由调用方触发。
   watch(
     () => repoStore.activeRepo?.path,
-    () => {
+    (newPath) => {
       cancelFetchStatus("repo switched");
+      inFlight = null;
       commitMessage.value = "";
       isAmend.value = false;
-      stagedFiles.value = [];
-      unstagedFiles.value = [];
-      untrackedFiles.value = [];
       aiError.value = null;
+      // 命中缓存 → 立即回填旧结果（SWR，调用方随后触发的 loadStatus 会刷新它）；
+      // 未命中 → 清空，等首次结果到达。
+      setLists(newPath ? (statusCache.get(newPath) ?? null) : null);
     }
   );
+
+
 
   async function stageFile(path: string) {
     if (!repoStore.activeRepo) return;

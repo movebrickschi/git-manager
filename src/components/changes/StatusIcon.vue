@@ -11,7 +11,10 @@ const props = defineProps<{
  */
 function statusClass(status: FileStatus["status"]): string {
   switch (status) {
+    // untracked 在 git 里没有基线版本，暂存后必然是一次「新增」，因此与 added
+    // 共用加号图标 + 绿色；「未跟踪」这层信息由分组标题承担，不必再用问号占标识位。
     case "added":
+    case "untracked":
       return "status-added";
     case "modified":
       return "status-modified";
@@ -20,8 +23,6 @@ function statusClass(status: FileStatus["status"]): string {
     case "renamed":
     case "copied":
       return "status-renamed";
-    case "untracked":
-      return "status-untracked";
     case "conflicted":
       return "status-conflicted";
     case "ignored":
@@ -44,7 +45,7 @@ function statusTitle(status: FileStatus["status"]): string {
     case "copied":
       return "已复制";
     case "untracked":
-      return "未跟踪";
+      return "新增（未跟踪）";
     case "conflicted":
       return "冲突";
     case "ignored":
@@ -57,9 +58,9 @@ function statusTitle(status: FileStatus["status"]): string {
 
 <template>
   <span class="status-icon" :class="statusClass(props.status)" :title="statusTitle(props.status)">
-    <!-- added: 加号（新增） -->
+    <!-- added / untracked: 加号（新增） -->
     <svg
-      v-if="props.status === 'added'"
+      v-if="props.status === 'added' || props.status === 'untracked'"
       width="14"
       height="14"
       viewBox="0 0 24 24"
@@ -141,24 +142,6 @@ function statusTitle(status: FileStatus["status"]): string {
       <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
     </svg>
 
-    <!-- untracked: 问号（未跟踪） -->
-    <svg
-      v-else-if="props.status === 'untracked'"
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" />
-      <path d="M12 17h.01" />
-    </svg>
-
     <!-- conflicted: 警告三角（冲突） -->
     <svg
       v-else-if="props.status === 'conflicted'"
@@ -235,9 +218,6 @@ function statusTitle(status: FileStatus["status"]): string {
 }
 .status-renamed {
   color: var(--color-git-renamed);
-}
-.status-untracked {
-  color: var(--color-git-untracked);
 }
 .status-conflicted {
   color: var(--color-error);

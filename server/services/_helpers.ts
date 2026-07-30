@@ -615,6 +615,71 @@ export async function runGitArgsChunked(
   }
 }
 
+/** `git status --porcelain -z` 的一条记录。x/y 即 XY 状态码，from 为重命名/复制的原路径。 */
+export interface PorcelainStatusEntry {
+  x: string;
+  y: string;
+  path: string;
+  from: string | null;
+}
+
+/**
+ * 解析 `git status --porcelain -z` 输出。
+ *
+ * 格式（git-status 文档「Porcelain Format Version 1」的 -z 变体）：
+ *   - 每条记录形如 `XY <path>`，以 NUL 结尾（而非换行）
+ *   - 状态码与路径之间恒为 1 个空格，故路径从下标 3 开始
+ *   - 重命名 / 复制条目**不含** ` -> `，且字段顺序是反的：`XY <newPath>NUL<oldPath>NUL`
+ *     （已用真实 git 验证：`git mv old.txt new.txt` + 改内容 → `RM new.txt\0old.txt\0`）
+ *   - -z 模式下路径**不做**任何引号包裹或反斜杠转义，因此中文 / 空格路径可直接使用
+ *     （这也是必须坚持 -z 而非 --porcelain 默认换行格式的原因）
+ */
+export function parsePorcelainStatusZ(raw: string): PorcelainStatusEntry[] {
+  const fields = raw.split("\0");
+  const entries: PorcelainStatusEntry[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    const record = fields[i]!;
+    // 末尾 NUL 会产生一个空串；`## branch` 头仅在带 -b 时出现，这里防御性跳过
+    if (record.length < 4 || record.startsWith("##")) continue;
+    const x = record[0]!;
+    const y = record[1]!;
+    const filePath = record.slice(3);
+    // 索引侧或工作区侧任一为 R/C 时，git 紧跟着补一个原路径字段
+    const hasFrom = x === "R" || x === "C" || y === "R" || y === "C";
+    const from = hasFrom ? (fields[++i] ?? null) : null;
+    entries.push({ x, y, path: filePath, from: from || null });
+  }
+  return entries;
+}
+
+/**
+ * 只读、低开销的工作区状态查询，替代 simple-git 的 `git.status()`。
+ *
+ * 相比 simple-git 默认的 `status --porcelain -b -u --null`，这里刻意做了两处削减：
+ *
+ * 1. **去掉 `-b`**：`-b` 会让 git 额外解析当前分支的 upstream 并跑一次 rev-list
+ *    统计 ahead/behind。getStatus 只返回 staged/unstaged/untracked 三组文件，分支
+ *    与 ahead/behind 由 branch.service 单独提供，这部分工作纯属白做。
+ * 2. **加上 `--no-optional-locks`**：git status 默认会在刷新索引 stat cache 后把
+ *    索引写回磁盘，为此要抢 `.git/index.lock`。这个写回对「只读地查一次状态」毫无
+ *    必要，却让每 10s 一次的后台轮询都去争锁——既有额外磁盘写入，也会和用户在外部
+ *    终端 / IDE 里跑的 git 命令互相撞锁。该开关等价于 GIT_OPTIONAL_LOCKS=0。
+ *
+ * `-uall` 必须保留：UI 要逐个列出未跟踪文件，默认的 `normal` 模式会把未跟踪目录
+ * 折叠成一行 `dir/`。
+ */
+export async function runStatusPorcelainZ(repoPath: string): Promise<PorcelainStatusEntry[]> {
+  const git = getGit(repoPath);
+  const raw = await git.raw([
+    "--no-optional-locks",
+    "status",
+    "--porcelain",
+    "-z",
+    "--untracked-files=all",
+  ]);
+  return parsePorcelainStatusZ(raw);
+}
+
 export function parseStatusCode(
   x: string,
   y: string
@@ -976,33 +1041,6 @@ export function parseRefs(refStr: string, headBranch: string): RefInfo[] {
     });
 }
 
-/** 解析 `git branch -vv` 中 label 里 `[upstream: ahead n, behind m] subject` 片段 */
-export function parseBranchVerboseLabel(label: string): {
-  upstream: string | null;
-  aheadBehind: [number, number] | null;
-  subject: string;
-} {
-  const trimmed = label.trim();
-  const bracket = /^\[([^\]]*)\]\s*(.*)$/s.exec(trimmed);
-  if (!bracket) {
-    return { upstream: null, aheadBehind: null, subject: trimmed };
-  }
-  const inside = bracket[1]!;
-  const subject = bracket[2]!.trim();
-  const colon = inside.indexOf(":");
-  const upstreamPart = (colon >= 0 ? inside.slice(0, colon) : inside).trim();
-  let upstream: string | null = null;
-  if (upstreamPart && upstreamPart !== "gone") {
-    upstream = upstreamPart;
-  }
-  const aheadM = /ahead (\d+)/.exec(inside);
-  const behindM = /behind (\d+)/.exec(inside);
-  const ahead = aheadM ? parseInt(aheadM[1]!, 10) : 0;
-  const behind = behindM ? parseInt(behindM[1]!, 10) : 0;
-  const aheadBehind: [number, number] | null = ahead || behind ? [ahead, behind] : null;
-  return { upstream, aheadBehind, subject: subject || trimmed };
-}
-
 export const FILE_STATUS_MAP: Record<string, FileStatus["status"]> = {
   A: "added",
   M: "modified",
@@ -1050,11 +1088,38 @@ export async function isAncestorRef(
   }
 }
 
-/** 跨 service 的小工具：取出当前冲突文件列表 */
+/**
+ * 跨 service 的小工具：取出当前冲突文件列表。
+ *
+ * 用 `git ls-files -u -z`（只读索引里 stage>0 的未合并条目）而非整棵工作区的
+ * `git status`。这在「本地变更」视图上是笔实在的账：该视图每次挂载 / 切仓库 /
+ * 10s 轮询都会紧跟着调 getMergeState，而 getMergeState 内部就调本函数——过去
+ * 等于每轮都跑**两遍** `git status -uall`（一遍 getStatus、一遍这里），两条命令
+ * 还共享同一条串行队列，耗时直接翻倍。ls-files 只读索引、不扫工作区、不做
+ * 未跟踪文件枚举，开销与仓库工作区大小无关。
+ *
+ * 输出格式为 `<mode> <sha> <stage>\t<path>NUL`，同一冲突路径会出现 2~3 条
+ * （对应 stage 1/2/3），故按路径去重。-z 保证路径不被引号转义。
+ *
+ * 用 execFile 直连而非走 simple-git 缓存实例，理由有两条（均已实测）：
+ *   ① simple-git 的任务封装对这种「输出通常为空」的命令有约 130ms 固定开销
+ *      （50ms → 180ms），比命令本身还贵；
+ *   ② `ls-files` 只读 `.git/index`、不取任何锁，无需占用同仓库那条串行队列
+ *      （与本文件 isAncestorRef 走 execFile 同理）。git 写索引是「先写 index.lock
+ *      再 rename」的原子替换，并发读只会看到替换前或替换后的完整索引，不会读到半个。
+ */
 export async function getConflictFiles(repoPath: string): Promise<string[]> {
-  const git = getGit(repoPath);
-  const status = await git.status();
-  return status.conflicted;
+  const { stdout } = await execFile("git", ["-C", repoPath, "ls-files", "-u", "-z"], {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  const paths = new Set<string>();
+  for (const record of stdout.split("\0")) {
+    const tab = record.indexOf("\t");
+    if (tab < 0) continue;
+    paths.add(record.slice(tab + 1));
+  }
+  return [...paths];
 }
 
 export const LOG_FORMAT = [

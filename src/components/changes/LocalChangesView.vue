@@ -404,19 +404,39 @@ function onRowClick(event: MouseEvent, file: FileStatus, section: SectionData): 
   lastClickedKey.value = makeKey(section.key, file.path);
 }
 
+/**
+ * diff 加载守卫：
+ * - diffLoadKey：记录**在途**请求的目标。双击一行会连续触发 2×click + 1×dblclick，
+ *   按住方向键连选也会毫秒级连发多次——过去每一次都发一条 getFileDiff IPC，全部压进
+ *   后端同仓库的串行队列里，越点越卡。同一目标在途时直接复用那次请求。
+ *   只在「在途期间」去重、不做跨时间缓存，因此不会把已过期的 diff 端上来。
+ * - diffSelectSeq：只让最新一次选择的结果落到 diffResult，避免迟到的旧 diff 覆盖新文件。
+ */
+let diffSelectSeq = 0;
+let diffLoadKey = "";
+
 async function onSelectFile(file: FileStatus, section: SectionData): Promise<void> {
   selectedFile.value = file;
   selectedSection.value = section.key;
+  if (!repoStore.activeRepo) {
+    diffResult.value = null;
+    return;
+  }
+  const repoPath = repoStore.activeRepo.path;
+  const key = `${repoPath}\u0000${section.key}\u0000${file.path}`;
+  if (key === diffLoadKey) return; // 同一目标已在途，等它回填即可
+  const seq = ++diffSelectSeq;
+  diffLoadKey = key;
   diffResult.value = null;
-  if (!repoStore.activeRepo) return;
   try {
-    diffResult.value = await commands.getFileDiff(
-      repoStore.activeRepo.path,
-      file.path,
-      section.key === "staged"
-    );
+    const result = await commands.getFileDiff(repoPath, file.path, section.key === "staged");
+    if (seq !== diffSelectSeq) return;
+    diffResult.value = result;
   } catch (e) {
+    if (seq !== diffSelectSeq) return;
     console.error("Failed to load diff:", e);
+  } finally {
+    if (diffLoadKey === key) diffLoadKey = "";
   }
 }
 
@@ -883,8 +903,10 @@ const contextMenuItems = computed<MenuItem[]>(() => {
 
 useStatusPolling(async () => {
   if (!repoStore.activeRepo || commitStore.loading) return;
-  await commitStore.loadStatus();
-  await refreshMergeState();
+  // 并发而非串行：getStatus 走后端的同仓库串行队列，而 getMergeState 的冲突查询已改成
+  // 直连 `git ls-files -u`（不占那条队列，见 _helpers.getConflictFiles），两者真正并行，
+  // 每个 tick 少掉一次往返的等待。
+  await Promise.all([commitStore.loadStatus(), refreshMergeState()]);
 });
 
 useRepoChangeEvents({
@@ -916,6 +938,8 @@ watch(
     errorMessage.value = null;
     selectedFile.value = null;
     diffResult.value = null;
+    diffSelectSeq += 1; // 作废在途 diff，防止旧仓库的结果落到新仓库
+    diffLoadKey = "";
     quickCommitMessage.value = "";
     quickCommitPaths.value = null;
     quickCommitLoading.value = false;
@@ -975,7 +999,12 @@ watch(
             <div v-if="errorMessage" class="error-message">
               <span class="error-icon">⚠️</span> {{ errorMessage }}
             </div>
-            <div v-else-if="loading" class="state-hint">加载中...</div>
+            <!--
+              只有「确实没有任何内容可展示」时才占位。切回已访问过的仓库时
+              commitStore 会先回填缓存列表（SWR），此时 totalCount > 0，直接渲染
+              旧列表并在后台刷新，避免每次切仓库都先闪一屏「加载中…」。
+            -->
+            <div v-else-if="loading && totalCount === 0" class="state-hint">加载中...</div>
             <div v-else-if="totalCount === 0" class="state-hint">工作区无变更</div>
             <template v-else>
               <div v-if="conflictedFiles.length > 0" class="conflict-section">

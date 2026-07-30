@@ -1,48 +1,83 @@
 import * as fs from "fs";
+import * as path from "path";
 import type { BatchFileResult, FileStatus, StatusResult } from "../git-service.js";
 import { safeJoin } from "../utils/path-safe.js";
-import { getGit, parseStatusCode, runGitPathspecFromFile } from "./_helpers.js";
+import {
+  getGit,
+  parseStatusCode,
+  runGitPathspecFromFile,
+  runStatusPorcelainZ,
+} from "./_helpers.js";
 
 const fsp = fs.promises;
 
-export const statusService = {
-  async getStatus(repoPath: string): Promise<StatusResult> {
-    const git = getGit(repoPath);
-    const status = await git.status();
+/**
+ * 按仓库归并「在途的 getStatus」。
+ *
+ * 前端有 4 个入口会各自调一次 loadStatus（LocalChangesView / CommitPanel /
+ * ChangedFilesPane / GitLogView 的 onMounted 与切仓库 watch），再叠上 10s 轮询、
+ * 文件监听事件与写操作后的 refreshGit 扇出。过去每一次都会独立 spawn 一个
+ * `git status`，而同仓库的所有 git 命令共享一条 maxConcurrentProcesses:1 的串行
+ * 队列——于是首屏/切仓库的实际耗时是「单次 status × 并发次数」。
+ *
+ * 归并后同一瞬间只跑一条 git 进程，其余调用方共享同一个 Promise。
+ *
+ * 为什么归并不会读到写操作前的旧状态：所有写命令（add / reset / commit / …）走的是
+ * 同一条 FIFO 串行队列，调用方又都是「先 await 写完成，再调 getStatus」。若某条
+ * status 进程比该写命令更早入队，它必然也更早结束（FIFO），此刻已不在途、不会被
+ * 复用；能被复用的 status 必定晚于写命令入队，读到的就是写后状态。
+ */
+const statusInFlight = new Map<string, Promise<StatusResult>>();
 
-    const staged: FileStatus[] = [];
-    const unstaged: FileStatus[] = [];
-    const untracked: FileStatus[] = [];
+async function readStatus(repoPath: string): Promise<StatusResult> {
+  const entries = await runStatusPorcelainZ(repoPath);
 
-    for (const f of status.files) {
-      const x = f.index;
-      const y = f.working_dir;
-      const filePath = f.path;
+  const staged: FileStatus[] = [];
+  const unstaged: FileStatus[] = [];
+  const untracked: FileStatus[] = [];
 
-      if (x === "?" && y === "?") {
-        untracked.push({
-          path: filePath,
-          oldPath: null,
-          status: "untracked",
-          staged: false,
-        });
-        continue;
-      }
+  for (const f of entries) {
+    const { x, y, path: filePath } = f;
 
-      const entries = parseStatusCode(x, y);
-      for (const e of entries) {
-        const item: FileStatus = {
-          path: filePath,
-          oldPath: f.from && f.from !== f.path ? f.from : null,
-          status: e.status,
-          staged: e.staged,
-        };
-        if (e.staged) staged.push(item);
-        else unstaged.push(item);
-      }
+    if (x === "?" && y === "?") {
+      untracked.push({
+        path: filePath,
+        oldPath: null,
+        status: "untracked",
+        staged: false,
+      });
+      continue;
     }
 
-    return { staged, unstaged, untracked };
+    const oldPath = f.from && f.from !== filePath ? f.from : null;
+    for (const e of parseStatusCode(x, y)) {
+      const item: FileStatus = {
+        path: filePath,
+        oldPath,
+        status: e.status,
+        staged: e.staged,
+      };
+      if (e.staged) staged.push(item);
+      else unstaged.push(item);
+    }
+  }
+
+  return { staged, unstaged, untracked };
+}
+
+export const statusService = {
+  async getStatus(repoPath: string): Promise<StatusResult> {
+    const key = path.resolve(repoPath);
+    const shared = statusInFlight.get(key);
+    if (shared) return shared;
+
+    const task = readStatus(repoPath);
+    statusInFlight.set(key, task);
+    try {
+      return await task;
+    } finally {
+      statusInFlight.delete(key);
+    }
   },
 
   async stageFile(repoPath: string, filePath: string): Promise<void> {

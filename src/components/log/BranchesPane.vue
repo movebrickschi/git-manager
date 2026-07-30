@@ -56,14 +56,20 @@ const selectedSidebarBranch = ref<{
 
 const actionLoading = ref(false);
 const actionError = ref("");
-/** 正在执行拉取/更新的分支名集合 —— 用于在分支条目图标位显示 loading spinner。 */
-const busyBranches = ref<Set<string>>(new Set());
+/**
+ * repoPath -> 正在执行拉取/更新/推送的分支名集合。
+ * 按仓库隔离：多仓库常有同名分支（main/master/develop），若只按分支名记录，A 仓库拉取
+ * main 时切到 B 仓库会误在 B 的 main 上转圈。参照 network-busy.ts 的按 repoPath 隔离范式。
+ */
+const busyBranches = ref<Map<string, Set<string>>>(new Map());
 
 // 推送确认弹框
 const showPushDialog = ref(false);
 const pushDialogRemote = ref<string | undefined>(undefined);
 const pushDialogBranch = ref<string | undefined>(undefined);
 const pushBusyBranch = ref<string | undefined>(undefined);
+/** 记录发起推送时的仓库路径，保证推送结束复位 busy 的是同一仓库（用户可能已切走）。 */
+const pushBusyRepo = ref<string | undefined>(undefined);
 
 // 冲突解决弹窗
 const showConflictDialog = ref(false);
@@ -229,8 +235,8 @@ async function handleForcePullConfirm() {
   clearActionError();
   actionLoading.value = true;
   const forceBranch = forceConfirmBranch.value;
-  setBranchBusy(forceBranch, true);
-  ui.startProgress("强制拉取中…");
+  setBranchBusy(path, forceBranch, true);
+  ui.startProgress(path, "强制拉取中…");
   try {
     const remote = await resolveDefaultRemote();
     const result = await commands.forcePull(path, remote, false);
@@ -246,8 +252,8 @@ async function handleForcePullConfirm() {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
-    setBranchBusy(forceBranch, false);
-    ui.stopProgress();
+    setBranchBusy(path, forceBranch, false);
+    ui.stopProgress(path);
   }
 }
 
@@ -276,8 +282,8 @@ async function handleResetToRemoteConfirm() {
   if (!path || !branch) return;
   clearActionError();
   actionLoading.value = true;
-  setBranchBusy(branch.name, true);
-  ui.startProgress(`重置 ${branch.name} 到远端中…`);
+  setBranchBusy(path, branch.name, true);
+  ui.startProgress(path, `重置 ${branch.name} 到远端中…`);
   try {
     const target = await resolveResetRemoteTarget(branch);
     const result = await commands.resetToRemote(path, target.remote, target.branchName);
@@ -291,9 +297,9 @@ async function handleResetToRemoteConfirm() {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
-    setBranchBusy(branch.name, false);
+    setBranchBusy(path, branch.name, false);
     resetRemoteConfirmBranch.value = null;
-    ui.stopProgress();
+    ui.stopProgress(path);
   }
 }
 
@@ -356,9 +362,10 @@ function parseRemoteRef(fullName: string): { remote: string; branch: string } | 
 async function checkoutRemoteAsLocal(fullName: string) {
   const parsed = parseRemoteRef(fullName);
   if (!parsed) return;
+  const path = repoStore.activeRepo?.path;
   clearActionError();
   actionLoading.value = true;
-  setBranchBusy(fullName, true);
+  setBranchBusy(path, fullName, true);
   try {
     await branchStore.createBranch(parsed.branch, fullName);
     await branchStore.checkoutBranch(parsed.branch);
@@ -367,7 +374,7 @@ async function checkoutRemoteAsLocal(fullName: string) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
-    setBranchBusy(fullName, false);
+    setBranchBusy(path, fullName, false);
   }
 }
 
@@ -394,17 +401,27 @@ function clearActionError() {
   actionError.value = "";
 }
 
-/** 切换某分支的"拉取中"状态。替换 Set 引用以确保模板响应式刷新。 */
-function setBranchBusy(name: string | undefined, busy: boolean) {
-  if (!name) return;
-  const next = new Set(busyBranches.value);
-  if (busy) next.add(name);
-  else next.delete(name);
+/**
+ * 切换「某仓库某分支」的"拉取中"状态。按 repoPath 分桶，避免多仓库同名分支串台。
+ * repoPath 需为发起操作时捕获的仓库路径（各 handler 起始即捕获），以保证 finally 里复位的
+ * 是同一仓库——即便用户此刻已切到别的仓库。替换 Map 引用以确保模板响应式刷新。
+ */
+function setBranchBusy(repoPath: string | undefined, name: string | undefined, busy: boolean) {
+  if (!repoPath || !name) return;
+  const next = new Map(busyBranches.value);
+  const set = new Set(next.get(repoPath) ?? []);
+  if (busy) set.add(name);
+  else set.delete(name);
+  if (set.size > 0) next.set(repoPath, set);
+  else next.delete(repoPath);
   busyBranches.value = next;
 }
 
+/** 当前激活仓库下该分支是否在途。模板只渲染激活仓库的分支，故按 activeRepo.path 判断即可。 */
 function isBranchBusy(name: string): boolean {
-  return busyBranches.value.has(name);
+  const repoPath = repoStore.activeRepo?.path;
+  if (!repoPath) return false;
+  return busyBranches.value.get(repoPath)?.has(name) ?? false;
 }
 
 async function handleFetch() {
@@ -413,8 +430,8 @@ async function handleFetch() {
   clearActionError();
   actionLoading.value = true;
   const fetchTarget = selectedSidebarBranch.value?.name;
-  setBranchBusy(fetchTarget, true);
-  ui.startProgress("抓取中…");
+  setBranchBusy(path, fetchTarget, true);
+  ui.startProgress(path, "抓取中…");
   try {
     if (selectedSidebarBranch.value?.kind === "remote") {
       const parsed = parseRemoteRef(selectedSidebarBranch.value.name);
@@ -432,8 +449,8 @@ async function handleFetch() {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
-    setBranchBusy(fetchTarget, false);
-    ui.stopProgress();
+    setBranchBusy(path, fetchTarget, false);
+    ui.stopProgress(path);
   }
 }
 
@@ -444,8 +461,8 @@ async function handlePull() {
   clearActionError();
   actionLoading.value = true;
   const headName = headBranch.value?.name;
-  setBranchBusy(headName, true);
-  ui.startProgress("拉取中…");
+  setBranchBusy(path, headName, true);
+  ui.startProgress(path, "拉取中…");
   try {
     const head = headBranch.value;
     let remote: string | undefined;
@@ -472,8 +489,8 @@ async function handlePull() {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
-    setBranchBusy(headName, false);
-    ui.stopProgress();
+    setBranchBusy(path, headName, false);
+    ui.stopProgress(path);
   }
 }
 
@@ -504,12 +521,14 @@ function onPushCancelled() {
 /** PushDialog 推送中状态联动：在推送目标分支（或当前 HEAD）条目显示 spinner。 */
 function onPushBusy(busy: boolean) {
   if (busy) {
+    pushBusyRepo.value = repoStore.activeRepo?.path;
     pushBusyBranch.value =
       pushDialogBranch.value ?? branchStore.localBranches.find((b) => b.isHead)?.name;
-    setBranchBusy(pushBusyBranch.value, true);
+    setBranchBusy(pushBusyRepo.value, pushBusyBranch.value, true);
   } else {
-    setBranchBusy(pushBusyBranch.value, false);
+    setBranchBusy(pushBusyRepo.value, pushBusyBranch.value, false);
     pushBusyBranch.value = undefined;
+    pushBusyRepo.value = undefined;
   }
 }
 
@@ -520,7 +539,7 @@ async function fetchForRemoteBranch(fullName: string) {
   if (!parsed) return;
   clearActionError();
   actionLoading.value = true;
-  setBranchBusy(fullName, true);
+  setBranchBusy(path, fullName, true);
   try {
     await commands.fetch(path, parsed.remote);
     await refreshAfterGitOp();
@@ -528,7 +547,7 @@ async function fetchForRemoteBranch(fullName: string) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
-    setBranchBusy(fullName, false);
+    setBranchBusy(path, fullName, false);
   }
 }
 
@@ -537,8 +556,8 @@ async function pullForLocalBranch(branch: BranchInfo) {
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
-  setBranchBusy(branch.name, true);
-  ui.startProgress(`拉取 ${branch.name}…`);
+  setBranchBusy(path, branch.name, true);
+  ui.startProgress(path, `拉取 ${branch.name}…`);
   try {
     if (!branch.isHead) {
       await branchStore.checkoutBranch(branch.name);
@@ -569,8 +588,8 @@ async function pullForLocalBranch(branch: BranchInfo) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
-    setBranchBusy(branch.name, false);
-    ui.stopProgress();
+    setBranchBusy(path, branch.name, false);
+    ui.stopProgress(path);
   }
 }
 
@@ -589,8 +608,8 @@ async function updateBranchWithoutCheckout(branch: BranchInfo) {
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
-  setBranchBusy(branch.name, true);
-  ui.startProgress(`更新 ${branch.name}…`);
+  setBranchBusy(path, branch.name, true);
+  ui.startProgress(path, `更新 ${branch.name}…`);
   try {
     if (branch.isHead) {
       const remote = await resolveDefaultRemote();
@@ -624,8 +643,8 @@ async function updateBranchWithoutCheckout(branch: BranchInfo) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
-    setBranchBusy(branch.name, false);
-    ui.stopProgress();
+    setBranchBusy(path, branch.name, false);
+    ui.stopProgress(path);
   }
 }
 
@@ -982,8 +1001,9 @@ function handleNewBranchFrom(fromBranch: string) {
 
 async function onNewBranchConfirmed(name: string, fromBranch: string) {
   showNewBranchDialog.value = false;
+  const path = repoStore.activeRepo?.path;
   actionLoading.value = true;
-  setBranchBusy(name, true);
+  setBranchBusy(path, name, true);
   try {
     await branchStore.createBranch(name, fromBranch);
     await branchStore.checkoutBranch(name);
@@ -992,15 +1012,16 @@ async function onNewBranchConfirmed(name: string, fromBranch: string) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
-    setBranchBusy(name, false);
+    setBranchBusy(path, name, false);
   }
 }
 
 /** 签出分支：包一层 try/catch + 错误提示 + 分支 spinner，避免裸调 store 失败时无反馈。 */
 async function handleCheckout(name: string) {
+  const path = repoStore.activeRepo?.path;
   clearActionError();
   actionLoading.value = true;
-  setBranchBusy(name, true);
+  setBranchBusy(path, name, true);
   try {
     await branchStore.checkoutBranch(name);
     await refreshAfterGitOp();
@@ -1008,7 +1029,7 @@ async function handleCheckout(name: string) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
-    setBranchBusy(name, false);
+    setBranchBusy(path, name, false);
   }
 }
 
@@ -1017,10 +1038,11 @@ async function forceCheckout(name: string) {
   if (!window.confirm(`强制签出 '${name}' 会永久丢弃当前分支所有未提交修改，确定继续？`)) {
     return;
   }
+  const path = repoStore.activeRepo?.path;
   clearActionError();
   actionLoading.value = true;
-  ui.startProgress(`强制签出 ${name}…`);
-  setBranchBusy(name, true);
+  ui.startProgress(path, `强制签出 ${name}…`);
+  setBranchBusy(path, name, true);
   try {
     await branchStore.forceCheckout(name);
     await refreshAfterGitOp();
@@ -1029,8 +1051,8 @@ async function forceCheckout(name: string) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
-    setBranchBusy(name, false);
-    ui.stopProgress();
+    setBranchBusy(path, name, false);
+    ui.stopProgress(path);
   }
 }
 
@@ -1039,7 +1061,7 @@ async function handleCheckoutAndRebase(branchToCheckout: string, rebaseOnto: str
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
-  setBranchBusy(branchToCheckout, true);
+  setBranchBusy(path, branchToCheckout, true);
   try {
     await branchStore.checkoutBranch(branchToCheckout);
     await commands.rebaseBranch(path, rebaseOnto);
@@ -1048,7 +1070,7 @@ async function handleCheckoutAndRebase(branchToCheckout: string, rebaseOnto: str
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
-    setBranchBusy(branchToCheckout, false);
+    setBranchBusy(path, branchToCheckout, false);
   }
 }
 
@@ -1057,7 +1079,7 @@ async function handleRebaseHeadOnto(targetBranch: string) {
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
-  setBranchBusy(targetBranch, true);
+  setBranchBusy(path, targetBranch, true);
   try {
     await commands.rebaseBranch(path, targetBranch);
     await refreshAfterGitOp();
@@ -1065,7 +1087,7 @@ async function handleRebaseHeadOnto(targetBranch: string) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
-    setBranchBusy(targetBranch, false);
+    setBranchBusy(path, targetBranch, false);
   }
 }
 
@@ -1074,7 +1096,7 @@ async function handleMergeBranchIntoHead(sourceBranch: string) {
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
-  setBranchBusy(sourceBranch, true);
+  setBranchBusy(path, sourceBranch, true);
   try {
     const result = await commands.mergeBranch(path, sourceBranch);
     await refreshAfterGitOp();
@@ -1095,7 +1117,7 @@ async function handleMergeBranchIntoHead(sourceBranch: string) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
-    setBranchBusy(sourceBranch, false);
+    setBranchBusy(path, sourceBranch, false);
   }
 }
 
@@ -1114,7 +1136,7 @@ async function handleSetTracking(branchName: string) {
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
-  setBranchBusy(branchName, true);
+  setBranchBusy(path, branchName, true);
   try {
     const remote = await resolveDefaultRemote();
     await commands.push(path, remote, branchName);
@@ -1123,7 +1145,7 @@ async function handleSetTracking(branchName: string) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
-    setBranchBusy(branchName, false);
+    setBranchBusy(path, branchName, false);
   }
 }
 
@@ -1142,7 +1164,7 @@ async function onRenameConfirmed() {
   if (!path) return;
   clearActionError();
   actionLoading.value = true;
-  setBranchBusy(oldName, true);
+  setBranchBusy(path, oldName, true);
   try {
     await commands.renameBranch(path, oldName, newName);
     await refreshAfterGitOp();
@@ -1150,7 +1172,7 @@ async function onRenameConfirmed() {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
-    setBranchBusy(oldName, false);
+    setBranchBusy(path, oldName, false);
   }
 }
 
@@ -1169,10 +1191,11 @@ function isNotFullyMergedError(e: unknown): boolean {
 async function handleDeleteBranch(branch: BranchInfo) {
   if (branch.isHead) return;
   if (!window.confirm(`确认删除本地分支 '${branch.name}'？`)) return;
+  const path = repoStore.activeRepo?.path;
   clearActionError();
   actionLoading.value = true;
-  ui.startProgress(`删除分支 ${branch.name}…`);
-  setBranchBusy(branch.name, true);
+  ui.startProgress(path, `删除分支 ${branch.name}…`);
+  setBranchBusy(path, branch.name, true);
   try {
     await branchStore.deleteBranch(branch.name);
     await refreshAfterGitOp();
@@ -1197,8 +1220,8 @@ async function handleDeleteBranch(branch: BranchInfo) {
     }
   } finally {
     actionLoading.value = false;
-    setBranchBusy(branch.name, false);
-    ui.stopProgress();
+    setBranchBusy(path, branch.name, false);
+    ui.stopProgress(path);
   }
 }
 
@@ -1215,10 +1238,11 @@ async function handleDeleteRemoteBranch(branch: BranchInfo) {
     )
   )
     return;
+  const path = repoStore.activeRepo?.path;
   clearActionError();
   actionLoading.value = true;
-  setBranchBusy(branch.name, true);
-  ui.startProgress(`删除远程分支 ${branch.name}…`);
+  setBranchBusy(path, branch.name, true);
+  ui.startProgress(path, `删除远程分支 ${branch.name}…`);
   try {
     await branchStore.deleteRemoteBranch(parsed.remote, parsed.branch);
     await refreshAfterGitOp();
@@ -1227,8 +1251,8 @@ async function handleDeleteRemoteBranch(branch: BranchInfo) {
     actionError.value = friendlyErr(e);
   } finally {
     actionLoading.value = false;
-    setBranchBusy(branch.name, false);
-    ui.stopProgress();
+    setBranchBusy(path, branch.name, false);
+    ui.stopProgress(path);
   }
 }
 

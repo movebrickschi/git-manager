@@ -4,7 +4,7 @@ import { useRepoStore } from "./repoStore";
 import { commands } from "@/utils/commands";
 import { refreshGit } from "@/composables/useGitRefresh";
 import { translateGitError } from "@/utils/git-error";
-import type { BranchInfo, MergeResult, Submodule } from "@/utils/commands";
+import type { BranchInfo, BranchesResult, MergeResult, Submodule } from "@/utils/commands";
 import { resolveDisplayBranch } from "../../shared/git/display-branch";
 
 /**
@@ -68,6 +68,7 @@ export const useBranchStore = defineStore("branch", () => {
     () => repoStore.activeRepo?.path,
     (newPath) => {
       submodulesLoadSeq += 1;
+      branchesInFlight = null; // 旧仓库的在途请求不再供新仓库搭车
       searchQuery.value = "";
       submodules.value = [];
       submodulesLoading.value = false;
@@ -80,6 +81,17 @@ export const useBranchStore = defineStore("branch", () => {
     }
   );
 
+  /**
+   * 同仓库并发 loadBranches 的归并槽。
+   *
+   * loadBranches 有 13 处调用点：GitLogView 的 onMounted 与切仓库 watch、useAutoFetch、
+   * PushDialog，以及 store 内部每个写操作（createBranch / checkoutBranch / deleteBranch /
+   * renameBranch / createTag / …）结束后的刷新，再加上 refreshGit 的扇出。首屏和切仓库
+   * 时它们会在同一瞬间各发一次 getBranches，而后端同仓库 git 命令是一条串行队列 ——
+   * 于是分支列表要等 N 遍 getBranches 依次跑完才出来。归并后同一时刻只发一次。
+   */
+  let branchesInFlight: { repoPath: string; task: Promise<BranchesResult> } | null = null;
+
   async function loadBranches() {
     if (!repoStore.activeRepo) return;
     const repoPath = repoStore.activeRepo.path;
@@ -91,9 +103,17 @@ export const useBranchStore = defineStore("branch", () => {
       tags.value = cached.tags;
     }
 
+    // 已有同仓库请求在途 → 搭车，结果由发起方落库。
+    if (branchesInFlight && branchesInFlight.repoPath === repoPath) {
+      await branchesInFlight.task.catch(() => undefined);
+      return;
+    }
+
     loading.value = true;
+    const task = commands.getBranches(repoPath);
+    branchesInFlight = { repoPath, task };
     try {
-      const result = await commands.getBranches(repoPath);
+      const result = await task;
       // 结果先入缓存：即便用户已切走，下次切回该仓库时上方 watch 可立即回填，避免空白。
       branchCache.set(repoPath, { local: result.local, remote: result.remote, tags: result.tags });
       // 竞态守卫：await 期间用户可能已切到别的仓库。旧仓库 in-flight 的结果（如 autoFetch
@@ -110,6 +130,7 @@ export const useBranchStore = defineStore("branch", () => {
         repoStore.activeRepo.currentBranch = display;
       }
     } finally {
+      if (branchesInFlight?.task === task) branchesInFlight = null;
       // 同理：仅当结束的是"当前仓库"的请求才复位 loading，避免旧请求关掉新请求的 loading 态。
       if (repoStore.activeRepo?.path === repoPath) {
         loading.value = false;

@@ -1,5 +1,5 @@
 import { execFile as execFileCb } from "node:child_process";
-import { existsSync, promises as fsp } from "node:fs";
+import { promises as fsp } from "node:fs";
 import * as path from "node:path";
 import { promisify } from "node:util";
 import type { BranchInfo, BranchesResult, MergeResult } from "../git-service.js";
@@ -8,7 +8,6 @@ import {
   getConflictFiles,
   getGit,
   isAncestorRef,
-  parseBranchVerboseLabel,
 } from "./_helpers.js";
 
 const execFile = promisify(execFileCb);
@@ -31,7 +30,14 @@ async function computeUntrackedOverwrite(
   if (list.length === 0) return [];
   let trackedSet: Set<string>;
   try {
-    const lsRaw = await git.raw(["ls-files", "-z", "--", ...list]);
+    // 刻意不带 pathspec：`changed` 是 `git diff HEAD..branch` 的全量文件名集合，
+    // 过去把它整个摊进 argv（`ls-files -z -- p1 … pN`），几千个路径就会超出 Windows
+    // CreateProcess 的 ~32767 字符上限，spawn 直接失败 → 落到下面的 catch 返回 []
+    // → 误判「没有会被覆盖的未跟踪文件」→ 随后 git checkout 才报
+    // "would be overwritten by checkout"。这与项目此前修过的批量 stage argv 溢出同源
+    // （见 docs/plans/2026-06-30-fix-stage-many-files-argv-limit.md）。
+    // 不带 pathspec 列出全部已跟踪文件、在内存里做交集，结果完全等价且恒定 1 个进程。
+    const lsRaw = await git.raw(["ls-files", "-z"]);
     trackedSet = new Set(
       lsRaw
         .split("\0")
@@ -42,12 +48,21 @@ async function computeUntrackedOverwrite(
     // ls-files 失败时保守返回空，避免把已跟踪文件误当未跟踪而移走。
     return [];
   }
-  const out: string[] = [];
-  for (const f of list) {
-    if (trackedSet.has(f)) continue;
-    if (existsSync(path.join(repoPath, f))) out.push(f);
-  }
-  return out;
+  // 逐个 existsSync 会在主线程上同步 stat 成千上万次（慢盘 / 网络盘尤其明显），
+  // 期间 Electron main 与 Express worker 完全卡死。改为并发的 fsp.access：
+  // 语义与 existsSync 完全一致（后者内部就是 accessSync(F_OK)），但不阻塞 event loop。
+  const candidates = list.filter((f) => !trackedSet.has(f));
+  const existing = await Promise.all(
+    candidates.map(async (f) => {
+      try {
+        await fsp.access(path.join(repoPath, f));
+        return f;
+      } catch {
+        return null;
+      }
+    })
+  );
+  return existing.filter((f): f is string => f !== null);
 }
 
 /** 取目标分支相对 HEAD 的变更文件，算出会被覆盖的未跟踪文件。 */
@@ -110,69 +125,118 @@ async function restoreBackup(repoPath: string, backupDir: string, files: string[
   await fsp.rm(backupDir, { recursive: true, force: true }).catch(() => {});
 }
 
-async function getLocalBranchTracking(
-  git: ReturnType<typeof getGit>,
-  branchName: string
-): Promise<{ upstream: string | null; aheadBehind: [number, number] | null }> {
-  try {
-    const upstream = (await git.raw(["rev-parse", "--abbrev-ref", `${branchName}@{upstream}`])).trim();
-    if (!upstream) return { upstream: null, aheadBehind: null };
-    const counts = (await git.raw(["rev-list", "--left-right", "--count", `${branchName}...${upstream}`]))
-      .trim()
-      .split(/\s+/);
-    const ahead = Number(counts[0] ?? 0) || 0;
-    const behind = Number(counts[1] ?? 0) || 0;
-    return { upstream, aheadBehind: ahead || behind ? [ahead, behind] : null };
-  } catch {
-    return { upstream: null, aheadBehind: null };
-  }
+/**
+ * 一条 for-each-ref 就能取全的字段。全部是结构化占位符，不受 locale 影响
+ * （唯一会被 git 翻译的是 upstream:track，故调用处强制 LC_ALL=C）。
+ */
+const REF_FIELDS = [
+  "%(refname)",
+  "%(objectname:short)",
+  "%(HEAD)",
+  "%(upstream:short)",
+  "%(upstream:track)",
+  "%(symref)",
+  "%(contents:subject)",
+].join("%00");
+
+/**
+ * 解析 `%(upstream:track)`：`[ahead 1, behind 2]` / `[ahead 1]` / `[behind 2]` /
+ * `[gone]` / 空串。返回 null 表示「与 upstream 完全同步」或无 upstream —— 与原
+ * getLocalBranchTracking 的 `ahead || behind ? [ahead, behind] : null` 语义一致。
+ */
+function parseUpstreamTrack(track: string): [number, number] | null {
+  const ahead = Number(/ahead (\d+)/.exec(track)?.[1] ?? 0) || 0;
+  const behind = Number(/behind (\d+)/.exec(track)?.[1] ?? 0) || 0;
+  return ahead || behind ? [ahead, behind] : null;
 }
 
 export const branchService = {
+  /**
+   * 分支 / 远程分支 / 标签一次取全。
+   *
+   * 原实现是一个典型的 N+1：先 `git branch -a -vv`，再对**每个本地分支**串行跑两条
+   * `git raw`（`rev-parse --abbrev-ref b@{upstream}` + `rev-list --left-right --count`），
+   * 最后再加 `git tags` 与 `rev-parse --short HEAD`，共 `1 + 2N + 2` 个 git 进程。
+   * 由于同仓库所有 git 命令共享一条 maxConcurrentProcesses:1 的串行队列，30 个本地
+   * 分支就是 63 个进程排队；而 loadBranches 被 13 处调用（含每次写操作后的
+   * refreshGit），于是它成了「点完按钮界面半天不动」的主要来源。
+   *
+   * 现在改用单条 `git for-each-ref`，一次拿到 refname / 短 sha / HEAD 标记 /
+   * upstream / ahead-behind / symref / subject，把 refs/heads、refs/remotes、
+   * refs/tags 一并取出 —— 常见情况下总共只剩 **1 个** git 进程
+   * （仅 detached HEAD 时才追加一条 `rev-parse --short HEAD`，因为那时
+   * refs/heads 里没有任何 %(HEAD)=* 的条目，前端要靠 headSha 显示 `(HEAD: <sha>)`）。
+   *
+   * 两个刻意保留的行为细节：
+   *   - `refs/remotes/origin/HEAD` 是 symref，`git branch -a` 会把它显示成
+   *     `remotes/origin/HEAD -> origin/master`。它不是真实分支，故按 %(symref)
+   *     非空跳过，避免远程分支列表里多出一个不可切换的伪条目。
+   *   - 走 execFile 直连而非 simple-git：① 需要给这一条命令单独设 LC_ALL=C，不能
+   *     污染共享实例的 env；② for-each-ref 只读 refs、不取任何锁，无需占用串行队列。
+   */
   async getBranches(repoPath: string): Promise<BranchesResult> {
-    const git = getGit(repoPath);
-    const branchSummary = await git.branch(["-a", "-vv"]);
+    const { stdout } = await execFile(
+      "git",
+      ["-C", repoPath, "for-each-ref", `--format=${REF_FIELDS}`, "refs/heads", "refs/remotes", "refs/tags"],
+      {
+        encoding: "utf8",
+        maxBuffer: 64 * 1024 * 1024,
+        // upstream:track 是 git 唯一会本地化的字段（中文 git 会输出「领先 2, 落后 1」），
+        // 强制 C locale 保证 /ahead (\d+)/ 恒定可解析。refname / subject 是原始字节，
+        // 不受 locale 影响，中文分支名与中文提交摘要照常。
+        env: { ...process.env, LC_ALL: "C" },
+      }
+    );
+
     const local: BranchInfo[] = [];
     const remote: BranchInfo[] = [];
+    const tags: string[] = [];
+    let hasHeadBranch = false;
 
-    for (const [name, data] of Object.entries(branchSummary.branches)) {
-      const shortName = name.replace(/^remotes\//, "");
-      const isRemote = name.startsWith("remotes/");
-      const parsed = isRemote
-        ? {
-            upstream: null as string | null,
-            aheadBehind: null as [number, number] | null,
-            subject: data.label.trim(),
-          }
-        : parseBranchVerboseLabel(data.label);
-      const tracking = isRemote ? parsed : await getLocalBranchTracking(git, shortName);
+    for (const line of stdout.split("\n")) {
+      if (!line) continue;
+      const [refname = "", shortSha = "", headMark = "", upstream = "", track = "", symref = "", subject = ""] =
+        line.split("\0");
+
+      if (refname.startsWith("refs/tags/")) {
+        tags.push(refname.slice("refs/tags/".length));
+        continue;
+      }
+
+      const isRemote = refname.startsWith("refs/remotes/");
+      if (isRemote && symref) continue; // origin/HEAD 之类的 symref 不是真实分支
+
+      const name = isRemote
+        ? refname.slice("refs/remotes/".length)
+        : refname.slice("refs/heads/".length);
+      if (!name) continue;
+
+      const isHead = headMark === "*";
+      if (isHead) hasHeadBranch = true;
+
       const info: BranchInfo = {
-        name: shortName,
-        isHead: data.current,
-        upstream: tracking.upstream ?? parsed.upstream,
-        aheadBehind: tracking.aheadBehind ?? parsed.aheadBehind,
-        lastCommitId: data.commit,
-        lastCommitSummary: parsed.subject,
+        name,
+        isHead,
+        // 远程分支没有 upstream 概念，与原实现保持一致地置 null
+        upstream: isRemote ? null : upstream || null,
+        aheadBehind: isRemote ? null : parseUpstreamTrack(track),
+        lastCommitId: shortSha,
+        lastCommitSummary: subject,
         lastCommitTime: 0,
       };
       if (isRemote) remote.push(info);
       else local.push(info);
     }
 
-    let tags: string[] = [];
-    try {
-      const tagResult = await git.tags();
-      tags = tagResult.all;
-    } catch {
-      // no tags
-    }
-
-    // 当前 HEAD 短 sha：供前端在 detached（无 isHead 本地分支）时显示 (HEAD: <sha>)。
+    // 仅 detached / rebase / unborn（refs/heads 里没有 %(HEAD)=* 条目）时才需要它，
+    // 正常检出分支的情况下省掉这一个 git 进程。
     let headSha: string | null = null;
-    try {
-      headSha = (await git.revparse(["--short", "HEAD"])).trim() || null;
-    } catch {
-      // unborn 仓库（无任何 commit）连 HEAD 都没有
+    if (!hasHeadBranch) {
+      try {
+        headSha = (await getGit(repoPath).revparse(["--short", "HEAD"])).trim() || null;
+      } catch {
+        // unborn 仓库（无任何 commit）连 HEAD 都没有
+      }
     }
 
     return { local, remote, tags, headSha };

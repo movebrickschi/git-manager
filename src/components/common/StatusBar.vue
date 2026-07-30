@@ -94,10 +94,10 @@ const fetchTitle = computed(() => {
           {{ repoStore.activeRepo.currentBranch }}
         </span>
         <Transition name="progress-capsule">
-          <span v-if="ui.progressActive" class="progress-capsule">
+          <span v-if="ui.isRepoProgressing(repoStore.activeRepo.path)" class="progress-capsule">
             <span class="progress-capsule-fill" />
             <span class="progress-capsule-spinner" />
-            <span class="progress-capsule-label">{{ ui.progressLabel }}</span>
+            <span class="progress-capsule-label">{{ ui.repoProgressLabel(repoStore.activeRepo.path) }}</span>
           </span>
         </Transition>
         <span class="status-item repo-path">{{ repoStore.activeRepo.path }}</span>

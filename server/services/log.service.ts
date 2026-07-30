@@ -201,7 +201,10 @@ export const logService = {
 
   async getCommitDetail(repoPath: string, commitId: string): Promise<CommitInfo> {
     const git = getGit(repoPath);
-    const branchSummary = await git.branch();
+    // 与 getLog 同理：parseRefs 只需要当前 HEAD 分支名，用 O(1) 的 rev-parse 取，
+    // 而不是 git.branch()（枚举所有本地 + 远程分支）。这条路径在每次点击提交时都会跑，
+    // 大仓库上是可感知的点击延迟。
+    const headBranch = (await git.revparse(["--abbrev-ref", "HEAD"]).catch(() => "")).trim();
     const DETAIL_FORMAT = LOG_FORMAT + "%x00%B";
 
     const raw = await git.raw(["log", "-1", `--format=${DETAIL_FORMAT}`, commitId]);
@@ -233,7 +236,7 @@ export const logService = {
       committerEmail,
       commitTime,
       parents,
-      refs: parseRefs(refStr, branchSummary.current),
+      refs: parseRefs(refStr, headBranch),
       isMerge: parents.length > 1,
     };
   },
