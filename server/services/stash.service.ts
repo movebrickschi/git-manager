@@ -3,6 +3,7 @@ import { promises as fs } from "fs";
 import os from "node:os";
 import * as path from "path";
 import { promisify } from "node:util";
+import { isStashJunkPath } from "../../shared/stash-junk.js";
 import type { DiffResultModel, FileStatus, StashEntry } from "../git-service.js";
 import {
   getGit,
@@ -87,6 +88,55 @@ function setReflogOldSha(line: string, sha: string): string {
   const sp1 = line.indexOf(" ");
   if (sp1 < 0) throw new Error("Corrupted stash reflog entry");
   return sha + line.slice(sp1);
+}
+
+function normGitPath(p: string): string {
+  return p.replace(/\\/g, "/");
+}
+
+/** `git stash push --staged` 已建 entry、但反向补丁清不掉工作区（典型：新增/改动的二进制）。 */
+function isStashWorktreeCleanupFailure(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /Cannot remove worktree changes/i.test(msg) || /cannot apply binary patch/i.test(msg);
+}
+
+async function peekStashSha(repoPath: string): Promise<string | null> {
+  try {
+    const sha = (await gitRaw(repoPath, ["rev-parse", "--verify", "-q", "refs/stash"])).trim();
+    return sha || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * stash --staged 建完 entry 后，把指定路径的 index + 工作区收回 HEAD：
+ * 已跟踪的 restore，新增的 rm。不碰其它脏文件。
+ */
+async function restoreStashedPathsToHead(repoPath: string, paths: string[]): Promise<void> {
+  if (paths.length === 0) return;
+  const git = getGit(repoPath);
+  // ls-files 不支持 --pathspec-from-file；失败后 index 还停在 stash 前，
+  // --diff-filter=A 就是这次搁置里「HEAD 没有」的新增文件。
+  const addedRaw = (await git.raw(["diff", "--cached", "--name-only", "--diff-filter=A"]))
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const addedSet = new Set(addedRaw.map(normGitPath));
+  const added = paths.filter((p) => addedSet.has(normGitPath(p)));
+  const inHead = paths.filter((p) => !addedSet.has(normGitPath(p)));
+
+  if (inHead.length > 0) {
+    await runGitPathspecFromFile(
+      repoPath,
+      ["restore", "--source=HEAD", "--staged", "--worktree"],
+      inHead
+    );
+  }
+  if (added.length > 0) {
+    await runGitPathspecFromFile(repoPath, ["rm", "-f", "--ignore-unmatch"], added);
+    await Promise.all(added.map((p) => fs.rm(path.join(repoPath, p), { force: true })));
+  }
 }
 
 export const stashService = {
@@ -177,6 +227,9 @@ export const stashService = {
   },
 
   async stashFile(repoPath: string, filePath: string, message?: string): Promise<void> {
+    if (isStashJunkPath(filePath)) {
+      throw new Error("编译产物（__pycache__/*.pyc）无法搁置");
+    }
     const git = getGit(repoPath);
     const args = ["stash", "push", "--include-untracked"];
     if (message) args.push("-m", message);
@@ -202,26 +255,46 @@ export const stashService = {
    * 取消暂存，stash 后再还原其暂存态（数量通常很少，分块 reset/add 兜底）。
    *
    * 注意：`git stash push --staged` 需要 git ≥ 2.35。空数组直接 noop。
+   *
+   * 额外两道防护（hellome 搁置 11 文件翻车同源）：
+   *   - `__pycache__` / `*.py[cod]` 直接剔除，避免编译产物进 stash；
+   *   - `--staged` 对二进制打反向补丁失败时（stash 已建、工作区没清），
+   *     按 pathspec 自行 restore / rm，不把半残态抛给用户。
    */
   async stashFiles(repoPath: string, filePaths: string[], message?: string): Promise<void> {
     if (!Array.isArray(filePaths) || filePaths.length === 0) return;
+    const keep = filePaths.filter((p) => !isStashJunkPath(p));
+    if (keep.length === 0) {
+      throw new Error("所选文件均为编译产物（__pycache__/*.pyc），无法搁置");
+    }
     const git = getGit(repoPath);
 
-    const selected = new Set(filePaths);
+    const selected = new Set(keep.map(normGitPath));
     const stagedBefore = (await git.raw(["diff", "--cached", "--name-only"]))
       .split("\n")
       .map((s) => s.trim())
       .filter(Boolean);
-    const foreign = stagedBefore.filter((p) => !selected.has(p));
+    const foreign = stagedBefore.filter((p) => !selected.has(normGitPath(p)));
 
-    await runGitPathspecFromFile(repoPath, ["add"], filePaths);
+    await runGitPathspecFromFile(repoPath, ["add"], keep);
     if (foreign.length > 0) await runGitArgsChunked(git, ["reset", "-q"], foreign);
 
-    const subArgs = ["stash", "push", "--staged"];
-    if (message) subArgs.push("-m", message);
-    await git.raw(subArgs);
+    const beforeSha = await peekStashSha(repoPath);
+    try {
+      const subArgs = ["stash", "push", "--staged"];
+      if (message) subArgs.push("-m", message);
+      await git.raw(subArgs);
+    } catch (e) {
+      const afterSha = await peekStashSha(repoPath);
+      if (afterSha && afterSha !== beforeSha && isStashWorktreeCleanupFailure(e)) {
+        await restoreStashedPathsToHead(repoPath, keep);
+      } else {
+        throw e;
+      }
+    }
 
-    if (foreign.length > 0) await runGitArgsChunked(git, ["add"], foreign);
+    const foreignRestore = foreign.filter((p) => !isStashJunkPath(p));
+    if (foreignRestore.length > 0) await runGitArgsChunked(git, ["add"], foreignRestore);
   },
 
   /**

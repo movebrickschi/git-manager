@@ -209,3 +209,91 @@ describe("stashService.stashFiles · 大批量（回归 argv 长度溢出）", (
     );
   });
 });
+
+describe("stashService.stashFiles · 二进制与编译产物", () => {
+  let repo: string;
+  beforeEach(async () => {
+    repo = await makeRepo();
+  });
+  afterEach(async () => {
+    await fs.rm(repo, { recursive: true, force: true });
+  });
+
+  async function writeBinary(rel: string, bytes: number[]): Promise<void> {
+    const abs = path.join(repo, rel);
+    await fs.mkdir(path.dirname(abs), { recursive: true });
+    await fs.writeFile(abs, Buffer.from(bytes));
+  }
+
+  it("新增二进制 + 文本：stash 成功、工作区清空、两者都进同一条 stash", async () => {
+    await fs.writeFile(path.join(repo, "a.txt"), "a-changed\n", "utf8");
+    await writeBinary("blob.bin", [0x00, 0x01, 0x02, 0xff, 0x00, 0x99]);
+
+    await stashService.stashFiles(repo, ["a.txt", "blob.bin"], "wip binary add");
+
+    expect((await stashService.getStashList(repo)).length).toBe(1);
+    expect((await stashService.getStashFiles(repo, 0)).map((f) => f.path).sort()).toEqual([
+      "a.txt",
+      "blob.bin",
+    ]);
+    expect((await git(repo, "status", "--porcelain", "-uall")).trim()).toBe("");
+    expect(await read(repo, "a.txt")).toBe("a-base\n");
+    await expect(fs.access(path.join(repo, "blob.bin"))).rejects.toThrow();
+  });
+
+  it("已跟踪二进制被改：stash 成功、工作区回到 HEAD", async () => {
+    await writeBinary("blob.bin", [0x00, 0x11]);
+    await git(repo, "add", "blob.bin");
+    await git(repo, "commit", "-q", "-m", "add blob");
+    await writeBinary("blob.bin", [0x00, 0x99]);
+    await fs.writeFile(path.join(repo, "a.txt"), "a-changed\n", "utf8");
+
+    await stashService.stashFiles(repo, ["a.txt", "blob.bin"], "wip binary edit");
+
+    expect((await stashService.getStashList(repo)).length).toBe(1);
+    expect((await stashService.getStashFiles(repo, 0)).map((f) => f.path).sort()).toEqual([
+      "a.txt",
+      "blob.bin",
+    ]);
+    expect((await git(repo, "status", "--porcelain", "-uall")).trim()).toBe("");
+    expect(await read(repo, "a.txt")).toBe("a-base\n");
+    expect([...(await fs.readFile(path.join(repo, "blob.bin")))]).toEqual([0x00, 0x11]);
+  });
+
+  it("__pycache__/*.pyc 自动跳过：只搁置文本，pyc 留在工作区且不进 stash", async () => {
+    await fs.writeFile(path.join(repo, "a.txt"), "a-changed\n", "utf8");
+    const pyc = "scripts/__pycache__/deploy_sit.cpython-312.pyc";
+    await writeBinary(pyc, [0xcb, 0x0d, 0x0d, 0x0a, 0x00, 0xff]);
+
+    await stashService.stashFiles(repo, ["a.txt", pyc], "skip pycache");
+
+    expect((await stashService.getStashList(repo)).length).toBe(1);
+    expect((await stashService.getStashFiles(repo, 0)).map((f) => f.path)).toEqual(["a.txt"]);
+    expect(await read(repo, "a.txt")).toBe("a-base\n");
+    expect(await fs.access(path.join(repo, pyc)).then(() => true)).toBe(true);
+    const porcelain = await git(repo, "status", "--porcelain", "-uall");
+    expect(porcelain).toContain(pyc.replace(/\\/g, "/"));
+    expect(porcelain).not.toMatch(/a\.txt/);
+  });
+
+  it("只选编译产物 → 抛错且不产生 stash", async () => {
+    const pyc = "pkg/__pycache__/x.cpython-312.pyc";
+    await writeBinary(pyc, [0x00, 0x01]);
+
+    await expect(stashService.stashFiles(repo, [pyc], "only junk")).rejects.toThrow(/编译产物/);
+    expect((await stashService.getStashList(repo)).length).toBe(0);
+    expect(await fs.access(path.join(repo, pyc)).then(() => true)).toBe(true);
+  });
+
+  it("含新增二进制时仍保留未选中的已暂存文件", async () => {
+    await fs.writeFile(path.join(repo, "a.txt"), "a-staged\n", "utf8");
+    await git(repo, "add", "a.txt");
+    await writeBinary("blob.bin", [0x00, 0xfe]);
+
+    await stashService.stashFiles(repo, ["blob.bin"], "bin only");
+
+    expect((await stashService.getStashFiles(repo, 0)).map((f) => f.path)).toEqual(["blob.bin"]);
+    expect((await git(repo, "diff", "--cached", "--name-only")).trim()).toBe("a.txt");
+    await expect(fs.access(path.join(repo, "blob.bin"))).rejects.toThrow();
+  });
+});

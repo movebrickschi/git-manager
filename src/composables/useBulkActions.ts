@@ -3,6 +3,7 @@ import { useCommitStore } from "@/stores/commitStore";
 import type { DiffResult, FileStatus } from "@/utils/commands";
 import { errText } from "@/utils/error";
 import type { ConfirmDialogOptions } from "@/composables/useConfirmDialog";
+import { isStashJunkPath } from "../../shared/stash-junk";
 
 export type SectionKey = "staged" | "unstaged" | "untracked";
 
@@ -203,12 +204,19 @@ export function useBulkActions(opts: BulkActionsOptions) {
   }
 
   async function bulkStash(): Promise<void> {
-    const paths = stashablePaths.value;
-    if (paths.length === 0) return;
+    const selected = stashablePaths.value;
+    if (selected.length === 0) return;
+    const paths = selected.filter((p) => !isStashJunkPath(p));
+    const skipped = selected.length - paths.length;
+    if (paths.length === 0) {
+      opts.onMessage("所选文件均为编译产物（__pycache__/*.pyc），已跳过");
+      return;
+    }
     try {
       const tag = `搁置 ${paths.length} 个文件 @ ${new Date().toLocaleString()}`;
       await commitStore.stashFiles(paths, tag);
-      opts.onMessage(`已搁置 ${paths.length} 个文件`);
+      const extra = skipped > 0 ? `，已跳过 ${skipped} 个编译产物` : "";
+      opts.onMessage(`已搁置 ${paths.length} 个文件${extra}`);
       clearPreviewIfMatch(paths);
       opts.clearSelection();
     } catch (e: unknown) {

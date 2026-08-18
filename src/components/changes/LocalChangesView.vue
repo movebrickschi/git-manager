@@ -26,6 +26,7 @@ import { useRepoChangeEvents } from "@/composables/useRepoWatcher";
 import { useStatusPolling } from "@/composables/useStatusPolling";
 import { useToast } from "@/composables/useToast";
 import type { AiErrorCode } from "../../../shared/ai/types";
+import { isStashJunkPath } from "../../../shared/stash-junk";
 import ChangesToolbar from "./ChangesToolbar.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import FileSection, { type SectionData, type SectionKey } from "./FileSection.vue";
@@ -629,6 +630,10 @@ function handleDiscardChanges(): void {
 
 async function handleStashFile(): Promise<void> {
   if (!contextFile.value || !repoStore.activeRepo) return;
+  if (isStashJunkPath(contextFile.value.path)) {
+    showToast("编译产物（__pycache__/*.pyc）无法搁置");
+    return;
+  }
   try {
     const msg = `搁置 ${contextFile.value.path}`;
     await commands.stashFile(repoStore.activeRepo.path, contextFile.value.path, msg);
