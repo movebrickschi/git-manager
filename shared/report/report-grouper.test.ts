@@ -179,3 +179,83 @@ describe("extractDetailLines · Git trailer 过滤", () => {
     expect(markdown).toContain("  - TODO: 后续补充 README");
   });
 });
+
+function localISO(year: number, month: number, day: number): string {
+  return new Date(year, month - 1, day, 12, 0, 0).toISOString();
+}
+
+describe("buildAndRender · 周报模式", () => {
+  const rangeISO = {
+    fromISO: localISO(2026, 5, 18),
+    toISO: localISO(2026, 5, 19),
+  };
+
+  it("未指定 kind 时标题仍为工作日报，分组仍是 repo → module → date", () => {
+    const entry = makeEntry({
+      dateISO: localISO(2026, 5, 18),
+      module: "feat",
+      subject: "add oauth",
+    });
+    const { markdown, groups } = buildAndRender([entry], { rangeISO });
+
+    expect(markdown).toContain("# 📅 工作日报");
+    expect(groups[0]?.children[0]?.level).toBe("module");
+    expect(groups[0]?.children[0]?.children[0]?.level).toBe("date");
+  });
+
+  it("kind=weekly 时标题为工作周报，分组为 repo → date → module", () => {
+    const mondayFeat = makeEntry({
+      dateISO: localISO(2026, 5, 18),
+      module: "feat",
+      subject: "add oauth",
+      scope: "auth",
+      message: "add oauth",
+    });
+    const tuesdayFix = makeEntry({
+      dateISO: localISO(2026, 5, 19),
+      module: "fix",
+      subject: "fix login",
+      sha: "bbbbbb1234567890",
+      shortSha: "bbbbbb1",
+      message: "fix login",
+    });
+
+    const { markdown, groups } = buildAndRender([mondayFeat, tuesdayFix], {
+      rangeISO,
+      kind: "weekly",
+    });
+
+    expect(markdown).toContain("# 📅 工作周报");
+    expect(markdown).not.toContain("# 📅 工作日报");
+    expect(groups[0]?.level).toBe("repo");
+    expect(groups[0]?.children.map((c) => c.level)).toEqual(["date", "date"]);
+    expect(groups[0]?.children[0]?.key).toBe("2026-05-19");
+    expect(groups[0]?.children[0]?.children[0]?.level).toBe("module");
+    expect(groups[0]?.children[1]?.key).toBe("2026-05-18");
+    expect(markdown).toContain("**周二 2026-05-19**");
+    expect(markdown).toContain("**周一 2026-05-18**");
+    expect(markdown.indexOf("**周二 2026-05-19**")).toBeLessThan(
+      markdown.indexOf("**周一 2026-05-18**")
+    );
+  });
+
+  it("kind=weekly 时总览行带模块计数", () => {
+    const { markdown } = buildAndRender(
+      [
+        makeEntry({ dateISO: localISO(2026, 5, 18), module: "feat", subject: "a", message: "a" }),
+        makeEntry({
+          dateISO: localISO(2026, 5, 19),
+          module: "fix",
+          subject: "b",
+          message: "b",
+          sha: "cccccccccccccccc",
+          shortSha: "ccccccc",
+        }),
+      ],
+      { rangeISO, kind: "weekly" }
+    );
+
+    expect(markdown).toMatch(/feat 1/);
+    expect(markdown).toMatch(/fix 1/);
+  });
+});

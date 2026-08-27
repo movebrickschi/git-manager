@@ -15,6 +15,13 @@ export type ReportRangePreset =
   | "last-month"
   | "custom";
 
+/**
+ * 报告模式。
+ * - daily：标题「工作日报」，分组 repo → module → date
+ * - weekly：标题「工作周报」，分组 repo → date → module，日期带周几
+ */
+export type ReportKind = "daily" | "weekly";
+
 /** 输出格式。 */
 export type ReportOutputFormat = "markdown" | "plain";
 
@@ -35,6 +42,8 @@ export interface ReportRange {
 
 /** 抽取过滤条件。 */
 export interface ReportFilter {
+  /** 报告模式；缺省按日报。 */
+  kind?: ReportKind;
   range: ReportRange;
   /**
    * 作者过滤。
@@ -56,13 +65,15 @@ export interface ReportFilter {
    */
   branches?: string[];
   /**
-   * 每个仓库单独指定要扫描的分支。key 为仓库绝对路径，value 为分支名。
+   * 每个仓库单独指定要扫描的分支。key 为仓库绝对路径，value 为分支名数组。
    *
    * 典型用法：用户在某些仓库里平时不在 main 上工作，希望出报告时
-   * 抓另一个 feature 分支的提交，但**不希望切换工作区**。本字段就只是
-   * 给 `git log` 传 ref，**不**做 checkout。
+   * 抓 feature + hotfix 两根分支的提交，但**不希望切换工作区**。
+   * 本字段就只是给 `git log` 传 ref，**不**做 checkout。
+   *
+   * 读取时用 `normalizeRepoBranches`：旧 persist 里的单字符串仍可消化。
    */
-  branchByRepo?: Record<string, string>;
+  branchByRepo?: Record<string, string[]>;
   /** commit message 必须包含的关键字（任一命中即可）。 */
   includeKeywords?: string[];
   /** commit message 命中即排除的关键字。 */
@@ -124,7 +135,7 @@ export interface ReportGroup {
 /** 抽取 + 分组后的完整结果。 */
 export interface ReportResult {
   filter: ReportFilter;
-  /** 三层分组：repo → module → date。 */
+  /** 三层分组：日报 repo → module → date；周报 repo → date → module。 */
   groups: ReportGroup[];
   /** 渲染后的 Markdown 文本（可直接发钉钉/复制）。 */
   markdown: string;
@@ -162,6 +173,8 @@ export interface ReportPolishInput {
   markdown: string;
   style: ReportPolishStyle;
   lang: ReportLang;
+  /** 与抽取时的报告模式对齐；缺省按日报规则润色。 */
+  kind?: ReportKind;
   /**
    * 用户在本次调用临时覆盖的自定义提示词。
    * 不传 → 使用 ai-settings.json 中持久化的 report.customPrompt。
@@ -183,6 +196,7 @@ export interface RepoBranchInfo {
 
 /** ReportFilter 默认值。 */
 export const DEFAULT_REPORT_FILTER: ReportFilter = {
+  kind: "daily",
   range: { preset: "today" },
   authors: [],
   repos: [],

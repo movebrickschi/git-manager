@@ -1,15 +1,19 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useReportStore } from "@/stores/reportStore";
-import { useRepoStore } from "@/stores/repoStore";
 import { renderMarkdown } from "@/utils/markdown";
-import type { ReportRangePreset } from "../../../shared/report/types";
+import { normalizeRepoBranches } from "../../../shared/report/report-filter";
+import type { ReportKind, ReportRangePreset } from "../../../shared/report/types";
 import type { ReportLang, ReportPolishStyle } from "../../../shared/ai/types";
 
 const reportStore = useReportStore();
-const repoStore = useRepoStore();
 
-const rangePresets: { value: ReportRangePreset; label: string }[] = [
+const reportKinds: { value: ReportKind; label: string }[] = [
+  { value: "daily", label: "日报" },
+  { value: "weekly", label: "周报" },
+];
+
+const dailyRangePresets: { value: ReportRangePreset; label: string }[] = [
   { value: "today", label: "今日" },
   { value: "yesterday", label: "昨日" },
   { value: "this-week", label: "本周" },
@@ -18,6 +22,22 @@ const rangePresets: { value: ReportRangePreset; label: string }[] = [
   { value: "last-month", label: "上月" },
   { value: "custom", label: "自定义" },
 ];
+
+const weeklyRangePresets: { value: ReportRangePreset; label: string }[] = [
+  { value: "this-week", label: "本周" },
+  { value: "last-week", label: "上周" },
+  { value: "this-month", label: "本月" },
+  { value: "last-month", label: "上月" },
+  { value: "today", label: "今日" },
+  { value: "yesterday", label: "昨日" },
+  { value: "custom", label: "自定义" },
+];
+
+const rangePresets = computed(() =>
+  reportStore.filter.kind === "weekly" ? weeklyRangePresets : dailyRangePresets
+);
+
+const isWeekly = computed(() => reportStore.filter.kind === "weekly");
 
 const polishStyles: { value: ReportPolishStyle; label: string }[] = [
   { value: "formal", label: "正式" },
@@ -86,23 +106,24 @@ function handleResetPrompt() {
   reportStore.customPrompt = "";
 }
 
-const allReposChecked = computed(() =>
-  repoStore.repos.every((r) => reportStore.filter.repos.includes(r.path))
+const selectedRepoOptions = computed(() =>
+  reportStore.selectableRepos.filter((r) => reportStore.filter.repos.includes(r.path))
 );
 
-function toggleAllRepos() {
-  if (allReposChecked.value) {
-    reportStore.filter.repos = repoStore.activeRepo ? [repoStore.activeRepo.path] : [];
-  } else {
-    reportStore.filter.repos = repoStore.repos.map((r) => r.path);
-  }
-}
+const unselectedOpenRepos = computed(() =>
+  reportStore.selectableRepos.filter((r) => r.open && !reportStore.filter.repos.includes(r.path))
+);
 
-function toggleRepo(path: string, checked: boolean) {
-  const set = new Set(reportStore.filter.repos);
-  if (checked) set.add(path);
-  else set.delete(path);
-  reportStore.filter.repos = [...set];
+const unselectedRecentRepos = computed(() =>
+  reportStore.selectableRepos.filter((r) => !r.open && !reportStore.filter.repos.includes(r.path))
+);
+
+const hasUnselectedRepos = computed(
+  () => unselectedOpenRepos.value.length + unselectedRecentRepos.value.length > 0
+);
+
+function onKindChange(kind: ReportKind) {
+  reportStore.setKind(kind);
 }
 
 function onPresetChange(preset: ReportRangePreset) {
@@ -169,7 +190,7 @@ function handleExport() {
   const a = document.createElement("a");
   const stamp = new Date().toISOString().slice(0, 10);
   a.href = url;
-  a.download = `report-${stamp}.md`;
+  a.download = `${isWeekly.value ? "weekly" : "daily"}-report-${stamp}.md`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -177,12 +198,17 @@ function handleExport() {
 }
 
 onMounted(async () => {
+  document.addEventListener("click", onDocClick);
   reportStore.syncReposFromActive();
   await Promise.all([
     reportStore.loadAuthors(),
     reportStore.loadBranches(),
     reportStore.loadPolishConfig(),
   ]);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("click", onDocClick);
 });
 
 watch(
@@ -200,12 +226,76 @@ function branchOptionsFor(repoPath: string): string[] {
   return info?.branches ?? [];
 }
 
-function currentBranchFor(repoPath: string): string {
-  return (
-    reportStore.filter.branchByRepo?.[repoPath] ??
-    reportStore.branchesByRepo[repoPath]?.current ??
-    ""
-  );
+function selectedBranchesFor(repoPath: string): string[] {
+  return normalizeRepoBranches(reportStore.filter.branchByRepo?.[repoPath]);
+}
+
+function branchSummary(repoPath: string): string {
+  const selected = selectedBranchesFor(repoPath);
+  const current = reportStore.branchesByRepo[repoPath]?.current;
+  if (selected.length === 0) {
+    return current ? `${current}（当前）` : "选择分支";
+  }
+  if (selected.length === 1) {
+    return selected[0] === current ? `${selected[0]}（当前）` : (selected[0] ?? "选择分支");
+  }
+  return `${selected.length} 个分支`;
+}
+
+function allBranchesChecked(repoPath: string): boolean {
+  const options = branchOptionsFor(repoPath);
+  const selected = new Set(selectedBranchesFor(repoPath));
+  return options.length > 0 && options.every((b) => selected.has(b));
+}
+
+const branchPickerRepo = ref<string | null>(null);
+const pickerMenuStyle = ref<Record<string, string>>({});
+const repoAddOpen = ref(false);
+const repoAddStyle = ref<Record<string, string>>({});
+
+function menuStyleFromEvent(e: MouseEvent, menuWidth: number): Record<string, string> {
+  const btn = e.currentTarget as HTMLElement;
+  const rect = btn.getBoundingClientRect();
+  const left = Math.min(rect.left, window.innerWidth - menuWidth - 8);
+  return {
+    top: `${rect.bottom + 2}px`,
+    left: `${Math.max(8, left)}px`,
+  };
+}
+
+function togglePicker(repoPath: string, e: MouseEvent) {
+  repoAddOpen.value = false;
+  if (branchPickerRepo.value === repoPath) {
+    branchPickerRepo.value = null;
+    return;
+  }
+  pickerMenuStyle.value = menuStyleFromEvent(e, 240);
+  branchPickerRepo.value = repoPath;
+}
+
+function toggleRepoAdd(e: MouseEvent) {
+  branchPickerRepo.value = null;
+  if (repoAddOpen.value) {
+    repoAddOpen.value = false;
+    return;
+  }
+  repoAddStyle.value = menuStyleFromEvent(e, 260);
+  repoAddOpen.value = true;
+}
+
+function addRepo(path: string) {
+  reportStore.toggleRepo(path, true);
+}
+
+function removeRepo(path: string) {
+  reportStore.toggleRepo(path, false);
+}
+
+function onDocClick(e: MouseEvent) {
+  const t = e.target as HTMLElement | null;
+  if (t?.closest(".branch-picker") || t?.closest(".repo-add")) return;
+  branchPickerRepo.value = null;
+  repoAddOpen.value = false;
 }
 </script>
 
@@ -213,8 +303,22 @@ function currentBranchFor(repoPath: string): string {
   <div class="report-panel">
     <!-- 顶部过滤栏 -->
     <header class="filter-bar">
-      <!-- 时间范围 -->
+      <!-- 模式 + 时间范围 -->
       <div class="filter-row">
+        <label class="filter-label">模式</label>
+        <div class="preset-group" role="tablist" aria-label="报告模式">
+          <button
+            v-for="k in reportKinds"
+            :key="k.value"
+            class="chip"
+            :class="{ active: (reportStore.filter.kind ?? 'daily') === k.value }"
+            role="tab"
+            :aria-selected="(reportStore.filter.kind ?? 'daily') === k.value"
+            @click="onKindChange(k.value)"
+          >
+            {{ k.label }}
+          </button>
+        </div>
         <label class="filter-label">时间</label>
         <div class="preset-group">
           <button
@@ -279,60 +383,150 @@ function currentBranchFor(repoPath: string): string {
         </div>
       </div>
 
-      <!-- 仓库 -->
-      <div class="filter-row">
+      <!-- 仓库：已选以标签展示，未选收入下拉 -->
+      <div class="filter-row filter-row-repos">
         <label class="filter-label">仓库</label>
-        <label class="all-check">
-          <input
-            type="checkbox"
-            :checked="allReposChecked"
-            @change="toggleAllRepos"
-          />
-          全部
-        </label>
         <div class="repo-list">
-          <div v-for="r in repoStore.repos" :key="r.path" class="repo-item-row">
-            <label class="repo-item">
-              <input
-                type="checkbox"
-                :checked="reportStore.filter.repos.includes(r.path)"
-                @change="(e) => toggleRepo(r.path, (e.target as HTMLInputElement).checked)"
-              />
-              <span class="repo-dot" :style="{ background: r.color }"></span>
-              <span>{{ r.name }}</span>
-            </label>
-            <select
-              v-if="reportStore.filter.repos.includes(r.path)"
-              class="branch-select"
-              :value="currentBranchFor(r.path)"
-              :disabled="reportStore.branchesLoading"
-              :title="`仓库 ${r.name} 的扫描分支（不会切换工作区）`"
-              @change="
-                (e) =>
-                  reportStore.selectBranchForRepo(
-                    r.path,
-                    (e.target as HTMLSelectElement).value
-                  )
-              "
+          <div v-for="r in selectedRepoOptions" :key="r.path" class="repo-item-row">
+            <span class="repo-dot" :style="{ background: r.color }"></span>
+            <span class="repo-name">{{ r.name }}</span>
+            <div class="branch-picker">
+              <button
+                type="button"
+                class="branch-picker-btn"
+                :disabled="reportStore.branchesLoading"
+                :title="`仓库 ${r.name} 的扫描分支（可多选，不会切换工作区）`"
+                :aria-expanded="branchPickerRepo === r.path"
+                aria-haspopup="listbox"
+                @click.stop="togglePicker(r.path, $event)"
+              >
+                {{ branchSummary(r.path) }}
+              </button>
+              <div
+                v-if="branchPickerRepo === r.path"
+                class="branch-picker-menu"
+                :style="pickerMenuStyle"
+                role="listbox"
+                :aria-label="`${r.name} 扫描分支`"
+              >
+                <label
+                  v-if="branchOptionsFor(r.path).length > 0"
+                  class="branch-picker-item"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="allBranchesChecked(r.path)"
+                    @change="
+                      reportStore.toggleAllBranchesForRepo(
+                        r.path,
+                        branchOptionsFor(r.path)
+                      )
+                    "
+                  />
+                  全部
+                </label>
+                <label
+                  v-for="b in branchOptionsFor(r.path)"
+                  :key="b"
+                  class="branch-picker-item"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="selectedBranchesFor(r.path).includes(b)"
+                    @change="
+                      (e) =>
+                        reportStore.toggleBranchForRepo(
+                          r.path,
+                          b,
+                          (e.target as HTMLInputElement).checked
+                        )
+                    "
+                  />
+                  <span>{{ b }}</span>
+                  <span
+                    v-if="b === reportStore.branchesByRepo[r.path]?.current"
+                    class="count"
+                  >
+                    当前
+                  </span>
+                </label>
+                <div v-if="branchOptionsFor(r.path).length === 0" class="hint">
+                  {{ reportStore.branchesLoading ? "加载中…" : "无可用分支" }}
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              class="repo-remove"
+              :title="`移除 ${r.name}`"
+              @click="removeRepo(r.path)"
             >
-              <option
-                v-for="b in branchOptionsFor(r.path)"
-                :key="b"
-                :value="b"
-              >
-                {{ b }}
-                {{ b === reportStore.branchesByRepo[r.path]?.current ? "(当前)" : "" }}
-              </option>
-              <option
-                v-if="branchOptionsFor(r.path).length === 0"
-                value=""
-                disabled
-              >
-                {{ reportStore.branchesLoading ? "加载中…" : "无可用分支" }}
-              </option>
-            </select>
+              ×
+            </button>
           </div>
-          <div v-if="repoStore.repos.length === 0" class="hint">尚未打开任何仓库</div>
+          <div v-if="hasUnselectedRepos" class="repo-add">
+            <button
+              type="button"
+              class="repo-add-btn"
+              :aria-expanded="repoAddOpen"
+              aria-haspopup="listbox"
+              title="从已打开或最近打开的仓库中添加"
+              @click.stop="toggleRepoAdd($event)"
+            >
+              添加仓库
+            </button>
+            <div
+              v-if="repoAddOpen"
+              class="repo-add-menu"
+              :style="repoAddStyle"
+              role="listbox"
+              aria-label="添加扫描仓库"
+            >
+              <div v-if="unselectedOpenRepos.length > 0" class="repo-group-label">
+                已打开
+              </div>
+              <button
+                v-for="r in unselectedOpenRepos"
+                :key="r.path"
+                type="button"
+                class="repo-add-item"
+                @click="addRepo(r.path)"
+              >
+                <span class="repo-dot" :style="{ background: r.color }"></span>
+                <span>{{ r.name }}</span>
+              </button>
+              <div v-if="unselectedRecentRepos.length > 0" class="repo-group-label">
+                最近打开
+              </div>
+              <button
+                v-for="r in unselectedRecentRepos"
+                :key="r.path"
+                type="button"
+                class="repo-add-item"
+                @click="addRepo(r.path)"
+              >
+                <span class="repo-dot" :style="{ background: r.color }"></span>
+                <span>{{ r.name }}</span>
+              </button>
+              <button
+                v-if="unselectedOpenRepos.length > 0"
+                type="button"
+                class="repo-add-item repo-add-all"
+                @click="reportStore.toggleAllOpenRepos()"
+              >
+                勾选全部已打开
+              </button>
+            </div>
+          </div>
+          <div v-if="reportStore.selectableRepos.length === 0" class="hint">
+            尚未打开任何仓库
+          </div>
+          <div
+            v-else-if="selectedRepoOptions.length === 0"
+            class="hint"
+          >
+            点「添加仓库」选择要扫描的项目
+          </div>
         </div>
       </div>
 
@@ -371,7 +565,13 @@ function currentBranchFor(repoPath: string): string {
           :disabled="reportStore.extracting"
           @click="handleGenerate"
         >
-          {{ reportStore.extracting ? "生成中…" : "🚀 生成报告" }}
+          {{
+            reportStore.extracting
+              ? "生成中…"
+              : isWeekly
+                ? "🚀 生成周报"
+                : "🚀 生成日报"
+          }}
         </button>
       </div>
     </header>
@@ -458,7 +658,7 @@ function currentBranchFor(repoPath: string): string {
         <div class="prompt-header">
           <span class="prompt-title">自定义润色提示词</span>
           <span class="prompt-hint">
-            非空时追加到系统提示词末尾（优先级高于固定模板的 1-8 条规则）
+            非空时追加到系统提示词末尾（优先级高于固定模板规则）
           </span>
         </div>
         <textarea
@@ -501,7 +701,13 @@ function currentBranchFor(repoPath: string): string {
     <section v-else class="empty-area">
       <div class="empty-tip">
         <div class="empty-icon">📅</div>
-        <div>选择时间范围、作者、仓库后点「生成报告」</div>
+        <div>
+          {{
+            isWeekly
+              ? "周报按「仓库 → 日期 → 模块」汇总本周提交，默认时间为本周"
+              : "选择时间范围、作者、仓库后点「生成日报」"
+          }}
+        </div>
         <div class="empty-sub">
           AI 润色与提交信息生成共用同一份 API 密钥（设置面板配置）
         </div>
@@ -610,41 +816,178 @@ function currentBranchFor(repoPath: string): string {
   font-size: 11px;
 }
 
+.filter-row-repos {
+  align-items: flex-start;
+  width: 100%;
+}
+
 .repo-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  align-items: center;
+  gap: 6px 8px;
   flex: 1;
+  min-width: 0;
 }
 
-.repo-item {
+.repo-group-label {
+  font-size: 11px;
+  color: var(--color-foreground-muted);
+  padding: 6px 10px 2px;
+}
+
+.repo-name {
   font-size: 12px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .repo-item-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 1px 4px 1px 8px;
+  background: var(--color-surface-emphasis);
+  border-radius: var(--radius-md);
+}
+
+.repo-remove {
+  font-size: 14px;
+  line-height: 1;
+  min-width: 18px;
+  min-height: 18px;
+  padding: 0;
+  color: var(--color-foreground-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.repo-remove:hover {
+  color: var(--color-foreground);
+  background: var(--color-surface-hover);
+}
+
+.repo-add {
+  position: relative;
+}
+
+.repo-add-btn {
+  font-size: 12px;
+  min-height: 24px;
+  padding: 1px 10px;
+  color: var(--color-primary);
+  background: transparent;
+  border: 1px dashed color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.repo-add-btn:hover {
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+}
+
+.repo-add-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 220px;
+  max-width: 280px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-overlay);
+  padding: 4px 0;
+}
+
+.repo-add-item {
+  width: 100%;
+  font-size: 12px;
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: var(--control-height-compact);
-  padding: 0 4px;
+  padding: 5px 12px;
+  color: var(--color-foreground);
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
 }
 
-.branch-select {
+.repo-add-item:hover {
+  background: var(--color-surface-hover);
+}
+
+.repo-add-all {
+  margin-top: 2px;
+  border-top: 1px solid var(--color-divider);
+  color: var(--color-primary);
+}
+
+.branch-picker {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.branch-picker-btn {
   font-size: 11px;
-  min-height: 24px;
-  padding: 2px 6px;
-  background: var(--color-surface-emphasis);
+  min-height: 20px;
+  max-width: 160px;
+  padding: 1px 7px;
+  background: var(--color-surface-raised);
   color: var(--color-foreground);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  max-width: 180px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.branch-select:disabled {
+.branch-picker-btn:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
+.branch-picker-btn:disabled {
   opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.branch-picker-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 220px;
+  max-width: 320px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-overlay);
+  padding: 4px 0;
+}
+
+.branch-picker-item {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.branch-picker-item:hover {
+  background: var(--color-surface-hover);
+}
+
+.branch-picker-item .count {
+  color: var(--color-foreground-muted);
+  font-size: 11px;
 }
 
 .repo-dot {
@@ -654,11 +997,10 @@ function currentBranchFor(repoPath: string): string {
   display: inline-block;
 }
 
-.all-check {
-  font-size: 12px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.repo-add-item span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .text-input {

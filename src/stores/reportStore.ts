@@ -12,10 +12,21 @@ import { reportBridge } from "@/services/report";
 import { aiBridge } from "@/services/ai";
 import { useRepoStore } from "@/stores/repoStore";
 import {
+  normalizeRepoBranches,
+  rangeAfterKindSwitch,
+  toggleRepoBranch,
+} from "../../shared/report/report-filter";
+import {
+  buildReportRepoOptions,
+  defaultSelectedRepos,
+  toggleRepoSelection,
+} from "../../shared/report/report-repos";
+import {
   DEFAULT_REPORT_FILTER,
   type AuthorSuggestion,
   type RepoBranchInfo,
   type ReportFilter,
+  type ReportKind,
   type ReportResult,
 } from "../../shared/report/types";
 import {
@@ -25,11 +36,91 @@ import {
   type ReportPolishStyle,
 } from "../../shared/ai/types";
 
+const KIND_STORAGE_KEY = "git-manager.report-kind";
+const REPOS_STORAGE_KEY = "git-manager.report-repos";
+
+function loadPersistedKind(): ReportKind {
+  try {
+    const raw = localStorage.getItem(KIND_STORAGE_KEY);
+    if (raw === "weekly" || raw === "daily") return raw;
+  } catch {
+    // localStorage 不可用（测试 / SSR）时回退日报
+  }
+  return "daily";
+}
+
+function persistKind(kind: ReportKind): void {
+  try {
+    localStorage.setItem(KIND_STORAGE_KEY, kind);
+  } catch {
+    // ignore
+  }
+}
+
+interface PersistedRepoFilter {
+  repos: string[];
+  branchByRepo?: Record<string, string[]>;
+}
+
+function parsePersistedBranchByRepo(raw: unknown): Record<string, string[]> {
+  const branches: Record<string, string[]> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return branches;
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const list = normalizeRepoBranches(value);
+    if (list.length > 0) branches[key] = list;
+  }
+  return branches;
+}
+
+function loadPersistedRepoFilter(): PersistedRepoFilter | null {
+  try {
+    const raw = localStorage.getItem(REPOS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    const repos = (parsed as { repos?: unknown }).repos;
+    if (!Array.isArray(repos)) return null;
+    return {
+      repos: repos.filter((x): x is string => typeof x === "string" && x.length > 0),
+      branchByRepo: parsePersistedBranchByRepo((parsed as { branchByRepo?: unknown }).branchByRepo),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function persistRepoFilter(repos: string[], branchByRepo?: Record<string, string[]>): void {
+  try {
+    localStorage.setItem(
+      REPOS_STORAGE_KEY,
+      JSON.stringify({ repos, branchByRepo: branchByRepo ?? {} })
+    );
+  } catch {
+    // ignore
+  }
+}
+
 export const useReportStore = defineStore("report", () => {
   const repoStore = useRepoStore();
 
   // 持久于本会话内存；切换 repo 不重置（用户可能想跨仓库聚合）。
-  const filter = ref<ReportFilter>({ ...DEFAULT_REPORT_FILTER });
+  const initialKind = loadPersistedKind();
+  const filter = ref<ReportFilter>({
+    ...DEFAULT_REPORT_FILTER,
+    repos: [],
+    branches: [],
+    branchByRepo: {},
+    authors: [],
+    includeKeywords: [],
+    excludeKeywords: [],
+    kind: initialKind,
+    range: {
+      preset: initialKind === "weekly" ? "this-week" : DEFAULT_REPORT_FILTER.range.preset,
+    },
+  });
+
+  /** 只在首次进入日报时自动填仓库勾选；之后用户取消全部也不再强行勾回一个。 */
+  const reposInitialized = ref(false);
 
   const authors = ref<AuthorSuggestion[]>([]);
   const authorsLoading = ref(false);
@@ -61,67 +152,168 @@ export const useReportStore = defineStore("report", () => {
 
   const hasResult = computed(() => result.value !== null);
 
-  /** 默认把当前激活仓库注入到 filter.repos（首次使用）。 */
+  /** 已打开 tab + 最近打开；勾选互不排斥。 */
+  const selectableRepos = computed(() =>
+    buildReportRepoOptions({
+      openRepos: repoStore.repos,
+      recentRepos: repoStore.recentRepos,
+    })
+  );
+
+  const allOpenReposChecked = computed(() => {
+    const openPaths = selectableRepos.value.filter((r) => r.open).map((r) => r.path);
+    const targets =
+      openPaths.length > 0 ? openPaths : selectableRepos.value.map((r) => r.path);
+    return targets.length > 0 && targets.every((p) => filter.value.repos.includes(p));
+  });
+
+  function persistCurrentRepoFilter() {
+    persistRepoFilter(filter.value.repos, filter.value.branchByRepo);
+  }
+
+  /** 首次使用：持久化勾选 ∩ 可选列表，否则默认勾上全部已打开仓库。 */
   function syncReposFromActive() {
-    if (filter.value.repos.length === 0 && repoStore.activeRepo) {
+    if (reposInitialized.value) return;
+    reposInitialized.value = true;
+    const options = selectableRepos.value;
+    const persisted = loadPersistedRepoFilter();
+    const selected = defaultSelectedRepos({
+      openPaths: options.filter((r) => r.open).map((r) => r.path),
+      availablePaths: options.map((r) => r.path),
+      persisted: persisted?.repos ?? null,
+    });
+    if (selected.length > 0) {
+      filter.value.repos = selected;
+    } else if (repoStore.activeRepo) {
       filter.value.repos = [repoStore.activeRepo.path];
     }
+    if (persisted?.branchByRepo && Object.keys(persisted.branchByRepo).length > 0) {
+      filter.value.branchByRepo = {
+        ...(filter.value.branchByRepo ?? {}),
+        ...persisted.branchByRepo,
+      };
+    }
+    persistCurrentRepoFilter();
   }
+
+  function toggleRepo(path: string, checked: boolean) {
+    filter.value.repos = toggleRepoSelection(filter.value.repos, path, checked);
+    persistCurrentRepoFilter();
+  }
+
+  /** 「全部」只覆盖当前已打开的 tab；最近打开的仓库需单独勾选。 */
+  function toggleAllOpenRepos() {
+    const openPaths = selectableRepos.value.filter((r) => r.open).map((r) => r.path);
+    const targets =
+      openPaths.length > 0 ? openPaths : selectableRepos.value.map((r) => r.path);
+    const allChecked =
+      targets.length > 0 && targets.every((p) => filter.value.repos.includes(p));
+    if (allChecked) {
+      const drop = new Set(targets);
+      filter.value.repos = filter.value.repos.filter((p) => !drop.has(p));
+    } else {
+      const set = new Set(filter.value.repos);
+      for (const p of targets) set.add(p);
+      filter.value.repos = [...set];
+    }
+    persistCurrentRepoFilter();
+  }
+
+  let authorsLoadSeq = 0;
+  let branchesLoadSeq = 0;
 
   async function loadAuthors() {
     syncReposFromActive();
-    if (filter.value.repos.length === 0) {
-      authors.value = [];
+    const seq = ++authorsLoadSeq;
+    const repos = [...filter.value.repos];
+    if (repos.length === 0) {
+      if (seq === authorsLoadSeq) authors.value = [];
       return;
     }
     authorsLoading.value = true;
     try {
-      authors.value = await reportBridge.listAuthors(filter.value.repos);
+      const list = await reportBridge.listAuthors(repos);
+      if (seq !== authorsLoadSeq) return;
+      authors.value = list;
     } catch (e: unknown) {
+      if (seq !== authorsLoadSeq) return;
       const reason = e instanceof Error ? e.message : String(e);
       errorMsg.value = `加载作者失败：${reason}`;
     } finally {
-      authorsLoading.value = false;
+      if (seq === authorsLoadSeq) authorsLoading.value = false;
     }
   }
 
   async function loadBranches() {
     syncReposFromActive();
-    if (filter.value.repos.length === 0) {
-      branchesByRepo.value = {};
+    const seq = ++branchesLoadSeq;
+    const repos = [...filter.value.repos];
+    if (repos.length === 0) {
+      if (seq === branchesLoadSeq) branchesByRepo.value = {};
       return;
     }
     branchesLoading.value = true;
     try {
-      const map = await reportBridge.listBranches(filter.value.repos);
+      const map = await reportBridge.listBranches(repos);
+      if (seq !== branchesLoadSeq) return;
       branchesByRepo.value = map;
       // 把 branchByRepo 默认填为各仓库当前分支（仅在用户没选过的情况下）
-      const next = { ...(filter.value.branchByRepo ?? {}) };
-      for (const repo of filter.value.repos) {
+      const next: Record<string, string[]> = {};
+      for (const [key, value] of Object.entries(filter.value.branchByRepo ?? {})) {
+        const list = normalizeRepoBranches(value);
+        if (list.length > 0) next[key] = list;
+      }
+      for (const repo of repos) {
         const info = map[repo];
         if (!info?.current) continue;
-        if (!next[repo]) next[repo] = info.current;
+        if (!next[repo] || next[repo].length === 0) next[repo] = [info.current];
       }
       filter.value.branchByRepo = next;
+      persistCurrentRepoFilter();
     } catch (e: unknown) {
+      if (seq !== branchesLoadSeq) return;
       const reason = e instanceof Error ? e.message : String(e);
       errorMsg.value = `加载分支失败：${reason}`;
     } finally {
-      branchesLoading.value = false;
+      if (seq === branchesLoadSeq) branchesLoading.value = false;
     }
   }
 
-  /** 仅切换某仓库选定的分支；不触发 git checkout，工作区不变。 */
-  function selectBranchForRepo(repo: string, branch: string) {
+  /** 勾选/取消某仓库的一根扫描分支；不触发 git checkout，工作区不变。 */
+  function toggleBranchForRepo(repo: string, branch: string, checked: boolean) {
     const next = { ...(filter.value.branchByRepo ?? {}) };
-    next[repo] = branch;
+    next[repo] = toggleRepoBranch(normalizeRepoBranches(next[repo]), branch, checked);
     filter.value.branchByRepo = next;
+    persistCurrentRepoFilter();
+  }
+
+  /** 一键勾/取消该仓库全部本地分支。 */
+  function toggleAllBranchesForRepo(repo: string, branches: readonly string[]) {
+    const next = { ...(filter.value.branchByRepo ?? {}) };
+    const current = new Set(normalizeRepoBranches(next[repo]));
+    const allChecked = branches.length > 0 && branches.every((b) => current.has(b));
+    next[repo] = allChecked ? [] : [...branches];
+    filter.value.branchByRepo = next;
+    persistCurrentRepoFilter();
+  }
+
+  /** 切换日报 / 周报；典型时间预设跟着走，自定义/按月范围保持。 */
+  function setKind(kind: ReportKind) {
+    const preset = rangeAfterKindSwitch(kind, filter.value.range.preset);
+    filter.value.kind = kind;
+    if (preset !== filter.value.range.preset) {
+      filter.value.range = { preset };
+    }
+    persistKind(kind);
   }
 
   async function generate() {
     syncReposFromActive();
     if (filter.value.repos.length === 0) {
-      errorMsg.value = "请先打开至少一个仓库再生成日报";
+      errorMsg.value =
+        filter.value.kind === "weekly"
+          ? "请先打开至少一个仓库再生成周报"
+          : "请先打开至少一个仓库再生成日报";
       return;
     }
     errorMsg.value = null;
@@ -156,6 +348,7 @@ export const useReportStore = defineStore("report", () => {
         style: polishStyle.value,
         lang: polishLang.value,
         customPrompt: customPrompt.value || undefined,
+        kind: filter.value.kind ?? "daily",
       });
       if (res.ok) {
         previewMarkdown.value = res.markdown;
@@ -261,10 +454,16 @@ export const useReportStore = defineStore("report", () => {
     polishConfigLoaded,
     polishConfigSaving,
     hasResult,
+    selectableRepos,
+    allOpenReposChecked,
     syncReposFromActive,
+    toggleRepo,
+    toggleAllOpenRepos,
     loadAuthors,
     loadBranches,
-    selectBranchForRepo,
+    toggleBranchForRepo,
+    toggleAllBranchesForRepo,
+    setKind,
     generate,
     polish,
     abortPolish,

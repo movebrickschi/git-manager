@@ -198,7 +198,7 @@ onUnmounted(() => document.removeEventListener("keydown", onGlobalKeydown));
         <!-- 搁置 tab -->
         <StashList v-else-if="activeTab === 'stash'" style="height: 100%" />
 
-        <!-- 日报 tab -->
+        <!-- 报告 tab（日报 / 周报） -->
         <ReportPanel v-else-if="activeTab === 'report'" style="height: 100%" />
 
         <!-- 日志 tab: 提交图 -->

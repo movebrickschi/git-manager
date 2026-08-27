@@ -5,7 +5,15 @@
  * 避免后续重构正则时悄悄破坏日报分组与 release-notes 用途。
  */
 import { describe, expect, it } from "vitest";
-import { parseConventional, applyReportFilter, resolveRange } from "./report-filter.js";
+import {
+  parseConventional,
+  applyReportFilter,
+  resolveRange,
+  rangeAfterKindSwitch,
+  resolveGitLogRefs,
+  normalizeRepoBranches,
+  toggleRepoBranch,
+} from "./report-filter.js";
 import type { ReportEntry, ReportFilter } from "./types.js";
 
 describe("parseConventional · 常见格式", () => {
@@ -140,5 +148,126 @@ describe("resolveRange · 边界 sanity 检查", () => {
     const now = new Date("2026-05-21T15:30:00.000Z");
     const r = resolveRange({ preset: "custom" }, now);
     expect(Date.parse(r.fromISO)).toBeLessThanOrEqual(Date.parse(r.toISO));
+  });
+});
+
+describe("rangeAfterKindSwitch", () => {
+  it("切到周报时，今日/昨日改成默认本周", () => {
+    expect(rangeAfterKindSwitch("weekly", "today")).toBe("this-week");
+    expect(rangeAfterKindSwitch("weekly", "yesterday")).toBe("this-week");
+  });
+
+  it("切到日报时，本周/上周改成默认今日", () => {
+    expect(rangeAfterKindSwitch("daily", "this-week")).toBe("today");
+    expect(rangeAfterKindSwitch("daily", "last-week")).toBe("today");
+  });
+
+  it("自定义/月报范围在模式切换时保持不变", () => {
+    expect(rangeAfterKindSwitch("weekly", "custom")).toBe("custom");
+    expect(rangeAfterKindSwitch("weekly", "this-month")).toBe("this-month");
+    expect(rangeAfterKindSwitch("daily", "last-month")).toBe("last-month");
+    expect(rangeAfterKindSwitch("weekly", "last-week")).toBe("last-week");
+  });
+});
+
+describe("normalizeRepoBranches", () => {
+  it("legacy 单字符串变成单元素数组", () => {
+    expect(normalizeRepoBranches("feature/x")).toEqual(["feature/x"]);
+  });
+
+  it("数组去空、去重、保序", () => {
+    expect(normalizeRepoBranches(["main", "dev", "main", "", "feat/x"])).toEqual([
+      "main",
+      "dev",
+      "feat/x",
+    ]);
+  });
+
+  it("空值得到空数组", () => {
+    expect(normalizeRepoBranches(undefined)).toEqual([]);
+    expect(normalizeRepoBranches("")).toEqual([]);
+    expect(normalizeRepoBranches([])).toEqual([]);
+  });
+});
+
+describe("toggleRepoBranch · 同一仓库可勾多个分支", () => {
+  it("勾第二个分支时保留第一个", () => {
+    expect(toggleRepoBranch(["main"], "dev", true)).toEqual(["main", "dev"]);
+  });
+
+  it("取消勾选只拿掉目标分支", () => {
+    expect(toggleRepoBranch(["main", "dev"], "main", false)).toEqual(["dev"]);
+  });
+
+  it("允许全部取消", () => {
+    expect(toggleRepoBranch(["main"], "main", false)).toEqual([]);
+  });
+});
+
+describe("resolveGitLogRefs · 每仓分支优先于全局白名单", () => {
+  it("branchByRepo 命中时只扫该仓指定分支，不把全局 branches 拼上去", () => {
+    expect(
+      resolveGitLogRefs(
+        {
+          branches: ["main", "develop"],
+          branchByRepo: { "C:\\a\\hellome": ["feature/x"] },
+        },
+        "C:\\a\\hellome",
+        "main"
+      )
+    ).toEqual({ all: false, refs: ["feature/x"] });
+  });
+
+  it("同一仓库勾多个分支时全部作为 git log refs", () => {
+    expect(
+      resolveGitLogRefs(
+        {
+          branches: [],
+          branchByRepo: { "/r": ["main", "dev", "feat/x"] },
+        },
+        "/r",
+        "release"
+      )
+    ).toEqual({ all: false, refs: ["main", "dev", "feat/x"] });
+  });
+
+  it("仍能消化旧的单字符串 persist 形态", () => {
+    expect(
+      resolveGitLogRefs(
+        {
+          branches: [],
+          branchByRepo: { "/r": "hotfix" as unknown as string[] },
+        },
+        "/r",
+        "main"
+      )
+    ).toEqual({ all: false, refs: ["hotfix"] });
+  });
+
+  it("每仓分支为空数组时回退当前分支", () => {
+    expect(
+      resolveGitLogRefs({ branches: [], branchByRepo: { "/r": [] } }, "/r", "release")
+    ).toEqual({ all: false, refs: ["release"] });
+  });
+
+  it("--all 高于 branchByRepo", () => {
+    expect(
+      resolveGitLogRefs(
+        { branches: ["--all"], branchByRepo: { "/r": ["dev"] } },
+        "/r",
+        "main"
+      )
+    ).toEqual({ all: true, refs: [] });
+  });
+
+  it("没有 per-repo / 白名单时回退当前分支", () => {
+    expect(resolveGitLogRefs({ branches: [], branchByRepo: {} }, "/r", "release")).toEqual({
+      all: false,
+      refs: ["release"],
+    });
+  });
+
+  it("都没有时 refs 为空（交给 git log 默认 HEAD）", () => {
+    expect(resolveGitLogRefs({ branches: [] }, "/r")).toEqual({ all: false, refs: [] });
   });
 });

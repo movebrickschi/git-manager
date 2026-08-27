@@ -1481,9 +1481,9 @@ async function handleDeleteRemoteTag(tag: string): Promise<void> {
         class="tab-btn"
         :class="{ active: props.activeTab === 'report' }"
         @click="emit('update:activeTab', 'report')"
-        title="按时间范围聚合提交，生成日报/周报，支持 AI 润色"
+        title="按时间范围聚合提交，生成日报 / 周报，支持 AI 润色"
       >
-        日报
+        报告
       </button>
     </div>
 

@@ -7,7 +7,7 @@
  * 与 commit message 生成共用同一份 `AiConnectionSettings`（baseUrl / apiKey /
  * model / timeout），但 prompt 风格 / 语言 / 截断阈值由本文件入参单独控制。
  */
-import type { ReportLang, ReportPolishStyle } from "../report/types.js";
+import type { ReportKind, ReportLang, ReportPolishStyle } from "../report/types.js";
 
 const STYLE_INSTR: Record<ReportPolishStyle, string> = {
   formal:
@@ -30,6 +30,8 @@ export interface ReportPromptInputs {
   rawMarkdown: string;
   style: ReportPolishStyle;
   lang: ReportLang;
+  /** 报告模式；缺省保持旧的日报/周报混合规则。 */
+  kind?: ReportKind;
   /** 报告标题，例如「工作日报（2026-04-20）」。 */
   title?: string;
   /** 当输入 Markdown 超过该字符数时，调用方应先截断；本函数不做截断。 */
@@ -73,6 +75,30 @@ export function truncateReportInput(input: string, maxChars: number): {
   };
 }
 
+function roleLine(kind?: ReportKind): string {
+  if (kind === "weekly") {
+    return "你是一名资深技术经理，负责把一份机械汇总的 Git 提交清单润色成可读的工作周报。";
+  }
+  return "你是一名资深技术经理，负责把一份机械汇总的 Git 提交清单润色成可读的工作汇报。";
+}
+
+function structureRule(kind?: ReportKind): string {
+  if (kind === "weekly") {
+    return "4. 保留输入的「项目 / 日期 / 模块」分组结构（项目用二级标题 ##，日期用粗体 **周几 YYYY-MM-DD**，模块用三级标题 ###）";
+  }
+  return "4. 保留输入的「项目 / 模块」分组结构（项目用二级标题 ##，模块用三级标题 ###，日期用粗体 **YYYY-MM-DD**）";
+}
+
+function overviewRule(kind?: ReportKind): string {
+  if (kind === "weekly") {
+    return "7. 输出顶部 1 行总览（句号结尾）：本周完成了哪几方面工作";
+  }
+  if (kind === "daily") {
+    return "7. 输出顶部 1 行总览（句号结尾）：今天做了哪几方面工作";
+  }
+  return "7. 输出顶部 1 行总览（句号结尾）：今天 / 本周做了哪几方面工作";
+}
+
 /** 拼装润色 prompt（不调用 LLM，纯字符串拼装）。 */
 export function buildReportPolishPrompt(inputs: ReportPromptInputs): BuiltReportPrompt {
   const style = STYLE_INSTR[inputs.style];
@@ -80,22 +106,27 @@ export function buildReportPolishPrompt(inputs: ReportPromptInputs): BuiltReport
   const titleHint = inputs.title ? `报告标题：${inputs.title}` : "";
 
   const baseLines = [
-    "你是一名资深技术经理，负责把一份机械汇总的 Git 提交清单润色成可读的工作汇报。",
+    roleLine(inputs.kind),
     "你需要遵守以下规则：",
     `1. 写作风格：${style}`,
     `2. 输出语言：${lang}`,
     "3. 仅基于输入 commit 列表的事实改写，不要凭空虚构未提及的工作内容",
-    "4. 保留输入的「项目 / 模块」分组结构（项目用二级标题 ##，模块用三级标题 ###，日期用粗体 **YYYY-MM-DD**）",
+    structureRule(inputs.kind),
     "5. 每项工作必须使用「顶级 `- ` 列表项」表达，不要再用 `####` 四级标题；如有 commit body 明细，用「缩进 2 空格的 `  - ` 子列表」承载；scope 仍以行内代码标签 `` `scope` `` 形式附在工作项末尾",
     "6. 同一项目下相似 commit 可以合并成一句，不要逐条复述",
-    "7. 输出顶部 1 行总览（句号结尾）：今天 / 本周做了哪几方面工作",
+    overviewRule(inputs.kind),
     "8. 强调成果（带数字/影响范围），不要写「修改了某文件」这类无信息量描述",
     "9. 直接返回 Markdown 报告本身，不要任何额外解释 / 引号 / 代码块包裹",
   ];
+  if (inputs.kind === "weekly") {
+    baseLines.push(
+      "10. 不要编造「下周计划 / 未完成事项 / 风险」——输入中没有依据的内容一律不写"
+    );
+  }
 
   const customAddon = inputs.customPrompt?.trim();
   if (customAddon) {
-    baseLines.push("", "附加要求（用户自定义，优先级高于上面 1-8）：", customAddon);
+    baseLines.push("", "附加要求（用户自定义，优先级高于上面的固定规则）：", customAddon);
   }
 
   const system = baseLines.join("\n");

@@ -6,7 +6,7 @@
  *
  * 三端共用，禁止 import 任何 node-only / browser-only API。
  */
-import type { ReportEntry, ReportFilter } from "./types.js";
+import type { ReportEntry, ReportFilter, ReportKind, ReportRangePreset } from "./types.js";
 
 /**
  * 解析 commit message 的 conventional commits 前缀，得到 module / scope / subject / breaking。
@@ -211,4 +211,83 @@ function startOfWeekMonday(d: Date): Date {
   const day = d.getDay(); // 0 = Sun
   const diff = day === 0 ? -6 : 1 - day; // 调到本周一
   return addDays(d, diff);
+}
+
+/**
+ * 切换日报/周报模式时，只改「典型」时间预设：
+ * 今日/昨日 → 本周；本周/上周 → 今日。自定义和按月范围保持不动。
+ */
+export function rangeAfterKindSwitch(
+  kind: ReportKind,
+  current: ReportRangePreset
+): ReportRangePreset {
+  if (kind === "weekly" && (current === "today" || current === "yesterday")) {
+    return "this-week";
+  }
+  if (kind === "daily" && (current === "this-week" || current === "last-week")) {
+    return "today";
+  }
+  return current;
+}
+
+/**
+ * 把 persist / UI 里的每仓分支值收成去重后的字符串数组。
+ * 兼容旧数据：单字符串 `"main"` → `["main"]`。
+ */
+export function normalizeRepoBranches(value: unknown): string[] {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const trimmed = item.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
+
+/** 勾选/取消某个仓库的一根分支；绝不把其它已选项清掉。 */
+export function toggleRepoBranch(
+  selected: readonly string[],
+  branch: string,
+  checked: boolean
+): string[] {
+  const set = new Set(normalizeRepoBranches([...selected]));
+  if (checked) set.add(branch);
+  else set.delete(branch);
+  return [...set];
+}
+
+/**
+ * 解析某个仓库实际要扫的 git log refs。
+ *
+ * 优先级：`--all` > `branchByRepo[repo]` > 全局 `branches` 白名单 > 当前分支。
+ * `branchByRepo` 一旦给出（非空），就只扫这些 ref，不再把全局白名单拼上去。
+ */
+export function resolveGitLogRefs(
+  filter: Pick<ReportFilter, "branches" | "branchByRepo">,
+  repo: string,
+  currentBranch?: string
+): { all: boolean; refs: string[] } {
+  const branches = filter.branches ?? [];
+  if (branches.includes("--all")) {
+    return { all: true, refs: [] };
+  }
+  const perRepo = normalizeRepoBranches(filter.branchByRepo?.[repo]);
+  if (perRepo.length > 0) {
+    return { all: false, refs: perRepo };
+  }
+  if (branches.length > 0) {
+    return { all: false, refs: [...branches] };
+  }
+  if (currentBranch) {
+    return { all: false, refs: [currentBranch] };
+  }
+  return { all: false, refs: [] };
 }

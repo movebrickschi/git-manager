@@ -12,7 +12,13 @@
  */
 import * as path from "path";
 import { simpleGit, type SimpleGit } from "simple-git";
-import { applyReportFilter, parseConventional, resolveRange } from "../../shared/report/report-filter.js";
+import {
+  applyReportFilter,
+  normalizeRepoBranches,
+  parseConventional,
+  resolveGitLogRefs,
+  resolveRange,
+} from "../../shared/report/report-filter.js";
 import { buildAndRender } from "../../shared/report/report-grouper.js";
 import {
   buildReportPolishPrompt,
@@ -79,7 +85,10 @@ async function getDefaultAuthor(git: SimpleGit): Promise<{ name?: string; email?
   }
 }
 
-function buildGitLogArgs(filter: ReportFilter, branch: string | undefined): string[] {
+function buildGitLogArgs(
+  filter: ReportFilter,
+  refs: { all: boolean; refs: string[] }
+): string[] {
   const args = ["log", `--pretty=format:${LOG_FORMAT}${RECORD_SEP}`];
 
   const { fromISO, toISO } = resolveRange(filter.range);
@@ -95,18 +104,10 @@ function buildGitLogArgs(filter: ReportFilter, branch: string | undefined): stri
     args.push(`--author=${authors.map(escapeRegex).join("|")}`);
   }
 
-  // 分支：
-  // - branches=['--all'] → 所有分支
-  // - 给定白名单 → 多个 ref 直接附加在 args 末尾（git log 支持多 ref）
-  // - 默认（空）→ 当前分支（已由 caller 注入 branch 参数到 args 末尾）
-  const branches = filter.branches ?? [];
-  if (branches.includes("--all")) {
+  if (refs.all) {
     args.push("--all");
-  } else if (branches.length > 0) {
-    // 调用方负责确保分支名安全
-    args.push(...branches);
-  } else if (branch) {
-    args.push(branch);
+  } else if (refs.refs.length > 0) {
+    args.push(...refs.refs);
   }
 
   // 关键字过滤交给后处理（applyReportFilter）；这里不用 --grep 以避免转义复杂度
@@ -158,20 +159,16 @@ function parseLog(raw: string, repo: string): ReportEntry[] {
 async function gitLogForRepo(repo: string, filter: ReportFilter): Promise<ReportEntry[]> {
   const git = openGit(repo);
   const branches = filter.branches ?? [];
-  // 优先级：branchByRepo[repo] > branches['--all'] > branches[白名单] > 当前分支
-  let branchForArgs: string | undefined;
-  const perRepoBranch = filter.branchByRepo?.[repo];
-  if (perRepoBranch && !branches.includes("--all")) {
-    branchForArgs = perRepoBranch;
-  } else if (!branches.includes("--all") && branches.length === 0) {
-    branchForArgs = await getCurrentBranch(git);
-  }
-  const args = buildGitLogArgs(filter, branchForArgs);
+  const perRepo = normalizeRepoBranches(filter.branchByRepo?.[repo]);
+  const needsCurrent =
+    !branches.includes("--all") && perRepo.length === 0 && branches.length === 0;
+  const current = needsCurrent ? await getCurrentBranch(git) : undefined;
+  const refs = resolveGitLogRefs(filter, repo, current);
+  const args = buildGitLogArgs(filter, refs);
   const raw = await git.raw(args);
   const entries = parseLog(raw, repo);
-  // 给 branch 字段填值（如果调用方没用 --all）
-  if (branchForArgs) {
-    for (const e of entries) e.branch = branchForArgs;
+  if (!refs.all && refs.refs.length === 1) {
+    for (const e of entries) e.branch = refs.refs[0];
   }
   return entries;
 }
@@ -306,7 +303,8 @@ export function makeReportService(deps: ReportServiceDeps) {
       }
 
       const rangeISO = resolveRange(effectiveFilter.range);
-      const rendered = buildAndRender(filtered, { rangeISO });
+      const kind = effectiveFilter.kind ?? "daily";
+      const rendered = buildAndRender(filtered, { rangeISO, kind });
 
       return {
         ok: true,
@@ -352,6 +350,7 @@ export function makeReportService(deps: ReportServiceDeps) {
           style: reportSettings.style,
           lang: reportSettings.lang,
           customPrompt: reportSettings.customPrompt,
+          kind: input.kind,
         });
 
         let res = await chatCompletions(asConnection(settings), system, user, ctrl.signal);

@@ -9,6 +9,7 @@
 import type {
   ReportEntry,
   ReportGroup,
+  ReportKind,
   ReportOutputFormat,
 } from "./types.js";
 
@@ -48,6 +49,64 @@ function groupBy<T, K extends string>(items: readonly T[], keyOf: (x: T) => K): 
   return map;
 }
 
+const MODULE_ORDER = Object.keys(MODULE_DISPLAY);
+
+function moduleIndex(m: string): number {
+  const idx = MODULE_ORDER.indexOf(m);
+  return idx === -1 ? MODULE_ORDER.length : idx;
+}
+
+function sortModuleKeys(keys: string[]): string[] {
+  return [...keys].sort((a, b) => {
+    const ia = moduleIndex(a);
+    const ib = moduleIndex(b);
+    if (ia !== ib) return ia - ib;
+    return a.localeCompare(b);
+  });
+}
+
+function sortEntriesDesc(entries: readonly ReportEntry[]): ReportEntry[] {
+  return [...entries].sort((x, y) => Date.parse(y.dateISO) - Date.parse(x.dateISO));
+}
+
+function dateLeaf(key: string, entries: readonly ReportEntry[]): ReportGroup {
+  return {
+    level: "date",
+    key,
+    entries: sortEntriesDesc(entries),
+    children: [],
+    count: entries.length,
+  };
+}
+
+function moduleNode(
+  key: string,
+  entries: readonly ReportEntry[],
+  nestDates: boolean
+): ReportGroup {
+  const children = nestDates ? dateNodes(entries) : [];
+  return {
+    level: "module",
+    key,
+    entries: nestDates ? [] : sortEntriesDesc(entries),
+    children,
+    count: entries.length,
+  };
+}
+
+function dateNodes(entries: readonly ReportEntry[]): ReportGroup[] {
+  const byDate = groupBy(entries, (e) => dateKey(e.dateISO));
+  const dates = [...byDate.keys()].sort((a, b) => b.localeCompare(a));
+  return dates.map((d) => dateLeaf(d, byDate.get(d) ?? []));
+}
+
+function moduleNodes(entries: readonly ReportEntry[], nestDates: boolean): ReportGroup[] {
+  const byModule = groupBy(entries, (e) => e.module || "other");
+  return sortModuleKeys([...byModule.keys()]).map((mod) =>
+    moduleNode(mod, byModule.get(mod) ?? [], nestDates)
+  );
+}
+
 /**
  * 把扁平 entry 数组分成三层树。
  *
@@ -55,59 +114,45 @@ function groupBy<T, K extends string>(items: readonly T[], keyOf: (x: T) => K): 
  * - 仓库按 repoName 字典序
  * - module 按 MODULE_DISPLAY 预设顺序优先，未列出的按字典序排在末尾
  * - 日期按 ISO 倒序（最新在前）
+ *
+ * 日报：repo → module → date
+ * 周报：repo → date → module
  */
-export function buildReportTree(entries: readonly ReportEntry[]): ReportGroup[] {
+export function buildReportTree(
+  entries: readonly ReportEntry[],
+  kind: ReportKind = "daily"
+): ReportGroup[] {
   const byRepo = groupBy(entries, (e) => e.repoName as string);
   const repoNames = [...byRepo.keys()].sort((a, b) => a.localeCompare(b));
 
-  const moduleOrder = Object.keys(MODULE_DISPLAY);
-  const moduleIndex = (m: string): number => {
-    const idx = moduleOrder.indexOf(m);
-    return idx === -1 ? moduleOrder.length : idx;
-  };
-
   return repoNames.map<ReportGroup>((repoName) => {
     const repoEntries = byRepo.get(repoName) ?? [];
-    const byModule = groupBy(repoEntries, (e) => e.module || "other");
-    const modules = [...byModule.keys()].sort((a, b) => {
-      const ia = moduleIndex(a);
-      const ib = moduleIndex(b);
-      if (ia !== ib) return ia - ib;
-      return a.localeCompare(b);
-    });
-
-    const moduleChildren: ReportGroup[] = modules.map((mod) => {
-      const modEntries = byModule.get(mod) ?? [];
-      const byDate = groupBy(modEntries, (e) => dateKey(e.dateISO));
-      const dates = [...byDate.keys()].sort((a, b) => b.localeCompare(a));
-      const dateChildren: ReportGroup[] = dates.map((d) => {
-        const dateEntries = byDate.get(d) ?? [];
-        return {
-          level: "date",
-          key: d,
-          entries: [...dateEntries].sort(
-            (x, y) => Date.parse(y.dateISO) - Date.parse(x.dateISO)
-          ),
-          children: [],
-          count: dateEntries.length,
-        };
-      });
-
-      return {
-        level: "module",
-        key: mod,
-        entries: [],
-        children: dateChildren,
-        count: modEntries.length,
-      };
-    });
+    const children =
+      kind === "weekly"
+        ? dateNodesForWeekly(repoEntries)
+        : moduleNodes(repoEntries, true);
 
     return {
       level: "repo",
       key: repoName,
       entries: [],
-      children: moduleChildren,
+      children,
       count: repoEntries.length,
+    };
+  });
+}
+
+function dateNodesForWeekly(entries: readonly ReportEntry[]): ReportGroup[] {
+  const byDate = groupBy(entries, (e) => dateKey(e.dateISO));
+  const dates = [...byDate.keys()].sort((a, b) => b.localeCompare(a));
+  return dates.map((d) => {
+    const dateEntries = byDate.get(d) ?? [];
+    return {
+      level: "date" as const,
+      key: d,
+      entries: [],
+      children: moduleNodes(dateEntries, false),
+      count: dateEntries.length,
     };
   });
 }
@@ -120,6 +165,40 @@ function rangeTitleZh(rangeISO: { fromISO: string; toISO: string }): string {
   const from = dateKey(rangeISO.fromISO);
   const to = dateKey(rangeISO.toISO);
   return from === to ? from : `${from} ~ ${to}`;
+}
+
+const WEEKDAYS_ZH = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+
+function dateHeading(key: string, kind: ReportKind): string {
+  if (kind !== "weekly") return key;
+  const parts = key.split("-").map(Number);
+  const y = parts[0];
+  const m = parts[1];
+  const d = parts[2];
+  if (!y || !m || !d) return key;
+  const date = new Date(y, m - 1, d);
+  if (Number.isNaN(date.getTime())) return key;
+  return `${WEEKDAYS_ZH[date.getDay()]} ${key}`;
+}
+
+function defaultTitle(
+  kind: ReportKind,
+  rangeISO: { fromISO: string; toISO: string }
+): string {
+  const range = rangeTitleZh(rangeISO);
+  return kind === "weekly" ? `工作周报（${range}）` : `工作日报（${range}）`;
+}
+
+function moduleCountSummary(entries: readonly ReportEntry[]): string {
+  const counts = new Map<string, number>();
+  for (const e of entries) {
+    const k = e.module || "other";
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([mod, n]) => `${mod} ${n}`)
+    .join(" / ");
 }
 
 /**
@@ -211,76 +290,93 @@ function renderEntryBlockPlain(entry: ReportEntry): string[] {
   return lines;
 }
 
+type RenderMeta = {
+  title?: string;
+  rangeISO: { fromISO: string; toISO: string };
+  totalCommits: number;
+  kind?: ReportKind;
+  moduleSummary?: string;
+};
+
+function renderGroupMd(group: ReportGroup, kind: ReportKind, lines: string[]): void {
+  if (group.level === "repo") {
+    lines.push(`## 📦 ${group.key}（${group.count} 条）`);
+    lines.push("");
+    for (const child of group.children) renderGroupMd(child, kind, lines);
+    return;
+  }
+  if (group.level === "module") {
+    lines.push(`### ${moduleLabel(group.key)}（${group.count} 条）`);
+    lines.push("");
+    if (group.entries.length > 0) {
+      for (const entry of group.entries) lines.push(...renderEntryBlockMd(entry));
+      lines.push("");
+    }
+    for (const child of group.children) renderGroupMd(child, kind, lines);
+    return;
+  }
+  lines.push(`**${dateHeading(group.key, kind)}**`);
+  lines.push("");
+  if (group.entries.length > 0) {
+    for (const entry of group.entries) lines.push(...renderEntryBlockMd(entry));
+    lines.push("");
+  }
+  for (const child of group.children) renderGroupMd(child, kind, lines);
+}
+
 /**
  * 渲染 Markdown 报告。
  *
- * 结构：
- * ```
- * # 工作日报（{title}）
- *
- * 共 {N} 条提交 · {M} 个项目
- *
- * ## 📦 {repoName}（{count} 条）
- *
- * ### ✨ 新功能（feat · {count} 条）
- *
- * #### {YYYY-MM-DD}
- *   - `shortSha` feat(scope): subject _by Author_
- * ```
+ * 日报结构：repo → module → date
+ * 周报结构：repo → date → module，日期带周几。
  */
-export function renderMarkdown(
-  groups: readonly ReportGroup[],
-  meta: { title?: string; rangeISO: { fromISO: string; toISO: string }; totalCommits: number }
-): string {
+export function renderMarkdown(groups: readonly ReportGroup[], meta: RenderMeta): string {
+  const kind = meta.kind ?? "daily";
   const lines: string[] = [];
-  const title = meta.title ?? `工作日报（${rangeTitleZh(meta.rangeISO)}）`;
+  const title = meta.title ?? defaultTitle(kind, meta.rangeISO);
   lines.push(`# 📅 ${title}`);
   lines.push("");
-  lines.push(`> 共 **${meta.totalCommits}** 条提交 · **${groups.length}** 个项目`);
+  const summaryBits = [`共 **${meta.totalCommits}** 条提交`, `**${groups.length}** 个项目`];
+  if (kind === "weekly" && meta.moduleSummary) summaryBits.push(meta.moduleSummary);
+  lines.push(`> ${summaryBits.join(" · ")}`);
   lines.push("");
 
-  for (const repo of groups) {
-    lines.push(`## 📦 ${repo.key}（${repo.count} 条）`);
-    lines.push("");
-    for (const mod of repo.children) {
-      lines.push(`### ${moduleLabel(mod.key)}（${mod.count} 条）`);
-      lines.push("");
-      for (const date of mod.children) {
-        lines.push(`**${date.key}**`);
-        lines.push("");
-        for (const entry of date.entries) {
-          lines.push(...renderEntryBlockMd(entry));
-        }
-        lines.push("");
-      }
-    }
-  }
+  for (const repo of groups) renderGroupMd(repo, kind, lines);
 
   return lines.join("\n").trimEnd() + "\n";
 }
 
+function renderGroupPlain(group: ReportGroup, kind: ReportKind, lines: string[], depth: number): void {
+  const pad = "  ".repeat(depth);
+  if (group.level === "repo") {
+    lines.push(`${pad}【${group.key}】（${group.count} 条）`);
+    for (const child of group.children) renderGroupPlain(child, kind, lines, depth + 1);
+    return;
+  }
+  if (group.level === "module") {
+    lines.push(`${pad}${moduleLabel(group.key)}（${group.count} 条）`);
+    for (const entry of group.entries) lines.push(...renderEntryBlockPlain(entry));
+    for (const child of group.children) renderGroupPlain(child, kind, lines, depth + 1);
+    return;
+  }
+  lines.push(`${pad}${dateHeading(group.key, kind)}`);
+  for (const entry of group.entries) lines.push(...renderEntryBlockPlain(entry));
+  for (const child of group.children) renderGroupPlain(child, kind, lines, depth + 1);
+}
+
 /** 渲染纯文本报告。 */
-export function renderPlain(
-  groups: readonly ReportGroup[],
-  meta: { title?: string; rangeISO: { fromISO: string; toISO: string }; totalCommits: number }
-): string {
+export function renderPlain(groups: readonly ReportGroup[], meta: RenderMeta): string {
+  const kind = meta.kind ?? "daily";
   const lines: string[] = [];
-  const title = meta.title ?? `工作日报（${rangeTitleZh(meta.rangeISO)}）`;
+  const title = meta.title ?? defaultTitle(kind, meta.rangeISO);
   lines.push(title);
-  lines.push(`共 ${meta.totalCommits} 条提交 / ${groups.length} 个项目`);
+  const summaryBits = [`共 ${meta.totalCommits} 条提交`, `${groups.length} 个项目`];
+  if (kind === "weekly" && meta.moduleSummary) summaryBits.push(meta.moduleSummary);
+  lines.push(summaryBits.join(" / "));
   lines.push("");
 
   for (const repo of groups) {
-    lines.push(`【${repo.key}】（${repo.count} 条）`);
-    for (const mod of repo.children) {
-      lines.push(`  ${moduleLabel(mod.key)}（${mod.count} 条）`);
-      for (const date of mod.children) {
-        lines.push(`    ${date.key}`);
-        for (const entry of date.entries) {
-          lines.push(...renderEntryBlockPlain(entry));
-        }
-      }
-    }
+    renderGroupPlain(repo, kind, lines, 0);
     lines.push("");
   }
 
@@ -290,11 +386,19 @@ export function renderPlain(
 /** 综合入口：分组 + 渲染。 */
 export function buildAndRender(
   entries: readonly ReportEntry[],
-  meta: { title?: string; rangeISO: { fromISO: string; toISO: string }; format?: ReportOutputFormat }
+  meta: {
+    title?: string;
+    rangeISO: { fromISO: string; toISO: string };
+    format?: ReportOutputFormat;
+    kind?: ReportKind;
+  }
 ): { groups: ReportGroup[]; markdown: string; plain: string; totalCommits: number } {
-  const groups = buildReportTree(entries);
+  const kind = meta.kind ?? "daily";
+  const groups = buildReportTree(entries, kind);
   const totalCommits = entries.length;
-  const markdown = renderMarkdown(groups, { ...meta, totalCommits });
-  const plain = renderPlain(groups, { ...meta, totalCommits });
+  const moduleSummary = kind === "weekly" ? moduleCountSummary(entries) : undefined;
+  const renderMeta = { ...meta, totalCommits, kind, moduleSummary };
+  const markdown = renderMarkdown(groups, renderMeta);
+  const plain = renderPlain(groups, renderMeta);
   return { groups, markdown, plain, totalCommits };
 }
